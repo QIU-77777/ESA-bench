@@ -1,0 +1,49 @@
+# Job config: the same task driven by the Claude Code harness — the third
+# member of the comparison pair (opencode-harness / pi-harness / claude-code-harness).
+# Entry point is scripts/run.sh (preflight, then `harbor run`).
+#
+# Model note: the gateway binds each model to one protocol. MiMo-V2.6-Flash
+# only serves OpenAI's chat/completions protocol, and the gateway rejects it
+# on the Anthropic protocol (HTTP 400 ModelProtocolUnsupported). Claude Code
+# speaks the Anthropic protocol, so this config uses claude-haiku-5-5 (HTTP
+# 200 verified on /zen/go/v1/messages).
+#
+# Non-secret endpoint config lives here; the API key is injected at run time
+# with --agent-env ANTHROPIC_API_KEY (same GO_API_KEY secret) and never
+# stored in this file.
+jobs_dir: jobs
+n_concurrent_trials: 4
+
+# `tasks:` because the path points at a single task directory; a `datasets:`
+# path must contain task subdirectories.
+tasks:
+  - path: tasks/hello-opencode
+
+environment:
+  type: docker
+  import_path: harbor_test_env:HarborTestDockerEnvironment
+  force_build: true
+  delete: true
+  mounts:
+    # `source` must match harness/claude-code/manifest.yaml (run.sh preflight
+    # enforces this); `target` must match the manifest's mount_path.
+    - type: image
+      source: harbor-test/harness/claude-code:2.1.299
+      target: /usr/local
+      read_only: true
+
+agents:
+  - import_path: harbor_test_agents:MountedClaudeCode
+    # Plain model id (no provider prefix): Harbor's claude-code adapter has
+    # default_provider "anthropic" and sends this value as ANTHROPIC_MODEL
+    # whenever ANTHROPIC_BASE_URL is set.
+    model_name: claude-haiku-5-5
+    kwargs:
+      # Reasoning effort passed as `--effort medium` (parity with the
+      # `--thinking` flag of the opencode config and `thinking: medium` of
+      # the pi config).
+      reasoning_effort: medium
+    env:
+      # ANTHROPIC_BASE_URL omits /v1: the Claude SDK appends /v1/messages
+      # itself, producing https://opencode.ai/zen/go/v1/messages.
+      ANTHROPIC_BASE_URL: https://opencode.ai/zen/go

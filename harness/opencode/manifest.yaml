@@ -1,0 +1,17 @@
+# Single source of truth for the opencode harness image.
+# Consumers:
+#   scripts/build-harness.sh   — builds <image_repository>:<version>
+#   scripts/run.sh             — preflight: image exists, label == version,
+#                                job config mounts match this file
+#   harbor_test_agents.py      — expected in-container CLI version
+# Version bump flow: edit `version` here, run scripts/build-harness.sh,
+# sync the `source` line under jobs/*/environment/mounts (run.sh enforces it).
+name: opencode
+version: "2.0.28"
+# 2.0.x is published as @opencode/cli; the legacy `opencode-ai` package only
+# ships 1.x.
+npm_package: "@opencode/cli"
+image_repository: harbor-test/harness/opencode
+# The image's root filesystem is mounted here; its root is built to be exactly
+# the contents of /usr/local (bin/, lib/, share/).
+mount_path: /usr/local

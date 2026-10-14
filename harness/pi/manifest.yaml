@@ -1,0 +1,9 @@
+# Single source of truth for the pi harness image.
+# Same contract as harness/opencode/manifest.yaml; scripts/* accept the
+# harness directory name as an argument.
+name: pi
+version: "1.2.0"
+# Renamed at 0.74.0; the legacy package was @mariozechner/pi-coding-agent.
+npm_package: "@earendil-works/pi-coding-agent"
+image_repository: harbor-test/harness/pi
+mount_path: /usr/local

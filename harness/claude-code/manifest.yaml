@@ -1,0 +1,8 @@
+# Single source of truth for the claude-code harness image.
+# Same contract as harness/opencode/manifest.yaml; scripts/* accept the
+# harness directory name as an argument.
+name: claude-code
+version: "2.1.299"
+npm_package: "@anthropic-ai/claude-code"
+image_repository: harbor-test/harness/claude-code
+mount_path: /usr/local

@@ -1,0 +1,53 @@
+# Job config: everything the run needs except the GO_API_KEY secret.
+# Entry point is scripts/run.sh — it runs preflight checks (image present and
+# version-labeled, manifest in sync, Docker API, gateway reachable) and then
+# `harbor run -c configs/opencode-harness.yaml`. Running harbor directly against
+# this file
+# skips preflight; the agent's install() check still catches a missing or
+# mismatched harness image.
+#
+# GO_API_KEY is injected at run time with --agent-env. The
+# `{env:GO_API_KEY}` inside opencode_config is OpenCode's own in-container
+# config syntax, resolved by the CLI inside the container.
+# No `job_name:` on purpose: harbor names the results directory after it, and
+# a fixed name makes the next run (e.g. switching to the oracle agent) fail
+# with "directory already exists and cannot be resumed with a different
+# config". The default job_name is a timestamp, one results dir per run.
+jobs_dir: jobs
+n_concurrent_trials: 4
+
+# `tasks:` because the path points at a single task directory; a `datasets:`
+# path must contain task subdirectories.
+tasks:
+  - path: tasks/hello-opencode
+
+environment:
+  type: docker
+  import_path: harbor_test_env:HarborTestDockerEnvironment
+  # Rebuild the task image from its current Dockerfile on every run (Docker
+  # layer cache keeps this near-zero after the first build), and delete trial
+  # containers when the trial ends; scripts/cleanup.sh covers interrupted runs.
+  force_build: true
+  delete: true
+  mounts:
+    # `source` must match harness/opencode/manifest.yaml (run.sh preflight
+    # enforces this); `target` must match the manifest's mount_path.
+    - type: image
+      source: harbor-test/harness/opencode:2.0.28
+      target: /usr/local
+      read_only: true
+
+agents:
+  - import_path: harbor_test_agents:MountedOpenCode
+    model_name: go/mimo-v2.6-flash
+    kwargs:
+      opencode_config:
+        provider:
+          go:
+            npm: "@ai-sdk/openai-compatible"
+            name: Go gateway
+            options:
+              baseURL: https://opencode.ai/zen/go/v1
+              apiKey: "{env:GO_API_KEY}"
+            models:
+              mimo-v2.6-flash: {}
