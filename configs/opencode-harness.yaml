@@ -1,18 +1,30 @@
-# Job config: everything the run needs except the GO_API_KEY secret.
-# Entry point is scripts/run.sh — it runs preflight checks (image present and
-# version-labeled, manifest in sync, Docker API, gateway reachable) and then
-# `harbor run -c configs/opencode-harness.yaml`. Running harbor directly against
-# this file
-# skips preflight; the agent's install() check still catches a missing or
-# mismatched harness image.
+# Job config: everything the run needs except secrets. Endpoints, model ids
+# and api keys live in .env (one <PREFIX>_* group per provider). `run.sh`
+# uses `model: provider/model-id` to create a resolved temporary config before
+# Harbor starts, and `{env:VAR}` supplies the connection values inside the
+# container.
+# Entry point is scripts/run.sh — it reads `model:` and `harness:` below,
+# maps the matching .env group to the fixed variable names, runs preflight
+# checks (image present and version-labeled, manifest in sync, Docker API,
+# gateway reachable) and then `harbor run -c configs/opencode-harness.yaml`.
+# Running harbor directly skips preflight and the env handling; source .env
+# first. The agent's install() check still catches a missing or mismatched
+# harness image.
 #
-# GO_API_KEY is injected at run time with --agent-env. The
-# `{env:GO_API_KEY}` inside opencode_config is OpenCode's own in-container
-# config syntax, resolved by the CLI inside the container.
+# The api key is injected at run time with --agent-env as OPENAI_API_KEY.
+# The `{env:OPENAI_API_KEY}` inside opencode_config is OpenCode's own
+# in-container config syntax, resolved by the CLI inside the container.
 # No `job_name:` on purpose: harbor names the results directory after it, and
 # a fixed name makes the next run (e.g. switching to the oracle agent) fail
 # with "directory already exists and cannot be resumed with a different
 # config". The default job_name is a timestamp, one results dir per run.
+#
+# Combination declaration, read by run.sh (harbor's JobConfig ignores these
+# two keys): model -> provider/model-id; the provider selects the matching
+# .env group (go -> GO_*), and harness selects its manifest.
+model: go/mimo-v2.6-flash
+harness: opencode
+
 jobs_dir: jobs
 n_concurrent_trials: 4
 
@@ -39,15 +51,16 @@ environment:
 
 agents:
   - import_path: harbor_test_agents:MountedOpenCode
-    model_name: go/mimo-v2.6-flash
+    name: OpenCode
     kwargs:
       opencode_config:
         provider:
-          go:
+          gateway:
             npm: "@ai-sdk/openai-compatible"
-            name: Go gateway
+            name: Custom gateway
             options:
-              baseURL: https://opencode.ai/zen/go/v1
-              apiKey: "{env:GO_API_KEY}"
-            models:
-              mimo-v2.6-flash: {}
+              # {env:...}: OpenCode resolves this inside the container, fed
+              # by --agent-env. The block is provider-neutral: any
+              # OpenAI-compatible endpoint works via .env values alone.
+              baseURL: "{env:OPENAI_BASE_URL}"
+              apiKey: "{env:OPENAI_API_KEY}"

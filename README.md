@@ -1,13 +1,16 @@
-# Harbor + 多 agent harness demo
+# Harbor + 多 agent harness Benchmark
 
-Harbor 0.24.0（`~/qiguang/harbor_test/.venv`），用同一个任务分别驱动 OpenCode CLI 和 pi CLI，
-在同一批任务上对比不同 agent harness 的得分与轨迹。两个 CLI 都采用「预构建 harness 镜像 +
+Harbor 0.24.0（`~/qiguang/harbor_test/.venv`），用同一个任务分别驱动 OpenCode CLI、
+pi CLI 和 Claude Code CLI，在同一批任务上对比不同 agent harness 的得分与轨迹。
+三个 CLI 都采用「预构建 harness 镜像 +
 只读挂载」：镜像构建一次，每个 trial 挂载进来，不重复打包。
-运行参数收敛在 job 配置里，入口是 `scripts/run.sh`，起跑前先做预检。
+运行参数收敛在 job 配置里，模型、端点、API 密钥收敛在 `.env`（由 job 配置顶部的 `model: provider/model-id` 行选择），入口是 `scripts/run.sh`，起跑前先做预检。
 
 ## 目录
 
 ```
+.env                              # 连接配置唯一源头：模型 ID + 端点 + API 密钥（.gitignore 排除，权限 600）
+.env.example                      # 不含密钥的连接配置示例
 configs/
 ├── opencode-harness.yaml         # job 配置：OpenCode harness（与另两份配置同任务，对比用）
 ├── pi-harness.yaml               # job 配置：pi harness
@@ -43,7 +46,7 @@ tasks/hello-opencode/
 
 ```bash
 cd ~/qiguang/harbor_test
-export GO_API_KEY=$(python3 -c "import json;print(json.load(open('$HOME/.local/share/opencode/auth.json'))['opencode-go']['key'])")
+# 复制 .env.example 为 .env，并在 .env 的 *_API_KEY 行填入密钥
 
 ./scripts/run.sh --dry-run    # 只预检并打印运行计划，不消耗 docker 资源
 ./scripts/run.sh              # 预检通过后运行 configs/opencode-harness.yaml
@@ -55,6 +58,12 @@ JOB_CONFIG=configs/claude-code-harness.yaml ./scripts/run.sh --dry-run
 JOB_CONFIG=configs/claude-code-harness.yaml ./scripts/run.sh
 ```
 
+模型、端点、API 密钥都在 `.env` 里改：`run.sh` 载入 `.env`，按 job 配置的
+`model: provider/model-id` 行选择供应商组，并校验模型 ID 与 `.env` 的值一致。
+`run.sh` 再生成已解析的临时 job 配置，供 Harbor 保存准确的运行快照；源 YAML 保留
+模板结构。job 配置顶部的 `model:` 和 `harness:` 两行由 `run.sh` 读取，harbor 校验时忽略
+这两行；换密钥只改 `.env` 里对应组的 `_API_KEY` 行。
+
 先跑参考答案确认任务定义没问题（不消耗模型调用）：
 
 ```bash
@@ -65,15 +74,21 @@ PYTHONPATH=$PWD .venv/bin/harbor run -c configs/opencode-harness.yaml -a oracle 
 
 ## 预检（scripts/run.sh 在起容器之前全部检查）
 
-1. 挂载镜像标签与挂载路径必须和对应 harness 的 `manifest.yaml` 一致（harness 按 job 配置
-   挂载的镜像自动识别），否则报错并指出两边要同步修改；
-2. harness 镜像存在，且镜像 LABEL `<harness>.version` 等于 manifest 版本，否则提示重新构建
+1. job 配置的组合声明齐全且互相一致：`model: provider/model-id` 在 `.env` 里有对应的
+   前缀变量组（例如 `model: go/mimo-v2.6-flash` 对应 `GO_*`，本 harness 协议必需的变量
+   非空，模型 ID 与 `.env` 一致），`harness:` 与
+   `agents[0].import_path` 匹配（opencode/MountedOpenCode、pi/MountedPi、
+   claude-code/MountedClaudeCode）；
+2. 挂载镜像标签与挂载路径必须和 `harness:` 指向的 `manifest.yaml` 一致，否则报错并指出
+   两边要同步修改；
+3. harness 镜像存在，且镜像 LABEL `<harness>.version` 等于 manifest 版本，否则提示重新构建
    （`AUTO_BUILD_HARNESS=1` 时自动构建）；
-3. Docker daemon 的 API 版本不低于 1.48（镜像挂载的最低要求）；
-4. `GO_API_KEY` 已设置，且用它请求网关 models 端点返回 200，密钥错误在起容器前就失败
-   （网关地址取自 job 配置：`opencode_config` 的 `baseURL` 或 `agents[].env` 的
-   `OPENAI_BASE_URL` / `ANTHROPIC_BASE_URL`；base URL 不带 `/v1` 时先试 `/v1/models`）；
-5. `--dry-run` 额外用 harbor 的 `--print-config` 验证配置能被解析、agent 导入路径可用。
+4. Docker daemon 的 API 版本不低于 1.48（镜像挂载的最低要求）；
+5. `.env` 已载入、所选组已映射、临时配置中的真实 `model_name` 已写入、密钥非空，
+   且用它请求网关 models 端点返回 200，密钥错误在起容器前就失败
+   （网关地址按 harness 协议取：OpenCode/pi 用 `OPENAI_BASE_URL`，Claude Code 用
+   `ANTHROPIC_BASE_URL`；base URL 不带 `/v1` 时先试 `/v1/models`）；
+6. `--dry-run` 额外用 harbor 的 `--print-config` 验证配置能被解析、agent 导入路径可用。
 
 ## 版本升级流程
 
@@ -82,7 +97,7 @@ PYTHONPATH=$PWD .venv/bin/harbor run -c configs/opencode-harness.yaml -a oracle 
 ```bash
 # 1. 修改 harness/<name>/manifest.yaml 的 version
 # 2. 构建新镜像
-./scripts/build-harness.sh <name>     # opencode | pi
+./scripts/build-harness.sh <name>     # opencode | pi | claude-code
 # 3. 同步 job 配置里 mounts 的 source 标签（预检会强制这一点）
 # 4. ./scripts/run.sh --dry-run 确认后运行
 ```
@@ -91,6 +106,9 @@ PYTHONPATH=$PWD .venv/bin/harbor run -c configs/opencode-harness.yaml -a oracle 
 版本号在仓库里出现两处（manifest 与 job 配置的镜像标签），预检保证它们不会不一致。
 
 ## 自定义类的职责
+
+`run.sh` 会把 job 配置的 `model: provider/model-id` 写入临时配置的 `agents[0].model_name`。
+三个类的 `install()` 继续执行各自的版本检查和运行准备，变量缺失直接报错。
 
 **MountedOpenCode**（`harbor_test_agents.py`），Harbor 内置 opencode 适配器的子类：
 
@@ -114,20 +132,40 @@ PYTHONPATH=$PWD .venv/bin/harbor run -c configs/opencode-harness.yaml -a oracle 
 
 ## 模型接入与可调参数
 
-Harbor 按 agent 解析模型连接：job 配置给 `model_name`、`kwargs`、`env`（非密钥），
-`run.sh` 用 `--agent-env` 注入密钥（同一个 `GO_API_KEY` 同时写入 `OPENAI_API_KEY`
-和 `ANTHROPIC_API_KEY`），各适配器再转换成自己 CLI 的原生配置：
+Harbor 按 agent 解析模型连接：端点、模型 ID、API 密钥的值都在 `.env`
+（一个供应商一组变量，`run.sh` 按 job 的 `model: provider/model-id` 行选组），job 配置
+写入临时配置的 `model_name`；端点以环境变量的
+形式进入 harbor 的模型连接解析和 trial 容器。密钥用 `--agent-env` 注入
+（`.env` 里的同一个值同时写入 `OPENAI_API_KEY` 和 `ANTHROPIC_API_KEY`），
+各适配器再转换成自己 CLI 的原生配置：
 
 | | 端点 | 密钥 | 模型选择 | 推理参数 |
 | --- | --- | --- | --- | --- |
-| OpenCode | `opencode_config` 的 `options.baseURL` | `opencode_config` 里 `{env:GO_API_KEY}` | `model_name`（`provider/model`） | `--thinking`（`run()` 写死）；`opencode_config` 的 `models.<provider>.<model>.options`（如 `reasoningEffort`） |
-| pi | `agents[].env` 的 `OPENAI_BASE_URL` | `models.json` 引用 `$OPENAI_API_KEY` | `model_name`（`provider/model`，运行时 provider 换成 harbor-endpoint） | `kwargs.thinking`（off…max）、`kwargs.model_api`（API 风格）、`kwargs.max_turns` |
-| Claude Code | `agents[].env` 的 `ANTHROPIC_BASE_URL`（不带 `/v1`） | 环境变量 `ANTHROPIC_API_KEY` | `model_name`（纯模型 ID，写入 `ANTHROPIC_MODEL`） | `kwargs.reasoning_effort`（`--effort`）、`kwargs.max_turns`、`kwargs.max_budget_usd`、`MAX_THINKING_TOKENS` 等 |
+| OpenCode | `opencode_config` 的 `options.baseURL`（`{env:OPENAI_BASE_URL}`，容器内取值） | `opencode_config` 里 `{env:OPENAI_API_KEY}` | `model_name`（`provider/model-id`） | `--thinking`（`run()` 写死） |
+| pi | 环境变量 `OPENAI_BASE_URL`（写入 `models.json` 的 `baseUrl`） | `models.json` 引用 `$OPENAI_API_KEY` | `model_name`（`provider/model-id`，运行时 provider 换成 harbor-endpoint） | `kwargs.thinking`（off…max）、`kwargs.model_api`（API 风格）、`kwargs.max_turns` |
+| Claude Code | 环境变量 `ANTHROPIC_BASE_URL`（不带 `/v1`） | 环境变量 `ANTHROPIC_API_KEY` | `model_name`（临时配置中为 `provider/model-id`，发送给 Claude Code 时使用 model-id） | `kwargs.reasoning_effort`（`--effort`）、`kwargs.max_turns`、`kwargs.max_budget_usd`、`MAX_THINKING_TOKENS` 等 |
 
 网关的模型按协议绑定：`mimo-v2.6-flash` 只在 OpenAI 协议端点上，
 `claude-haiku-5-5` 只在 Anthropic 协议端点上；跨协议调用返回
-`ModelProtocolUnsupported`。所以 Claude Code 配置用 `claude-haiku-5-5`。
-换模型前先确认目标 harness 说的协议与网关端点一致。
+`ModelProtocolUnsupported`。所以 `.env` 的 go 组里 OpenCode/pi 读
+`GO_OPENAI_MODEL_ID=mimo-v2.6-flash`，Claude Code 读
+`GO_ANTHROPIC_MODEL_ID=claude-haiku-5-5`。换模型前先确认目标 harness
+说的协议与网关端点一致。
+
+## 改模型 / 换服务商
+
+- 同供应商换模型：修改 job 配置的 `model: provider/model-id`，并同步修改 `.env` 里该组
+  对应协议的 `*_MODEL_ID` 行。`run.sh` 会检查两处模型 ID 是否一致。
+- 换密钥：只改 `.env` 里该组的 `*_API_KEY` 一行，其余不动。
+- 新增供应商（多供应商共存，不覆盖已有组）：
+  1. 在 `.env` 末尾追加一组 `<前缀>_*` 五行（前缀用大写字母、数字、下划线，
+     参考文件里的 deepseek 示例组）；
+  2. 把目标 job 配置顶部的 `model:` 行改成完整的 `provider/model-id`，例如
+     `model: deepseek/deepseek-flash`；
+  3. 使用 `./scripts/run.sh --dry-run` 验证模型 ID、端点、密钥和 Harbor 配置。
+- 切回旧供应商：把 `model:` 行改回对应的 `provider/model-id`，`.env` 里的供应商组一直保留。
+- jobs 列表页读取运行快照中的 `agents[].name`、`agents[].model_name`；`run.sh` 会把完整的
+  `provider/model-id` 写入快照。
 
 ## 同任务对比三个 harness
 
@@ -137,8 +175,9 @@ JOB_CONFIG=configs/pi-harness.yaml       ./scripts/run.sh
 JOB_CONFIG=configs/claude-code-harness.yaml   ./scripts/run.sh
 ```
 
-三个配置指向同一个 `tasks/hello-opencode`、同一个网关。OpenCode 和 pi 用
-mimo-v2.6-flash，Claude Code 用 claude-haiku-5-5（网关协议限制，见上节）。
+三个配置指向同一个 `tasks/hello-opencode`。OpenCode 和 pi 使用
+`model: go/mimo-v2.6-flash`，Claude Code 使用 `model: go/claude-haiku-5-5`；
+三个模型值都在 `.env` 的 go 组，协议限制见上节。
 每个 `jobs/<时间戳>/` 目录里可对比：
 
 | 对比项 | 位置 |
@@ -200,9 +239,10 @@ pi 的包在 0.74.0 时从 `@mariozechner/pi-coding-agent` 改名为 `@earendil-
 1. Docker Hub 直连被重置，基础镜像改从 `docker.m.daocloud.io` 拉取后打本地标签：
    `docker tag docker.m.daocloud.io/library/node:22-alpine node:22-alpine`
 2. 容器里的 OpenCode 拿不到本机 `auth.json`，因此用 `opencode_config` 定义一个
-   openai-compatible provider 指向 `https://opencode.ai/zen/go/v1`，密钥通过
-   `--agent-env` 以 `{env:GO_API_KEY}` 注入；pi 走同样的网关，配置方式是
-   `agents[].env` 里的 `OPENAI_BASE_URL` 加 `--agent-env` 注入的 `OPENAI_API_KEY`。
+   openai-compatible provider：baseURL 用 `{env:OPENAI_BASE_URL}`、密钥用
+   `{env:OPENAI_API_KEY}`，都由 `--agent-env` 注入（值来自 `.env` 的 go 组）；
+   pi 走同样的网关，端点读环境变量
+   `OPENAI_BASE_URL`，密钥是 `--agent-env` 注入的 `OPENAI_API_KEY`。
 
 ## 任务镜像设计要点
 

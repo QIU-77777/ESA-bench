@@ -1,5 +1,8 @@
+# 密钥文件，永不提交
+.env
+
+# 本地环境与运行产物
 .venv/
-__pycache__/
-*.pyc
 jobs/
+__pycache__/
 .DS_Store

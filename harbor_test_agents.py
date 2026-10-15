@@ -1,7 +1,7 @@
 """
 Harbor agents for this test project.
 
-``MountedOpenCode`` is Harbor's stock OpenCode agent with two changes:
+``MountedOpenCode`` is Harbor's stock OpenCode agent with three changes:
 
 1. The CLI is not installed into the container at trial setup. It comes from the
    prebuilt harness image mounted read-only at ``/usr/local``, so no
@@ -11,15 +11,18 @@ Harbor agents for this test project.
    the legacy ``opencode-ai`` 1.x package, where global flags precede the
    subcommand and ``--dangerously-skip-permissions`` exists; the v2 CLI takes
    those flags after ``opencode run`` and replaced the latter with ``--auto``.
+3. ``scripts/run.sh`` resolves ``model: provider/model-id`` from ``.env``
+   before Harbor starts and writes the resolved value into the temporary job
+   config. Harbor therefore saves the real model identity in ``config.json``.
 
 ``MountedPi`` is Harbor's stock pi agent with one change: the CLI is not
-installed per trial either — it comes from the ``harness/pi`` image mounted
+installed per trial — it comes from the ``harness/pi`` image mounted
 read-only at ``/usr/local`` (version fixed by the image tag, 1.2.0 here).
 Harbor's own pi run and trajectory logic (session-dir JSONL) is untouched.
 
 本测试项目的 Harbor agent。
 
-``MountedOpenCode`` 在 Harbor 原版 OpenCode agent 的基础上做了两处改动：
+``MountedOpenCode`` 在 Harbor 原版 OpenCode agent 的基础上做了三处改动：
 
 1. CLI 不在 trial 启动时安装进容器。它来自预构建的 harness 镜像，
    以只读方式挂载到 ``/usr/local``，因此每个 trial 不再执行
@@ -28,11 +31,14 @@ Harbor's own pi run and trajectory logic (session-dir JSONL) is untouched.
    ``opencode-ai`` 1.x 包——全局 flag 放在子命令之前，且有
    ``--dangerously-skip-permissions``；v2 CLI 把这些 flag 放在
    ``opencode run`` 之后，并用 ``--auto`` 取代了后者。
+3. ``scripts/run.sh`` 在 Harbor 启动前解析 ``model: provider/model-id``，
+   从 ``.env`` 选择供应商变量组，并把完整模型身份写入临时 job 配置。
+   Harbor 会将真实模型身份保存到 ``config.json``。
 
-``MountedPi`` 在 Harbor 原版 pi agent 的基础上只有一处改动：CLI 同样
+``MountedPi`` 在 Harbor 原版 pi agent 的基础上做了一处改动：CLI 同样
 不在每个 trial 里安装，而是来自 ``harness/pi`` 镜像（只读挂载到
-``/usr/local``，版本由镜像 tag 固定，此处为 1.2.0）。pi 的运行与轨迹
-逻辑（基于 ``--session-dir`` 的 JSONL）保持原版不动。
+``/usr/local``，版本由镜像 tag 固定，此处为 1.2.0）。
+pi 的运行与轨迹逻辑（基于 ``--session-dir`` 的 JSONL）保持原版不动。
 
 """
 
@@ -163,6 +169,11 @@ class MountedClaudeCode(ClaudeCode):
 
     @override
     async def install(self, environment: BaseEnvironment) -> None:
+        # The job snapshot keeps provider/model-id for reporting. Claude Code
+        # receives only the model id through ANTHROPIC_MODEL.
+        if self.model_name and "/" in self.model_name:
+            self.model_name = self.model_name.split("/", 1)[1]
+            self._init_model_info()
         expected = _manifest_version("claude-code")
         result = await self.exec_as_agent(
             environment,
