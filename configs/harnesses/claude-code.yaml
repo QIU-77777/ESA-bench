@@ -1,0 +1,7 @@
+id: claude-code
+name: Claude Code
+protocol: anthropic
+import_path: harbor_test_agents:MountedClaudeCode
+manifest: harness/claude-code/manifest.yaml
+kwargs:
+  reasoning_effort: medium

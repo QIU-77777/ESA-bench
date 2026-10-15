@@ -1,0 +1,8 @@
+id: pi
+name: Pi
+protocol: openai
+import_path: harbor_test_agents:MountedPi
+manifest: harness/pi/manifest.yaml
+kwargs:
+  model_api: openai-completions
+  thinking: medium

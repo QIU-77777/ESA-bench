@@ -1,0 +1,7 @@
+id: go/mimo-v2.6-flash
+provider: go
+protocols:
+  openai:
+    model_id_env: GO_OPENAI_MODEL_ID
+    base_url_env: GO_OPENAI_BASE_URL
+api_key_env: GO_API_KEY

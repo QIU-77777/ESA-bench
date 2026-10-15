@@ -4,7 +4,7 @@ Harbor 0.24.0（`~/qiguang/harbor_test/.venv`），用同一个任务分别驱�
 pi CLI 和 Claude Code CLI，在同一批任务上对比不同 agent harness 的得分与轨迹。
 三个 CLI 都采用「预构建 harness 镜像 +
 只读挂载」：镜像构建一次，每个 trial 挂载进来，不重复打包。
-运行参数收敛在 job 配置里，模型、端点、API 密钥收敛在 `.env`（由 job 配置顶部的 `model: provider/model-id` 行选择），入口是 `scripts/run.sh`，起跑前先做预检。
+运行参数分为 bench、harness、model 三层，`.env` 保存端点和 API 密钥。入口 `scripts/run.sh` 可以手动选择一次 `bench + harness + model` 组合，起跑前先做预检。
 
 ## 目录
 
@@ -12,9 +12,10 @@ pi CLI 和 Claude Code CLI，在同一批任务上对比不同 agent harness 的
 .env                              # 连接配置唯一源头：模型 ID + 端点 + API 密钥（.gitignore 排除，权限 600）
 .env.example                      # 不含密钥的连接配置示例
 configs/
-├── opencode-harness.yaml         # job 配置：OpenCode harness（与另两份配置同任务，对比用）
-├── pi-harness.yaml               # job 配置：pi harness
-└── claude-code-harness.yaml      # job 配置：Claude Code harness
+├── bench/                        # 任务集合和批量运行参数
+├── harnesses/                    # Agent 类、协议和运行参数
+├── models/                       # 模型身份和 .env 变量映射
+└── jobs/                         # 可选的固定组合
 harness/
 ├── opencode/
 │   ├── manifest.yaml            # 版本单一来源：版本号、镜像标签、挂载路径
@@ -28,7 +29,8 @@ harness/
 harbor_test_agents.py            # MountedOpenCode / MountedPi / MountedClaudeCode：挂载式 agent（不执行 npm 安装）
 harbor_test_env.py               # HarborTestDockerEnvironment：镜像挂载的 API 版本协商
 scripts/
-├── run.sh                       # 运行入口：预检 + harbor run，--dry-run 只预检
+├── run.sh                       # 运行入口：选择配置、预检 + harbor run
+├── render-job.py                # 生成临时 Harbor job YAML
 ├── manifest-env.sh              # 读取 harness/<name>/manifest.yaml，供其他脚本引用
 ├── build-harness.sh             # 构建 harness 镜像（参数：harness 名）
 └── cleanup.sh                   # 清理中断运行残留的容器和 hb__ 任务镜像
@@ -48,34 +50,49 @@ tasks/hello-opencode/
 cd ~/qiguang/harbor_test
 # 复制 .env.example 为 .env，并在 .env 的 *_API_KEY 行填入密钥
 
-./scripts/run.sh --dry-run    # 只预检并打印运行计划，不消耗 docker 资源
-./scripts/run.sh              # 预检通过后运行 configs/opencode-harness.yaml
+# 手动选择一次 bench + harness + model
+./scripts/run.sh \
+  --bench hello \
+  --harness pi \
+  --model deepseek/deepseek-flash \
+  --dry-run
 
-JOB_CONFIG=configs/pi-harness.yaml ./scripts/run.sh --dry-run
-JOB_CONFIG=configs/pi-harness.yaml ./scripts/run.sh
+./scripts/run.sh \
+  --bench hello \
+  --harness pi \
+  --model deepseek/deepseek-flash \
+  --job-name '2026-10-16__10-00-00'
 
-JOB_CONFIG=configs/claude-code-harness.yaml ./scripts/run.sh --dry-run
-JOB_CONFIG=configs/claude-code-harness.yaml ./scripts/run.sh
+# 使用 configs/jobs/ 中保存的固定组合
+./scripts/run.sh --job deepseek-pi-hello --dry-run
+./scripts/run.sh --job deepseek-pi-hello
 ```
 
-模型、端点、API 密钥都在 `.env` 里改：`run.sh` 载入 `.env`，按 job 配置的
-`model: provider/model-id` 行选择供应商组，并校验模型 ID 与 `.env` 的值一致。
-`run.sh` 再生成已解析的临时 job 配置，供 Harbor 保存准确的运行快照；源 YAML 保留
-模板结构。job 配置顶部的 `model:` 和 `harness:` 两行由 `run.sh` 读取，harbor 校验时忽略
-这两行；换密钥只改 `.env` 里对应组的 `_API_KEY` 行。
+`run.sh` 从 `configs/bench/`、`configs/harnesses/` 和 `configs/models/` 读取配置，
+生成临时 Harbor job YAML，再调用 Harbor。`.env` 保存实际端点和 API 密钥；模型配置
+只保存模型身份和变量名称。`--job-name` 传给 Harbor，默认格式是
+`YYYY-MM-DD__HH-MM-SS`。job 名称不能包含 `:` 或 `/`，因为 Docker bind mount
+会把这些字符当作路径语法。
 
 先跑参考答案确认任务定义没问题（不消耗模型调用）：
 
 ```bash
-PYTHONPATH=$PWD .venv/bin/harbor run -c configs/opencode-harness.yaml -a oracle -y
+tmp_config="$(mktemp)"
+.venv/bin/python scripts/render-job.py \
+  --bench hello \
+  --harness opencode \
+  --model go/mimo-v2.6-flash \
+  --output "$tmp_config"
+PYTHONPATH=$PWD .venv/bin/harbor run -c "$tmp_config" -a oracle -y
+rm -f "$tmp_config"
 ```
 
-多任务、多并发：在 job 配置里改 `tasks:` 列表和 `n_concurrent_trials`。
+多任务、多并发：修改 `configs/bench/<bench>.yaml` 中的 `tasks:` 和 `n_concurrent_trials`。
 
 ## 预检（scripts/run.sh 在起容器之前全部检查）
 
-1. job 配置的组合声明齐全且互相一致：`model: provider/model-id` 在 `.env` 里有对应的
-   前缀变量组（例如 `model: go/mimo-v2.6-flash` 对应 `GO_*`，本 harness 协议必需的变量
+1. 运行组合声明齐全且互相一致：`--model provider/model-id` 在 `.env` 里有对应的
+   前缀变量组（例如 `--model go/mimo-v2.6-flash` 对应 `GO_*`，本 harness 协议必需的变量
    非空，模型 ID 与 `.env` 一致），`harness:` 与
    `agents[0].import_path` 匹配（opencode/MountedOpenCode、pi/MountedPi、
    claude-code/MountedClaudeCode）；
@@ -98,16 +115,17 @@ PYTHONPATH=$PWD .venv/bin/harbor run -c configs/opencode-harness.yaml -a oracle 
 # 1. 修改 harness/<name>/manifest.yaml 的 version
 # 2. 构建新镜像
 ./scripts/build-harness.sh <name>     # opencode | pi | claude-code
-# 3. 同步 job 配置里 mounts 的 source 标签（预检会强制这一点）
-# 4. ./scripts/run.sh --dry-run 确认后运行
+# 3. 运行入口读取 manifest 中的新镜像标签，并检查镜像 LABEL
+# 4. ./scripts/run.sh --bench hello --harness <name> --model <provider/model-id> --dry-run
 ```
 
 `harbor_test_agents.py` 的版本校验读同一个 manifest；镜像用 LABEL 记录版本，预检读 LABEL 比对。
-版本号在仓库里出现两处（manifest 与 job 配置的镜像标签），预检保证它们不会不一致。
+版本号由 manifest 和渲染器共同使用，预检保证镜像标签与 manifest 一致。
 
 ## 自定义类的职责
 
-`run.sh` 会把 job 配置的 `model: provider/model-id` 写入临时配置的 `agents[0].model_name`。
+`run.sh` 会把 bench、harness、model 三层配置合成为临时配置，并把完整的
+`provider/model-id` 写入临时配置的 `agents[0].model_name`。
 三个类的 `install()` 继续执行各自的版本检查和运行准备，变量缺失直接报错。
 
 **MountedOpenCode**（`harbor_test_agents.py`），Harbor 内置 opencode 适配器的子类：
@@ -133,8 +151,8 @@ PYTHONPATH=$PWD .venv/bin/harbor run -c configs/opencode-harness.yaml -a oracle 
 ## 模型接入与可调参数
 
 Harbor 按 agent 解析模型连接：端点、模型 ID、API 密钥的值都在 `.env`
-（一个供应商一组变量，`run.sh` 按 job 的 `model: provider/model-id` 行选组），job 配置
-写入临时配置的 `model_name`；端点以环境变量的
+（一个供应商一组变量，`run.sh` 按 `--model provider/model-id` 选择供应商组），临时配置
+写入 `model_name`；端点以环境变量的
 形式进入 harbor 的模型连接解析和 trial 容器。密钥用 `--agent-env` 注入
 （`.env` 里的同一个值同时写入 `OPENAI_API_KEY` 和 `ANTHROPIC_API_KEY`），
 各适配器再转换成自己 CLI 的原生配置：
@@ -154,31 +172,31 @@ Harbor 按 agent 解析模型连接：端点、模型 ID、API 密钥的值都�
 
 ## 改模型 / 换服务商
 
-- 同供应商换模型：修改 job 配置的 `model: provider/model-id`，并同步修改 `.env` 里该组
+- 同供应商换模型：修改命令中的 `--model provider/model-id`，并同步修改 `.env` 里该组
   对应协议的 `*_MODEL_ID` 行。`run.sh` 会检查两处模型 ID 是否一致。
 - 换密钥：只改 `.env` 里该组的 `*_API_KEY` 一行，其余不动。
 - 新增供应商（多供应商共存，不覆盖已有组）：
   1. 在 `.env` 末尾追加一组 `<前缀>_*` 五行（前缀用大写字母、数字、下划线，
      参考文件里的 deepseek 示例组）；
-  2. 把目标 job 配置顶部的 `model:` 行改成完整的 `provider/model-id`，例如
-     `model: deepseek/deepseek-flash`；
-  3. 使用 `./scripts/run.sh --dry-run` 验证模型 ID、端点、密钥和 Harbor 配置。
-- 切回旧供应商：把 `model:` 行改回对应的 `provider/model-id`，`.env` 里的供应商组一直保留。
+  2. 把命令中的 `--model` 改成完整的 `provider/model-id`，例如
+     `--model deepseek/deepseek-flash`；
+  3. 使用 `./scripts/run.sh --bench ... --harness ... --model ... --dry-run` 验证模型 ID、端点、密钥和 Harbor 配置。
+- 切回旧供应商：把命令中的 `--model` 改回对应的 `provider/model-id`，`.env` 里的供应商组一直保留。
 - jobs 列表页读取运行快照中的 `agents[].name`、`agents[].model_name`；`run.sh` 会把完整的
   `provider/model-id` 写入快照。
 
 ## 同任务对比三个 harness
 
 ```bash
-JOB_CONFIG=configs/opencode-harness.yaml ./scripts/run.sh
-JOB_CONFIG=configs/pi-harness.yaml       ./scripts/run.sh
-JOB_CONFIG=configs/claude-code-harness.yaml   ./scripts/run.sh
+./scripts/run.sh --bench hello --harness opencode --model go/mimo-v2.6-flash
+./scripts/run.sh --bench hello --harness pi --model go/mimo-v2.6-flash
+./scripts/run.sh --bench hello --harness claude-code --model go/claude-haiku-5-5
 ```
 
-三个配置指向同一个 `tasks/hello-opencode`。OpenCode 和 pi 使用
-`model: go/mimo-v2.6-flash`，Claude Code 使用 `model: go/claude-haiku-5-5`；
+三个命令指向同一个 `hello` bench。OpenCode 和 pi 使用
+`--model go/mimo-v2.6-flash`，Claude Code 使用 `--model go/claude-haiku-5-5`；
 三个模型值都在 `.env` 的 go 组，协议限制见上节。
-每个 `jobs/<时间戳>/` 目录里可对比：
+每个 `jobs/<job-name>/` 目录里可对比：
 
 | 对比项 | 位置 |
 | --- | --- |
@@ -198,7 +216,7 @@ JOB_CONFIG=configs/claude-code-harness.yaml   ./scripts/run.sh
 
 `agent_execution` 的波动来自模型网关延迟，与环境无关。
 
-结果目录 `jobs/<时间戳>/<trial>/`（每次运行一个时间戳目录）：
+结果目录 `jobs/<job-name>/<trial>/`（默认 job-name 格式为 `YYYY-MM-DD__HH-MM-SS`）：
 
 | 文件 | 内容 |
 | --- | --- |

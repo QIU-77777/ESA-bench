@@ -1,0 +1,7 @@
+id: go/claude-haiku-5-5
+provider: go
+protocols:
+  anthropic:
+    model_id_env: GO_ANTHROPIC_MODEL_ID
+    base_url_env: GO_ANTHROPIC_BASE_URL
+api_key_env: GO_API_KEY

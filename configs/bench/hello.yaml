@@ -1,0 +1,4 @@
+id: hello
+
+tasks:
+  - path: tasks/hello-opencode

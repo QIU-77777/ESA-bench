@@ -1,0 +1,5 @@
+id: opencode
+name: OpenCode
+protocol: openai
+import_path: harbor_test_agents:MountedOpenCode
+manifest: harness/opencode/manifest.yaml

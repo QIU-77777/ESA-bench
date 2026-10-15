@@ -1,0 +1,5 @@
+# Shared defaults for local benchmark collections.
+n_attempts: 1
+n_concurrent_trials: 4
+timeout_multiplier: 1.0
+jobs_dir: jobs

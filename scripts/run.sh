@@ -6,11 +6,10 @@
 # harness/<name>/manifest.yaml, and the job's image mount must match it.
 #
 # Usage:
-#   scripts/run.sh                    # preflight + run configs/opencode-harness.yaml
-#   scripts/run.sh --dry-run          # preflight + print the plan, run nothing
-#   AUTO_BUILD_HARNESS=1 scripts/run.sh   # build the harness image if missing
-#   JOB_CONFIG=configs/pi-harness.yaml scripts/run.sh
-#   JOB_CONFIG=configs/other.yaml scripts/run.sh
+#   scripts/run.sh --bench hello --harness pi --model deepseek/deepseek-flash
+#   scripts/run.sh --bench hello --harness pi --model deepseek/deepseek-flash --dry-run
+#   scripts/run.sh --job deepseek-pi-hello
+#   AUTO_BUILD_HARNESS=1 scripts/run.sh --job deepseek-pi-hello
 #
 # Model connection comes from .env (one <PREFIX>_* group per provider, api
 # keys included), selected by the job config's `model: provider/model-id`:
@@ -22,19 +21,89 @@ set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 DRY_RUN=0
-if [ "${1:-}" = "--dry-run" ]; then
-    DRY_RUN=1
-elif [ -n "${1:-}" ]; then
-    echo "Usage: scripts/run.sh [--dry-run]" >&2
-    exit 1
-fi
+BENCH_SLUG=""
+HARNESS_SLUG=""
+MODEL_SLUG=""
+JOB_SLUG=""
+JOB_CONFIG="${JOB_CONFIG:-}"
+JOB_NAME="${JOB_NAME:-$(date '+%Y-%m-%d__%H-%M-%S')}"
+
+usage() {
+    cat <<'EOF'
+Usage:
+  scripts/run.sh --bench <bench> --harness <harness> --model <provider/model-id> [options]
+  scripts/run.sh --job <job-slug> [options]
+
+Options:
+  --dry-run       Validate and print the resolved plan, then exit
+  --job-name      Harbor result directory name
+  --help          Show this help
+
+Examples:
+  scripts/run.sh --bench hello --harness pi --model deepseek/deepseek-flash
+  scripts/run.sh --job deepseek-pi-hello --dry-run
+EOF
+}
+
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --bench) [ "$#" -ge 2 ] || { echo "ERROR: --bench needs a value" >&2; exit 1; }; BENCH_SLUG="$2"; shift 2 ;;
+        --harness) [ "$#" -ge 2 ] || { echo "ERROR: --harness needs a value" >&2; exit 1; }; HARNESS_SLUG="$2"; shift 2 ;;
+        --model) [ "$#" -ge 2 ] || { echo "ERROR: --model needs a value" >&2; exit 1; }; MODEL_SLUG="$2"; shift 2 ;;
+        --job) [ "$#" -ge 2 ] || { echo "ERROR: --job needs a value" >&2; exit 1; }; JOB_SLUG="$2"; shift 2 ;;
+        --job-name) [ "$#" -ge 2 ] || { echo "ERROR: --job-name needs a value" >&2; exit 1; }; JOB_NAME="$2"; shift 2 ;;
+        --dry-run) DRY_RUN=1; shift ;;
+        --help|-h) usage; exit 0 ;;
+        *) echo "ERROR: unknown argument: $1" >&2; usage >&2; exit 1 ;;
+    esac
+done
+
+case "$JOB_NAME" in
+    ''|*:*|*/*) fail "--job-name cannot contain ':' or '/' because Docker bind mounts use the job path." ;;
+esac
 
 PY=".venv/bin/python"
 [ -x "$PY" ] || { echo "ERROR: $PY not found — create the venv first (see README)." >&2; exit 1; }
-JOB_CONFIG="${JOB_CONFIG:-configs/opencode-harness.yaml}"
-[ -f "$JOB_CONFIG" ] || { echo "ERROR: job config not found: $JOB_CONFIG" >&2; exit 1; }
-
+[ -f .env ] || { echo "ERROR: .env not found (copy .env.example and fill the keys)." >&2; exit 1; }
 fail() { echo "ERROR: $*" >&2; exit 1; }
+set -a
+source .env
+set +a
+
+if [ -n "$JOB_SLUG" ]; then
+    [ -z "$JOB_CONFIG" ] || fail "do not combine --job with JOB_CONFIG"
+    JOB_SOURCE_CONFIG="configs/jobs/${JOB_SLUG}.yaml"
+    [ -f "$JOB_SOURCE_CONFIG" ] || { echo "ERROR: job config not found: $JOB_SOURCE_CONFIG" >&2; exit 1; }
+    _job_select="$($PY - "$JOB_SOURCE_CONFIG" <<'PY'
+import shlex
+import sys
+import yaml
+c = yaml.safe_load(open(sys.argv[1])) or {}
+for key in ("bench", "harness", "model"):
+    print(f"{key.upper()}_SLUG={shlex.quote(str(c.get(key) or ''))}")
+PY
+)" || exit $?
+    eval "$_job_select"
+elif [ -n "$BENCH_SLUG$HARNESS_SLUG$MODEL_SLUG" ]; then
+    [ -n "$BENCH_SLUG" ] || fail "--bench is required when using manual selection"
+    [ -n "$HARNESS_SLUG" ] || fail "--harness is required when using manual selection"
+    [ -n "$MODEL_SLUG" ] || fail "--model is required when using manual selection"
+else
+    BENCH_SLUG="hello"
+    HARNESS_SLUG="opencode"
+    MODEL_SLUG="go/mimo-v2.6-flash"
+fi
+
+JOB_CONFIG="$(mktemp "${TMPDIR:-/tmp}/harbor-test-source.XXXXXX")"
+trap 'rm -f "$JOB_CONFIG"' EXIT
+RENDER_ARGS=(
+    --bench "$BENCH_SLUG"
+    --harness "$HARNESS_SLUG"
+    --model "$MODEL_SLUG"
+    --output "$JOB_CONFIG"
+)
+[ -n "${JOB_SOURCE_CONFIG:-}" ] && RENDER_ARGS+=(--job-config "$JOB_SOURCE_CONFIG")
+"$PY" scripts/render-job.py "${RENDER_ARGS[@]}"
 
 # ── 1) Combination declaration + .env group mapping ─────────────────────
 # run.sh reads both keys; harbor's JobConfig drops them (they are not
@@ -251,6 +320,7 @@ done
 # ── 7) Dry run: report the resolved plan, run nothing ──────────────────
 if [ "$DRY_RUN" = "1" ]; then
     echo "Preflight OK. Resolved plan:"
+    echo "  job name   : $JOB_NAME"
     echo "  job config : $JOB_CONFIG"
     echo "  model      : $MODEL_SLUG  (.env ${_prefix}_* group)"
     echo "  tasks      : $JOB_DATASETS"
@@ -258,7 +328,7 @@ if [ "$DRY_RUN" = "1" ]; then
     echo "  harness    : $HARNESS_IMAGE  (v$HARNESS_VERSION, read-only mount at $HARNESS_MOUNT_PATH)"
     echo "  gateway    : $GATEWAY_URL  (${_prefix}_API_KEY ending ${API_KEY: -4})"
     echo "  docker api : $_server_api"
-    PYTHONPATH="$PWD" .venv/bin/harbor run -c "$RUNTIME_JOB_CONFIG" --print-config >/dev/null 2>&1 \
+    PYTHONPATH="$PWD" .venv/bin/harbor run -c "$RUNTIME_JOB_CONFIG" --job-name "$JOB_NAME" --print-config >/dev/null 2>&1 \
         && echo "  harbor     : config accepted (schema + agent import path)" \
         || fail "harbor rejected the job config; run manually:
   PYTHONPATH=\$PWD .venv/bin/harbor run -c $JOB_CONFIG --print-config"
@@ -270,7 +340,7 @@ fi
 # and $OPENAI_BASE_URL reads); harbor resolves the endpoint names host-side
 # from the exported environment. The key enters under both protocol names;
 # each harness reads the one its protocol expects.
-PYTHONPATH="$PWD" .venv/bin/harbor run -c "$RUNTIME_JOB_CONFIG" \
+PYTHONPATH="$PWD" .venv/bin/harbor run -c "$RUNTIME_JOB_CONFIG" --job-name "$JOB_NAME" \
     --agent-env "${_prefix}_BASE_URL=${GATEWAY_URL}" \
     --agent-env "${_prefix}_API_KEY=${API_KEY}" \
     --agent-env "OPENAI_API_KEY=${API_KEY:-}" \
