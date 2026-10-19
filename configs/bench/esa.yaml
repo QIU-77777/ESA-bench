@@ -1,0 +1,8 @@
+id: esa
+
+tasks:
+  - path: tasks/esa-sc-a1
+  - path: tasks/esa-sc-b1
+  - path: tasks/esa-sc-a3
+  - path: tasks/esa-sc-a4
+  - path: tasks/esa-sc-c3

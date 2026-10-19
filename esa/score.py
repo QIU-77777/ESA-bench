@@ -24,7 +24,7 @@ from typing import Any
 
 AGENT_DIR = Path("/logs/agent")
 VERIFIER_DIR = Path("/logs/verifier")
-RUBRIC_PATH = Path("/opt/cockpit/rubric.json")
+RUBRIC_PATH = Path("/opt/esa/rubric.json")
 
 TOOL_CALLS_PATH = AGENT_DIR / "tool-calls.json"
 REPLY_PATH = AGENT_DIR / "reply.txt"

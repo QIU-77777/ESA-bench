@@ -1,0 +1,5 @@
+id: esa
+name: ESA
+protocol: openai
+import_path: esa.esa_agent:ESAAgent
+kwargs: {}

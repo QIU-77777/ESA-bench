@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// 座舱评测驱动：在 Harbor 任务容器内建立 mock 会话，驱动 agent-runtime 跑完一轮对话，
-// 把事件流、工具调用记录与答复落到一个 JSON 文件，供 Harbor 侧构造轨迹与判分。
+// ESA 评测驱动：在 Harbor 任务容器内建立 mock 会话，驱动 agent-runtime 跑完一轮对话，
+// 把每次迭代的推理、工具调用、工具结果与用量落到一个 JSON 文件，供 Harbor 侧构造轨迹与判分。
 //
 // 只使用 Node 22 内置的 fetch 与 WebSocket，不需要安装任何依赖。
 //
@@ -18,7 +18,7 @@
 //   turnTimeoutSec  单轮超时，缺省 240
 //   outputPath      输出 JSON 路径
 
-import { writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import process from "node:process";
 
 function parseArgs(argv) {
@@ -38,8 +38,7 @@ function nowIso() {
 }
 
 function log(event, detail) {
-  const line = JSON.stringify({ ts: nowIso(), event, ...detail });
-  process.stdout.write(line + "\n");
+  process.stdout.write(JSON.stringify({ ts: nowIso(), event, ...detail }) + "\n");
 }
 
 async function httpJson(url, { method = "GET", body } = {}) {
@@ -66,7 +65,7 @@ async function createMockSession(config) {
   if (!sessionId) {
     throw new Error("mock-system 未返回 session_id: " + JSON.stringify(created).slice(0, 300));
   }
-  log("mock_session_created", { sessionId, mcpPath: created.mcp_path });
+  log("mock_session_created", { sessionId });
   return sessionId;
 }
 
@@ -83,74 +82,171 @@ async function fetchToolEvents(config, sessionId) {
   }
 }
 
-// 把收集到的事件整理成可读的对话轮次。
-function summarize(events) {
-  const assistantText = [];
-  const reasoning = [];
-  const toolCalls = [];
-  const toolResults = new Map();
-  const inFlight = new Map();
+function itemText(item) {
+  const parts = [];
+  for (const part of item?.content ?? []) {
+    if (part?.text) parts.push(part.text);
+  }
+  if (Array.isArray(item?.text)) {
+    for (const line of item.text) if (line) parts.push(line);
+  }
+  return parts.join("");
+}
+
+function pickUsage(step) {
+  const keys = ["input_tokens", "output_tokens", "cached_tokens", "reasoning_tokens", "total_tokens"];
+  const usage = {};
+  for (const key of keys) {
+    const camel = key.replace(/_(.)/g, (_, c) => c.toUpperCase());
+    const value = step[camel] ?? step[key];
+    if (typeof value === "number") usage[key] = value;
+  }
+  return Object.keys(usage).length > 0 ? usage : null;
+}
+
+// 把事件流切成 ReAct 的每次迭代。
+//
+// 事件顺序固定：一次迭代的推理与工具调用项先到，随后是标记该次迭代结束的
+// model_call 轨迹步骤，再是该次迭代的工具结果项。工具调用项与工具结果项用的是
+// 两套编号（前者来自服务端，后者来自上游），按出现顺序配对。
+function collectIterations(events) {
+  const iterations = [];
+  const errors = [];
   let turnId = null;
   let turnStatus = null;
-  const errors = [];
+
+  let reasoning = new Map();
+  let messages = new Map();
+  let toolCalls = [];
+  const awaitingOutput = [];
+  const awaitingStep = [];
 
   for (const event of events) {
+    const params = event?.params ?? {};
     switch (event?.method) {
       case "turn/started":
-        turnId = event.params?.turnId ?? turnId;
+        turnId = params.turnId ?? turnId;
         break;
+
       case "turn/completed":
-        turnId = event.params?.turnId ?? turnId;
-        turnStatus = event.params?.status ?? null;
+        turnId = params.turn?.id ?? params.turnId ?? turnId;
+        turnStatus = params.turn?.status ?? params.status ?? null;
         break;
-      case "item/started": {
-        const item = event.params?.item;
-        if (!item) break;
-        if (item.kind === "toolCall" || item.kind === "tool_call" || item.kind === "function_call") {
-          inFlight.set(item.id ?? item.call_id, item);
-        }
+
+      case "item/reasoning/delta":
+        reasoning.set(params.itemId, (reasoning.get(params.itemId) ?? "") + (params.delta ?? ""));
         break;
-      }
+
+      case "item/agentMessage/delta":
+        messages.set(params.itemId, (messages.get(params.itemId) ?? "") + (params.delta ?? ""));
+        break;
+
       case "item/completed": {
-        const item = event.params?.item;
+        const item = params.item;
         if (!item) break;
-        if (item.kind === "agentMessage" || (item.kind === "message" && item.role === "assistant")) {
-          for (const part of item.content ?? []) {
-            if (part?.text) assistantText.push(part.text);
-          }
-        } else if (item.kind === "toolCall" || item.kind === "tool_call" || item.kind === "function_call") {
-          toolCalls.push({
+        if (item.kind === "reasoning") {
+          const text = itemText(item);
+          if (text) reasoning.set(item.id, text);
+        } else if (item.kind === "agentMessage") {
+          const text = itemText(item);
+          if (text) messages.set(item.id, text);
+        } else if (item.kind === "toolCall") {
+          const call = {
             callId: item.call_id ?? item.id ?? null,
             name: item.name ?? null,
             arguments: item.arguments ?? null,
             output: null,
+            outputChars: null,
             status: item.status ?? null,
-          });
+            latencyMs: null,
+            overrideHit: null,
+          };
+          toolCalls.push(call);
+          awaitingOutput.push(call);
+          awaitingStep.push(call);
         } else if (item.kind === "toolResult") {
-          toolResults.set(item.call_id ?? item.id ?? null, item.output ?? null);
-        } else if (item.kind === "reasoning") {
-          for (const line of item.text ?? []) {
-            if (line) reasoning.push(line);
+          const target = awaitingOutput.shift();
+          if (target) {
+            target.output = item.output ?? null;
+            target.upstreamCallId = item.call_id ?? null;
           }
         }
         break;
       }
-      case "error":
-        errors.push(event.params ?? {});
+
+      case "rollout/trajectoryStep": {
+        const step = params.step ?? {};
+        if (step.kind === "model_call") {
+          iterations.push({
+            iteration: step.iteration ?? iterations.length + 1,
+            receivedAt: event.receivedAt ?? null,
+            reasoning: [...reasoning.values()].join("\n").trim(),
+            message: [...messages.values()].join("").trim(),
+            toolCalls,
+            latencyMs: step.latencyMs ?? null,
+            responseId: step.responseId ?? null,
+            traceId: step.traceId ?? null,
+            chatId: step.chatId ?? null,
+            modelCallId: step.modelCallId ?? null,
+            status: step.status ?? null,
+            fallback: step.fallback ?? false,
+            usage: pickUsage(step),
+          });
+          reasoning = new Map();
+          messages = new Map();
+          toolCalls = [];
+        } else if (step.kind === "tool_call") {
+          const target = awaitingStep.shift();
+          if (target) {
+            target.latencyMs = step.latencyMs ?? null;
+            target.status = step.status ?? target.status;
+            target.outputChars = step.outputChars ?? null;
+            if (target.output === null && step.observationSummary) {
+              target.output = step.observationSummary;
+            }
+          }
+        }
         break;
+      }
+
+      case "error":
+        errors.push(params);
+        break;
+
+      case "transport/error":
+      case "driver/timeout":
+        errors.push({ method: event.method, ...params });
+        break;
+
       default:
         break;
     }
   }
 
-  // 工具结果单独下发，按调用编号回填到对应的调用记录上。
-  for (const call of toolCalls) {
-    if (call.callId && toolResults.has(call.callId)) {
-      call.output = toolResults.get(call.callId);
-    }
+  // 末次迭代没有工具调用时，收尾的推理与回复仍要成为一步。
+  if (reasoning.size > 0 || messages.size > 0 || toolCalls.length > 0) {
+    iterations.push({
+      iteration: iterations.length + 1,
+      receivedAt: null,
+      reasoning: [...reasoning.values()].join("\n").trim(),
+      message: [...messages.values()].join("").trim(),
+      toolCalls,
+      latencyMs: null,
+      responseId: null,
+      traceId: null,
+      chatId: null,
+      modelCallId: null,
+      status: null,
+      fallback: false,
+      usage: null,
+    });
   }
 
-  return { assistantText: assistantText.join("\n"), reasoning, toolCalls, turnId, turnStatus, errors };
+  const flatCalls = iterations.flatMap((it) => it.toolCalls);
+  const reply = iterations.map((it) => it.message).filter(Boolean).join("\n");
+  const allReasoning = iterations.map((it) => it.reasoning).filter(Boolean);
+
+  return { iterations, toolCalls: flatCalls, reply, reasoning: allReasoning, turnId, turnStatus, errors };
 }
 
 async function runTurn(config, sessionId) {
@@ -190,17 +286,18 @@ async function runTurn(config, sessionId) {
       return;
     }
     if (frame.method) {
+      frame.receivedAt = nowIso();
       events.push(frame);
-      if (frame.method === "turn/completed") {
-        settle();
-      } else if (frame.method === "error") {
-        // 通知型 error 不终止本轮，交由 turn/completed 收尾；保留事件供判分。
-      }
+      if (frame.method === "turn/completed") settle();
     }
   });
 
   socket.addEventListener("error", (event) => {
-    events.push({ method: "transport/error", params: { message: String(event?.message ?? event) } });
+    events.push({
+      method: "transport/error",
+      receivedAt: nowIso(),
+      params: { message: String(event?.message ?? event) },
+    });
     settle();
   });
 
@@ -212,7 +309,7 @@ async function runTurn(config, sessionId) {
   // agent 载荷整体替换 catalog 里的定义：指令与模型参数取自 configs/config.toml，
   // 工具清单换成评测暴露集合，避免声明未注册的工具导致建会话失败。
   const agentPayload = config.agentPayloadPath
-    ? JSON.parse((await import("node:fs")).readFileSync(config.agentPayloadPath, "utf8"))
+    ? JSON.parse(readFileSync(config.agentPayloadPath, "utf8"))
     : undefined;
 
   await send("initialize", {
@@ -248,7 +345,11 @@ async function runTurn(config, sessionId) {
     new Promise((resolve) => setTimeout(() => resolve(true), Math.max(1000, deadline - Date.now()))),
   ]);
   if (timedOut) {
-    events.push({ method: "driver/timeout", params: { timeoutSec: config.turnTimeoutSec ?? 240 } });
+    events.push({
+      method: "driver/timeout",
+      receivedAt: nowIso(),
+      params: { timeoutSec: config.turnTimeoutSec ?? 240 },
+    });
     log("turn_timeout", { sessionId });
   }
 
@@ -266,7 +367,6 @@ async function main() {
   if (!args.config) {
     throw new Error("缺少 --config 参数");
   }
-  const { readFileSync } = await import("node:fs");
   const config = JSON.parse(readFileSync(args.config, "utf8"));
   config.mockSystemUrl = (config.mockSystemUrl ?? "http://mock-system:8003").replace(/\/$/, "");
   config.agentApiUrl = (config.agentApiUrl ?? "http://agent-api:8080").replace(/\/$/, "");
@@ -277,7 +377,16 @@ async function main() {
   const sessionId = await createMockSession(config);
   const { events, threadId } = await runTurn(config, sessionId);
   const toolEvents = await fetchToolEvents(config, sessionId);
-  const summary = summarize(events);
+  const summary = collectIterations(events);
+
+  // 旁路记录带着预设命中标记，按出现顺序回填到工具调用上。
+  const overrides = toolEvents.filter((e) => e?.kind === "tool_call");
+  summary.toolCalls.forEach((call, index) => {
+    const event = overrides[index];
+    if (event && event.tool === call.name) {
+      call.overrideHit = event.override_hit ?? null;
+    }
+  });
 
   const result = {
     caseId: config.caseId ?? null,
@@ -286,10 +395,11 @@ async function main() {
     startedAt,
     finishedAt: nowIso(),
     instruction: config.instruction,
-    reply: summary.assistantText,
+    reply: summary.reply,
     reasoning: summary.reasoning,
     turnId: summary.turnId,
     turnStatus: summary.turnStatus,
+    iterations: summary.iterations,
     toolCalls: summary.toolCalls,
     toolEvents,
     errors: summary.errors,
@@ -300,8 +410,10 @@ async function main() {
   writeFileSync(outputPath, JSON.stringify(result, null, 2), "utf8");
   log("driver_done", {
     outputPath,
-    replyChars: summary.assistantText.length,
+    iterations: summary.iterations.length,
+    replyChars: summary.reply.length,
     toolCalls: summary.toolCalls.length,
+    toolOutputs: summary.toolCalls.filter((c) => c.output !== null).length,
     toolEvents: toolEvents.length,
   });
 }

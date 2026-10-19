@@ -53,7 +53,7 @@ def main() -> None:
     parser.add_argument("--config", required=True)
     parser.add_argument("--output", required=True)
     parser.add_argument("--agent", default=BASE_AGENT)
-    parser.add_argument("--agent-id", default="cockpit_eval")
+    parser.add_argument("--agent-id", default="esa_eval")
     parser.add_argument("--model", default=None, help="覆盖模型名，缺省沿用配置里的 model_id")
     args = parser.parse_args()
 
@@ -69,8 +69,8 @@ def main() -> None:
         react["model"] = model
 
     # 上游网关按响应编号续接上下文时不回带历史，模型只能看到工具结果的文本，
-    # 会把结果当成用户新发来的消息。关掉续接改为每次回放完整历史。
-    react["store_responses"] = False
+    # 会把结果当成用户新发来的消息。改为每次请求回放完整历史。
+    react["context_continuity"] = "replay"
 
     declared = sorted(react.get("tools", {}))
     dropped = [name for name in declared if name not in EXPOSED]
