@@ -1,0 +1,134 @@
+{
+  "case_id": "SC-B1",
+  "instruction": "导航去上次那个地方",
+  "context": {
+    "device": {
+      "vin": "ESABENCH000000001",
+      "brand": "广汽",
+      "oem": "GAC",
+      "vehicle_name": "评测车",
+      "vehicle_type": "ESA-EVAL"
+    },
+    "poi_defaults": {
+      "business_hours_options": [
+        "营业中",
+        "24小时营业"
+      ]
+    },
+    "datetime": {
+      "mode": "fixed",
+      "date": "2026-10-19",
+      "weekday": "星期一",
+      "time": "19:10",
+      "timezone": "Asia/Shanghai"
+    },
+    "location": {
+      "latitude": 31.2304,
+      "longitude": 121.4737,
+      "address": "上海市黄浦区南京东路",
+      "city": "上海市",
+      "district": "黄浦区"
+    },
+    "vehicle": {
+      "gear": "D",
+      "speed": 32,
+      "window": {
+        "front_left": 0,
+        "front_right": 0,
+        "rear_left": 0,
+        "rear_right": 0
+      },
+      "door": {
+        "front_left": false,
+        "front_right": false,
+        "rear_left": false,
+        "rear_right": false,
+        "tailgate": false
+      },
+      "remaining_battery": 64,
+      "remaining_range": 330
+    },
+    "navigation": {
+      "active": false,
+      "waypoints": [],
+      "total_distance_km": 0,
+      "total_time_min": 0,
+      "tolls_yuan": 0,
+      "traffic_lights": 0
+    },
+    "user_addresses": {
+      "home": {
+        "name": "家",
+        "address": "上海市徐汇区龙华街道汇贤居小区",
+        "latitude": 31.21,
+        "longitude": 121.445,
+        "poi_id": "100001"
+      },
+      "company": {
+        "name": "公司",
+        "address": "上海市徐汇区科技园 A 座",
+        "latitude": 31.19,
+        "longitude": 121.42,
+        "poi_id": "200001"
+      }
+    },
+    "navi_history": [
+      {
+        "poi_id": "300001",
+        "name": "浦东国际机场 T2 航站楼",
+        "longitude": 121.805,
+        "latitude": 31.152
+      },
+      {
+        "poi_id": "300002",
+        "name": "市第一医院",
+        "longitude": 121.481,
+        "latitude": 31.239
+      },
+      {
+        "poi_id": "300003",
+        "name": "万象城川菜馆",
+        "longitude": 121.4455,
+        "latitude": 31.221
+      }
+    ],
+    "memories": [
+      {
+        "content": "2026-10-16 到访过 浦东国际机场 T2 航站楼（3 天前）",
+        "poi": {
+          "poi_id": "300001",
+          "name": "浦东国际机场 T2 航站楼",
+          "longitude": 121.805,
+          "latitude": 31.152
+        }
+      },
+      {
+        "content": "2026-10-14 到访过 市第一医院（5 天前）",
+        "poi": {
+          "poi_id": "300002",
+          "name": "市第一医院",
+          "longitude": 121.481,
+          "latitude": 31.239
+        }
+      },
+      {
+        "content": "2026-10-18 到访过 万象城川菜馆（昨天）",
+        "poi": {
+          "poi_id": "300003",
+          "name": "万象城川菜馆",
+          "longitude": 121.4455,
+          "latitude": 31.221
+        }
+      }
+    ],
+    "tool_overrides": {
+      "search_memory": {
+        "text": "检索到近 7 天的到访记录：\n1. 300003:万象城川菜馆:121.445500,31.221000（昨天 2026-10-18 到访）\n2. 300001:浦东国际机场 T2 航站楼:121.805000,31.152000（3 天前 2026-10-16 到访）\n3. 300002:市第一医院:121.481000,31.239000（5 天前 2026-10-14 到访）"
+      },
+      "start_navi": {
+        "text": "未确认目的地，导航未启动。",
+        "is_error": true
+      }
+    }
+  }
+}

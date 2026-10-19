@@ -1,0 +1,71 @@
+{
+  "case_id": "SC-A3",
+  "dimension": "M1 任务完成度",
+  "weights": {
+    "tool_use": 0.4,
+    "reply": 0.3,
+    "judge": 0.3
+  },
+  "tool_checks": [
+    {
+      "id": "search_station",
+      "description": "调用 search_charging_station 检索充电站",
+      "any_tool": [
+        "search_charging_station"
+      ],
+      "required": true
+    },
+    {
+      "id": "start_navi",
+      "description": "调用 start_navi 启动导航",
+      "any_tool": [
+        "start_navi"
+      ],
+      "required": true
+    },
+    {
+      "id": "pick_nearest_valid",
+      "description": "所选站点是宜山路快充站（400003）",
+      "tool": "start_navi",
+      "arguments_contain": [
+        "400003"
+      ],
+      "required": true
+    }
+  ],
+  "tool_forbidden": [
+    {
+      "id": "no_slow_charger",
+      "description": "未选择慢充站点",
+      "tool": "start_navi",
+      "arguments_contain_any": [
+        "400001",
+        "400005"
+      ]
+    },
+    {
+      "id": "no_unavailable",
+      "description": "未选择检修中的站点",
+      "tool": "start_navi",
+      "arguments_contain_any": [
+        "400002"
+      ]
+    }
+  ],
+  "reply_checks": [
+    {
+      "id": "has_station_name",
+      "description": "回复包含站点名称",
+      "pattern": "宜山路快充站"
+    },
+    {
+      "id": "has_distance",
+      "description": "回复包含距离",
+      "pattern": "\\d+(\\.\\d+)?\\s*(公里|km|千米|米)"
+    }
+  ],
+  "judge_criteria": [
+    "说明筛选条件是快充且可用，并解释了为什么跳过更近的检修站点和慢充站点",
+    "直接启动了导航，没有停下来反问用户是否前往"
+  ]
+}

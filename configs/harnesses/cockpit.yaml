@@ -1,0 +1,5 @@
+id: cockpit
+name: Cockpit
+protocol: openai
+import_path: esa.cockpit_agent:CockpitAgent
+kwargs: {}

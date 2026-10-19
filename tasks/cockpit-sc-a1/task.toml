@@ -1,0 +1,40 @@
+schema_version = "1.4"
+artifacts = []
+
+[task]
+name = "esa/cockpit-sc-a1"
+version = "1.0.0"
+
+[agent]
+timeout_sec = 900.0
+
+[verifier]
+timeout_sec = 300.0
+collect = []
+
+[verifier.env]
+JUDGE_API_BASE_URL = "${STEPFUN_OPENAI_BASE_URL:-}"
+JUDGE_API_KEY = "${STEPFUN_API_KEY:-}"
+JUDGE_MODEL_ID = "${STEPFUN_JUDGE_MODEL_ID:-step-3.5-flash}"
+
+[environment]
+network_mode = "public"
+build_timeout_sec = 600.0
+os = "linux"
+mcp_servers = []
+
+[environment.env]
+COCKPIT_CASE_ID = "SC-A1"
+COCKPIT_MOCK_URL = "http://mock-system:8003"
+COCKPIT_AGENT_API_URL = "http://agent-api:8080"
+COCKPIT_EVAL_PREFIX = "/eval"
+COCKPIT_TURN_TIMEOUT_SEC = "240"
+
+[environment.healthcheck]
+command = "curl -sf http://mock-system:8003/health && curl -sf http://agent-api:8080/v1/health"
+interval_sec = 5.0
+timeout_sec = 10.0
+start_period_sec = 10.0
+retries = 12
+
+[solution.env]

@@ -1,0 +1,7 @@
+id: stepfun/step-3.7-flash
+provider: stepfun
+protocols:
+  openai:
+    model_id_env: STEPFUN_FLASH_OPENAI_MODEL_ID
+    base_url_env: STEPFUN_OPENAI_BASE_URL
+api_key_env: STEPFUN_API_KEY

@@ -1,0 +1,99 @@
+{
+  "case_id": "SC-C3",
+  "instruction": "帮我看看明天回老家全程会不会堵车",
+  "context": {
+    "device": {
+      "vin": "ESABENCH000000001",
+      "brand": "广汽",
+      "oem": "GAC",
+      "vehicle_name": "评测车",
+      "vehicle_type": "ESA-EVAL"
+    },
+    "poi_defaults": {
+      "business_hours_options": [
+        "营业中",
+        "24小时营业"
+      ]
+    },
+    "datetime": {
+      "mode": "fixed",
+      "date": "2026-10-19",
+      "weekday": "星期一",
+      "time": "21:15",
+      "timezone": "Asia/Shanghai"
+    },
+    "location": {
+      "latitude": 31.21,
+      "longitude": 121.445,
+      "address": "上海市徐汇区龙华街道汇贤居小区",
+      "city": "上海市",
+      "district": "徐汇区"
+    },
+    "vehicle": {
+      "gear": "P",
+      "speed": 0,
+      "window": {
+        "front_left": 0,
+        "front_right": 0,
+        "rear_left": 0,
+        "rear_right": 0
+      },
+      "door": {
+        "front_left": false,
+        "front_right": false,
+        "rear_left": false,
+        "rear_right": false,
+        "tailgate": false
+      },
+      "remaining_battery": 88,
+      "remaining_range": 455
+    },
+    "navigation": {
+      "active": false,
+      "waypoints": [],
+      "total_distance_km": 0,
+      "total_time_min": 0,
+      "tolls_yuan": 0,
+      "traffic_lights": 0
+    },
+    "user_addresses": {
+      "home": {
+        "name": "家",
+        "address": "上海市徐汇区龙华街道汇贤居小区",
+        "latitude": 31.21,
+        "longitude": 121.445,
+        "poi_id": "100001"
+      },
+      "company": {
+        "name": "公司",
+        "address": "上海市徐汇区科技园 A 座",
+        "latitude": 31.19,
+        "longitude": 121.42,
+        "poi_id": "200001"
+      },
+      "favorite": [
+        {
+          "name": "老家",
+          "address": "安徽省黄山市屯溪区新安路 88 号",
+          "latitude": 29.715,
+          "longitude": 118.338,
+          "poi_id": "500001"
+        }
+      ]
+    },
+    "tool_overrides": {
+      "query_traffic_ahead": {
+        "text": "当前路况（实时）：沪昆高速上海段畅通，杭州绕城西线缓行 3 公里。实时路况仅覆盖当前时刻，不提供未来时段的路况预测。"
+      },
+      "estimate_trip_info": {
+        "text": "前往 安徽省黄山市屯溪区新安路 88 号：距离 420 公里，按当前路况预计耗时 5 小时 10 分钟，过路费 195 元。该耗时基于当前时刻路况推算，不代表明天的实际情况。"
+      },
+      "start_navi": {
+        "text": "已开始导航前往 500001:老家:118.338000,29.715000，全程 420 公里，按当前路况预计 5 小时 10 分钟，过路费 195 元。"
+      },
+      "search_memory": {
+        "text": "检索到收藏点：500001:老家:安徽省黄山市屯溪区新安路 88 号:118.338000,29.715000（距当前位置 420 公里）。"
+      }
+    }
+  }
+}

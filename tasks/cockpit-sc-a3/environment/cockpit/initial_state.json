@@ -1,0 +1,84 @@
+{
+  "case_id": "SC-A3",
+  "instruction": "找一下附近能用的快充桩，挑最近的去",
+  "context": {
+    "device": {
+      "vin": "ESABENCH000000001",
+      "brand": "广汽",
+      "oem": "GAC",
+      "vehicle_name": "评测车",
+      "vehicle_type": "ESA-EVAL"
+    },
+    "poi_defaults": {
+      "business_hours_options": [
+        "营业中",
+        "24小时营业"
+      ]
+    },
+    "datetime": {
+      "mode": "fixed",
+      "date": "2026-10-19",
+      "weekday": "星期一",
+      "time": "14:05",
+      "timezone": "Asia/Shanghai"
+    },
+    "location": {
+      "latitude": 31.22,
+      "longitude": 121.45,
+      "address": "上海市徐汇区中山西路",
+      "city": "上海市",
+      "district": "徐汇区"
+    },
+    "vehicle": {
+      "gear": "D",
+      "speed": 45,
+      "window": {
+        "front_left": 0,
+        "front_right": 0,
+        "rear_left": 0,
+        "rear_right": 0
+      },
+      "door": {
+        "front_left": false,
+        "front_right": false,
+        "rear_left": false,
+        "rear_right": false,
+        "tailgate": false
+      },
+      "remaining_battery": 35,
+      "remaining_range": 128
+    },
+    "navigation": {
+      "active": false,
+      "waypoints": [],
+      "total_distance_km": 0,
+      "total_time_min": 0,
+      "tolls_yuan": 0,
+      "traffic_lights": 0
+    },
+    "user_addresses": {
+      "home": {
+        "name": "家",
+        "address": "上海市徐汇区龙华街道汇贤居小区",
+        "latitude": 31.21,
+        "longitude": 121.445,
+        "poi_id": "100001"
+      },
+      "company": {
+        "name": "公司",
+        "address": "上海市徐汇区科技园 A 座",
+        "latitude": 31.19,
+        "longitude": 121.42,
+        "poi_id": "200001"
+      }
+    },
+    "tool_overrides": {
+      "search_charging_station": {
+        "text": "附近 5 公里内的充电站：\n1. 400001:中山西路慢充站:121.451000,31.221000，距离 0.6 公里，仅慢充（7kW），空闲 4 个，营业中\n2. 400002:虹桥路快充站:121.447000,31.218000，距离 0.9 公里，快充（120kW），设备检修中，暂停服务\n3. 400003:宜山路快充站:121.443000,31.215000，距离 1.8 公里，快充（180kW），空闲 3 个，营业中\n4. 400004:漕溪北路快充站:121.438000,31.209000，距离 3.2 公里，快充（120kW），空闲 1 个，营业中\n5. 400005:桂林路慢充站:121.420000,31.200000，距离 4.6 公里，仅慢充（7kW），空闲 8 个，营业中"
+      },
+      "start_navi": {
+        "text": "已开始导航前往 400003:宜山路快充站:121.443000,31.215000，全程 1.8 公里，预计 6 分钟。"
+      }
+    }
+  }
+}

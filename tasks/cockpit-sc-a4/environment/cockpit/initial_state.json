@@ -1,0 +1,87 @@
+{
+  "case_id": "SC-A4",
+  "instruction": "放一首周杰伦的《晴天》",
+  "context": {
+    "device": {
+      "vin": "ESABENCH000000001",
+      "brand": "广汽",
+      "oem": "GAC",
+      "vehicle_name": "评测车",
+      "vehicle_type": "ESA-EVAL"
+    },
+    "poi_defaults": {
+      "business_hours_options": [
+        "营业中",
+        "24小时营业"
+      ]
+    },
+    "datetime": {
+      "mode": "fixed",
+      "date": "2026-10-19",
+      "weekday": "星期一",
+      "time": "20:40",
+      "timezone": "Asia/Shanghai"
+    },
+    "location": {
+      "latitude": 31.21,
+      "longitude": 121.445,
+      "address": "上海市徐汇区龙华街道汇贤居小区",
+      "city": "上海市",
+      "district": "徐汇区"
+    },
+    "vehicle": {
+      "gear": "P",
+      "speed": 0,
+      "window": {
+        "front_left": 0,
+        "front_right": 0,
+        "rear_left": 0,
+        "rear_right": 0
+      },
+      "door": {
+        "front_left": false,
+        "front_right": false,
+        "rear_left": false,
+        "rear_right": false,
+        "tailgate": false
+      },
+      "remaining_battery": 71,
+      "remaining_range": 370
+    },
+    "navigation": {
+      "active": false,
+      "waypoints": [],
+      "total_distance_km": 0,
+      "total_time_min": 0,
+      "tolls_yuan": 0,
+      "traffic_lights": 0
+    },
+    "user_addresses": {
+      "home": {
+        "name": "家",
+        "address": "上海市徐汇区龙华街道汇贤居小区",
+        "latitude": 31.21,
+        "longitude": 121.445,
+        "poi_id": "100001"
+      },
+      "company": {
+        "name": "公司",
+        "address": "上海市徐汇区科技园 A 座",
+        "latitude": 31.19,
+        "longitude": 121.42,
+        "poi_id": "200001"
+      }
+    },
+    "tool_overrides": {
+      "music_search": {
+        "text": "检索到以下曲目：\n1. 晴天 — 周杰伦，专辑《叶惠美》，2003 年，时长 4:29，song_id=S10001\n2. 晴天 — 群星翻唱，专辑《热门翻唱合集》，2021 年，时长 4:12，song_id=S10002\n3. 晴天(Live) — 周杰伦，专辑《地表最强世界巡回演唱会》，2017 年，时长 5:03，song_id=S10003\n4. 晴天娃娃 — 买辣椒也用券，专辑《晴天娃娃》，2019 年，时长 3:48，song_id=S10004"
+      },
+      "play_playlist": {
+        "text": "正在播放《晴天》（周杰伦，专辑《叶惠美》），当前音量保持 12 不变。"
+      },
+      "get_vehicle_status": {
+        "text": "媒体账号已登录，当前无播放内容，音量 12。"
+      }
+    }
+  }
+}

@@ -1,0 +1,69 @@
+{
+  "case_id": "SC-A1",
+  "dimension": "M1 任务完成度",
+  "weights": {
+    "tool_use": 0.4,
+    "reply": 0.3,
+    "judge": 0.3
+  },
+  "tool_checks": [
+    {
+      "id": "lookup_favorite",
+      "description": "调用 get_favorite_poi 查询常用地址",
+      "any_tool": [
+        "get_favorite_poi",
+        "get_home_or_company_address"
+      ],
+      "required": true
+    },
+    {
+      "id": "start_navi",
+      "description": "调用 start_navi 启动导航",
+      "any_tool": [
+        "start_navi"
+      ],
+      "required": true
+    },
+    {
+      "id": "hit_company_poi",
+      "description": "导航目标是公司本身（200001）",
+      "tool": "start_navi",
+      "arguments_contain": [
+        "200001"
+      ],
+      "required": true
+    }
+  ],
+  "tool_forbidden": [
+    {
+      "id": "no_preference_change",
+      "description": "启动导航前未修改路线偏好",
+      "tool": "set_navi_route_preference"
+    },
+    {
+      "id": "no_wrong_poi",
+      "description": "未导航到同名近似地点",
+      "tool": "start_navi",
+      "arguments_contain_any": [
+        "200002",
+        "200003"
+      ]
+    }
+  ],
+  "reply_checks": [
+    {
+      "id": "has_eta",
+      "description": "回复包含预计时间",
+      "pattern": "\\d+\\s*分钟|\\d+\\s*小时"
+    },
+    {
+      "id": "has_distance",
+      "description": "回复包含里程",
+      "pattern": "\\d+(\\.\\d+)?\\s*(公里|km|千米)"
+    }
+  ],
+  "judge_criteria": [
+    "单轮完成任务，没有向用户追问目的地",
+    "明确说明导航已启动，目的地是已保存的公司地址"
+  ]
+}

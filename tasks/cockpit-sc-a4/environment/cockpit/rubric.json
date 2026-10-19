@@ -1,0 +1,73 @@
+{
+  "case_id": "SC-A4",
+  "dimension": "M1 任务完成度",
+  "weights": {
+    "tool_use": 0.4,
+    "reply": 0.3,
+    "judge": 0.3
+  },
+  "tool_checks": [
+    {
+      "id": "search_music",
+      "description": "调用 music_search 检索曲目",
+      "any_tool": [
+        "music_search"
+      ],
+      "required": true
+    },
+    {
+      "id": "play_song",
+      "description": "调用 play_playlist 播放",
+      "any_tool": [
+        "play_playlist"
+      ],
+      "required": true
+    },
+    {
+      "id": "pick_original",
+      "description": "播放的曲目指定周杰伦原唱版本",
+      "tool": "play_playlist",
+      "arguments_contain": [
+        "周杰伦"
+      ],
+      "required": true
+    }
+  ],
+  "tool_forbidden": [
+    {
+      "id": "no_cover_version",
+      "description": "未把翻唱或同名其他曲目加入播放列表",
+      "tool": "play_playlist",
+      "arguments_contain_any": [
+        "群星",
+        "晴天娃娃",
+        "买辣椒也用券"
+      ]
+    },
+    {
+      "id": "no_volume_change",
+      "description": "未调整音量",
+      "tool": "execute_vehicle_control",
+      "arguments_contain_any": [
+        "音量",
+        "volume"
+      ]
+    }
+  ],
+  "reply_checks": [
+    {
+      "id": "has_song_name",
+      "description": "回复确认歌名",
+      "pattern": "晴天"
+    },
+    {
+      "id": "has_artist",
+      "description": "回复确认歌手",
+      "pattern": "周杰伦"
+    }
+  ],
+  "judge_criteria": [
+    "确认播放的是周杰伦的《晴天》，没有换成翻唱或同名其他歌曲",
+    "没有声称调整过音量或切换过其他歌曲"
+  ]
+}

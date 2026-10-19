@@ -83,21 +83,24 @@ def main() -> int:
     required_env(base_url_env)
     required_env(api_key_env)
 
-    manifest = load_yaml(ROOT / str(harness["manifest"]))
-    environment = {
+    environment: dict[str, Any] = {
         "type": "docker",
         "import_path": "harbor_test_env:HarborTestDockerEnvironment",
         "force_build": True,
         "delete": True,
-        "mounts": [
+    }
+    # 有 manifest 的 harness 以只读镜像挂载方式提供命令行工具；没有 manifest 的
+    # harness 自带实现，不需要挂载。
+    if harness.get("manifest"):
+        manifest = load_yaml(ROOT / str(harness["manifest"]))
+        environment["mounts"] = [
             {
                 "type": "image",
                 "source": f"{manifest['image_repository']}:{manifest['version']}",
                 "target": manifest["mount_path"],
                 "read_only": True,
             }
-        ],
-    }
+        ]
 
     config: dict[str, Any] = {
         "model": args.model,

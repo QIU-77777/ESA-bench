@@ -1,0 +1,8 @@
+id: cockpit
+
+tasks:
+  - path: tasks/cockpit-sc-a1
+  - path: tasks/cockpit-sc-b1
+  - path: tasks/cockpit-sc-a3
+  - path: tasks/cockpit-sc-a4
+  - path: tasks/cockpit-sc-c3

@@ -1,0 +1,49 @@
+{
+  "case_id": "SC-B1",
+  "dimension": "M2 澄清追问合理性",
+  "weights": {
+    "tool_use": 0.3,
+    "reply": 0.3,
+    "judge": 0.4
+  },
+  "tool_checks": [
+    {
+      "id": "lookup_history",
+      "description": "调用 search_memory 检索到访记录",
+      "any_tool": [
+        "search_memory"
+      ],
+      "required": true
+    }
+  ],
+  "tool_forbidden": [
+    {
+      "id": "no_navi_before_confirm",
+      "description": "确认前未启动导航",
+      "tool": "start_navi"
+    },
+    {
+      "id": "no_route_plan",
+      "description": "确认前未规划路线",
+      "tool": "plan_navi_route"
+    }
+  ],
+  "reply_checks": [
+    {
+      "id": "has_candidates",
+      "description": "回复给出至少两个候选地点",
+      "min_matches": 2,
+      "pattern": "万象城川菜馆|浦东国际机场 T2 航站楼|市第一医院"
+    },
+    {
+      "id": "has_visit_time",
+      "description": "候选附带到访时间",
+      "pattern": "昨天|天前|\\d{4}-\\d{2}-\\d{2}"
+    }
+  ],
+  "judge_criteria": [
+    "给出 2 到 4 个候选地点，每个候选都带到访时间",
+    "一轮澄清即可完成，没有反复追问",
+    "没有只反问「去哪个」而不提供候选"
+  ]
+}
