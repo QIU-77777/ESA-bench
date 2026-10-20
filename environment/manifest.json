@@ -1,0 +1,917 @@
+{
+  "environment_version": "1.0.0",
+  "dataset_version": "esa-local-v1",
+  "seed_sha256": "50cca55e5c918b793e6fcca3cb768944169c89237358f7b378ee76e25b1e5bed",
+  "source_sha256": "4b9ef211494c1726c35cab196f12270048ec6412217943858383e244c79c4da2",
+  "tools": [
+    {
+      "name": "a2a_invoke",
+      "enabled": true,
+      "availability": "implemented",
+      "handler": "a2a_invoke",
+      "reads": [
+        "documents",
+        "services",
+        "contacts",
+        "service_tasks"
+      ],
+      "writes": [
+        "service_tasks"
+      ],
+      "constraints": "known agent; existing task validates ownership",
+      "result": "local task and full interactions",
+      "limitations": "No additional LLM, GUI automation, remote ordering or real reservation. Async tasks remain pending until queried."
+    },
+    {
+      "name": "activate_autopilot",
+      "enabled": true,
+      "availability": "implemented",
+      "handler": "activate_autopilot",
+      "reads": [
+        "vehicle.adas",
+        "vehicle.gear",
+        "vehicle.speed"
+      ],
+      "writes": [
+        "vehicle.adas"
+      ],
+      "constraints": "available, driving gear and speed <=120",
+      "result": "activated simulated ADAS",
+      "limitations": "Deterministic local simulation; no network or physical vehicle operation."
+    },
+    {
+      "name": "add_memory",
+      "enabled": true,
+      "availability": "implemented",
+      "handler": "add_memory",
+      "reads": [
+        "memory"
+      ],
+      "writes": [
+        "memory"
+      ],
+      "constraints": "nonempty content; optional valid POI",
+      "result": "memory entry",
+      "limitations": "Deterministic local simulation; no network or physical vehicle operation."
+    },
+    {
+      "name": "add_waypoint",
+      "enabled": true,
+      "availability": "implemented",
+      "handler": "add_waypoint",
+      "reads": [
+        "navigation",
+        "pois"
+      ],
+      "writes": [
+        "navigation"
+      ],
+      "constraints": "active navigation and valid integer insertion index required",
+      "result": "updated route",
+      "limitations": "Deterministic local simulation; no network or physical vehicle operation."
+    },
+    {
+      "name": "after_sale_agent",
+      "enabled": true,
+      "availability": "implemented",
+      "handler": "after_sale_agent",
+      "reads": [
+        "documents",
+        "contacts",
+        "service_tasks"
+      ],
+      "writes": [
+        "service_tasks"
+      ],
+      "constraints": "nonempty query",
+      "result": "local after-sale consultation with interactions",
+      "limitations": "Deterministic local simulation; no network or physical vehicle operation."
+    },
+    {
+      "name": "control_map_zoom",
+      "enabled": true,
+      "availability": "implemented",
+      "handler": "control_map_zoom",
+      "reads": [
+        "map"
+      ],
+      "writes": [
+        "map.zoom"
+      ],
+      "constraints": "positive level; zoom clamped 1..20",
+      "result": "zoom level",
+      "limitations": "Deterministic local simulation; no network or physical vehicle operation."
+    },
+    {
+      "name": "delete_favorite_poi",
+      "enabled": true,
+      "availability": "implemented",
+      "handler": "delete_favorite_poi",
+      "reads": [
+        "addresses"
+      ],
+      "writes": [
+        "addresses.favorites"
+      ],
+      "constraints": "cannot delete home/company; known favorite required",
+      "result": "deleted POI id",
+      "limitations": "Deterministic local simulation; no network or physical vehicle operation."
+    },
+    {
+      "name": "delete_waypoint",
+      "enabled": true,
+      "availability": "implemented",
+      "handler": "delete_waypoint",
+      "reads": [
+        "navigation"
+      ],
+      "writes": [
+        "navigation"
+      ],
+      "constraints": "active navigation required; unknown waypoint rejected",
+      "result": "updated waypoints",
+      "limitations": "Deterministic local simulation; no network or physical vehicle operation."
+    },
+    {
+      "name": "digital_service_agent",
+      "enabled": true,
+      "availability": "implemented",
+      "handler": "digital_service_agent",
+      "reads": [
+        "services",
+        "service_tasks"
+      ],
+      "writes": [
+        "service_tasks"
+      ],
+      "constraints": "query or intermediate_query required",
+      "result": "local digital-service task",
+      "limitations": "Deterministic local simulation; no network or physical vehicle operation."
+    },
+    {
+      "name": "display_candidate_cards",
+      "enabled": true,
+      "availability": "implemented",
+      "handler": "display_candidate_cards",
+      "reads": [
+        "display.candidates"
+      ],
+      "writes": [
+        "display.cards"
+      ],
+      "constraints": "candidate query must produce data",
+      "result": "displayed candidate cards",
+      "limitations": "Deterministic local simulation; no network or physical vehicle operation."
+    },
+    {
+      "name": "eco_info_search",
+      "enabled": true,
+      "availability": "implemented",
+      "handler": "eco_info_search",
+      "reads": [
+        "services",
+        "pois"
+      ],
+      "writes": [
+        "display.candidates"
+      ],
+      "constraints": "category and location filters",
+      "result": "fixed local service offers",
+      "limitations": "Deterministic local simulation; no network or physical vehicle operation."
+    },
+    {
+      "name": "eco_info_search_1",
+      "enabled": true,
+      "availability": "implemented",
+      "handler": "eco_info_search_1",
+      "reads": [
+        "services",
+        "pois"
+      ],
+      "writes": [
+        "display.candidates"
+      ],
+      "constraints": "category and location filters",
+      "result": "fixed local service offers",
+      "limitations": "Deterministic local simulation; no network or physical vehicle operation."
+    },
+    {
+      "name": "end_chat",
+      "enabled": true,
+      "availability": "implemented",
+      "handler": "end_chat",
+      "reads": [
+        "chat"
+      ],
+      "writes": [
+        "chat.ended"
+      ],
+      "constraints": "none",
+      "result": "ended local chat",
+      "limitations": "Deterministic local simulation; no network or physical vehicle operation."
+    },
+    {
+      "name": "estimate_trip_info",
+      "enabled": true,
+      "availability": "implemented",
+      "handler": "estimate_trip_info",
+      "reads": [
+        "pois",
+        "routes",
+        "location"
+      ],
+      "writes": [],
+      "constraints": "valid origin and destination",
+      "result": "distance, duration, energy estimate",
+      "limitations": "Deterministic local simulation; no network or physical vehicle operation."
+    },
+    {
+      "name": "execute_vehicle_control",
+      "enabled": true,
+      "availability": "implemented",
+      "handler": "execute_vehicle_control",
+      "reads": [
+        "vehicle"
+      ],
+      "writes": [
+        "vehicle"
+      ],
+      "constraints": "supported Chinese controls only; temperature 16..30; parked gear required for doors",
+      "result": "actual simulated changed controls",
+      "limitations": "Deterministic local simulation; no network or physical vehicle operation."
+    },
+    {
+      "name": "exit_navigation",
+      "enabled": true,
+      "availability": "implemented",
+      "handler": "exit_navigation",
+      "reads": [
+        "navigation"
+      ],
+      "writes": [
+        "navigation.active"
+      ],
+      "constraints": "none",
+      "result": "inactive navigation",
+      "limitations": "Deterministic local simulation; no network or physical vehicle operation."
+    },
+    {
+      "name": "financial_information_agent",
+      "enabled": true,
+      "availability": "implemented",
+      "handler": "financial_information_agent",
+      "reads": [
+        "documents"
+      ],
+      "writes": [],
+      "constraints": "fixed finance only; no trading",
+      "result": "matching finance records",
+      "limitations": "Deterministic local simulation; no network or physical vehicle operation."
+    },
+    {
+      "name": "get_all_waypoint",
+      "enabled": true,
+      "availability": "implemented",
+      "handler": "get_all_waypoint",
+      "reads": [
+        "navigation.waypoints"
+      ],
+      "writes": [],
+      "constraints": "none",
+      "result": "waypoint list",
+      "limitations": "Deterministic local simulation; no network or physical vehicle operation."
+    },
+    {
+      "name": "get_favorite_poi",
+      "enabled": true,
+      "availability": "implemented",
+      "handler": "get_favorite_poi",
+      "reads": [
+        "addresses"
+      ],
+      "writes": [],
+      "constraints": "integer limit",
+      "result": "requested addresses",
+      "limitations": "Deterministic local simulation; no network or physical vehicle operation."
+    },
+    {
+      "name": "get_home_or_company_address",
+      "enabled": true,
+      "availability": "implemented",
+      "handler": "get_home_or_company_address",
+      "reads": [
+        "addresses"
+      ],
+      "writes": [],
+      "constraints": "home or company only",
+      "result": "address or explicit absence",
+      "limitations": "Deterministic local simulation; no network or physical vehicle operation."
+    },
+    {
+      "name": "get_joke",
+      "enabled": true,
+      "availability": "implemented",
+      "handler": "get_joke",
+      "reads": [
+        "documents"
+      ],
+      "writes": [],
+      "constraints": "keyword matching fixed joke library",
+      "result": "joke record or absence",
+      "limitations": "Deterministic local simulation; no network or physical vehicle operation."
+    },
+    {
+      "name": "get_navi_info",
+      "enabled": true,
+      "availability": "implemented",
+      "handler": "get_navi_info",
+      "reads": [
+        "navigation"
+      ],
+      "writes": [],
+      "constraints": "none",
+      "result": "current navigation",
+      "limitations": "Deterministic local simulation; no network or physical vehicle operation."
+    },
+    {
+      "name": "get_skill_prompt",
+      "enabled": true,
+      "availability": "implemented",
+      "handler": "get_skill_prompt",
+      "reads": [
+        "documents"
+      ],
+      "writes": [],
+      "constraints": "local skill category only",
+      "result": "fixed skill prompts",
+      "limitations": "Deterministic local simulation; no network or physical vehicle operation."
+    },
+    {
+      "name": "get_story",
+      "enabled": true,
+      "availability": "implemented",
+      "handler": "get_story",
+      "reads": [
+        "documents"
+      ],
+      "writes": [],
+      "constraints": "keyword matching fixed story library",
+      "result": "story record or absence",
+      "limitations": "Deterministic local simulation; no network or physical vehicle operation."
+    },
+    {
+      "name": "get_vehicle_status",
+      "enabled": true,
+      "availability": "implemented",
+      "handler": "get_vehicle_status",
+      "reads": [
+        "vehicle"
+      ],
+      "writes": [],
+      "constraints": "canonical status items only",
+      "result": "requested vehicle values",
+      "limitations": "Deterministic local simulation; no network or physical vehicle operation."
+    },
+    {
+      "name": "get_weather",
+      "enabled": true,
+      "availability": "implemented",
+      "handler": "get_weather",
+      "reads": [
+        "weather",
+        "time"
+      ],
+      "writes": [],
+      "constraints": "date/dailysteps mutually exclusive; district match; fixed coverage",
+      "result": "dated fixed forecast",
+      "limitations": "Deterministic local simulation; no network or physical vehicle operation."
+    },
+    {
+      "name": "list_directory",
+      "enabled": false,
+      "availability": "implemented",
+      "handler": "list_directory",
+      "reads": [
+        "session workspace"
+      ],
+      "writes": [],
+      "constraints": "relative confined path, symlink escapes rejected, maximum 200 entries",
+      "result": "directory entry names",
+      "limitations": "Filesystem tool disabled by default; task workspace only."
+    },
+    {
+      "name": "list_skills",
+      "enabled": true,
+      "availability": "implemented",
+      "handler": "list_skills",
+      "reads": [
+        "documents"
+      ],
+      "writes": [],
+      "constraints": "local skill category only",
+      "result": "local skill metadata",
+      "limitations": "Deterministic local simulation; no network or physical vehicle operation."
+    },
+    {
+      "name": "map_search",
+      "enabled": true,
+      "availability": "implemented",
+      "handler": "map_search",
+      "reads": [
+        "pois",
+        "location"
+      ],
+      "writes": [
+        "display.candidates"
+      ],
+      "constraints": "local keyword match",
+      "result": "matching POIs",
+      "limitations": "Deterministic local simulation; no network or physical vehicle operation."
+    },
+    {
+      "name": "multi_task_agent",
+      "enabled": true,
+      "availability": "implemented",
+      "handler": "multi_task_agent",
+      "reads": [
+        "services",
+        "pois",
+        "documents",
+        "service_tasks"
+      ],
+      "writes": [
+        "service_tasks",
+        "display.candidates"
+      ],
+      "constraints": "nonempty task; fixed local candidates only",
+      "result": "local multi-step task result",
+      "limitations": "Deterministic local simulation; no network or physical vehicle operation."
+    },
+    {
+      "name": "music_search",
+      "enabled": true,
+      "availability": "implemented",
+      "handler": "music_search",
+      "reads": [
+        "tracks"
+      ],
+      "writes": [],
+      "constraints": "name, artist, tags; maximum 10",
+      "result": "playable local tracks",
+      "limitations": "Deterministic local simulation; no network or physical vehicle operation."
+    },
+    {
+      "name": "open_or_close_map",
+      "enabled": true,
+      "availability": "implemented",
+      "handler": "open_or_close_map",
+      "reads": [
+        "map",
+        "navigation"
+      ],
+      "writes": [
+        "map.open",
+        "map.page",
+        "navigation.active"
+      ],
+      "constraints": "continue requires route and driving gear",
+      "result": "map state",
+      "limitations": "Deterministic local simulation; no network or physical vehicle operation."
+    },
+    {
+      "name": "open_special_map",
+      "enabled": true,
+      "availability": "implemented",
+      "handler": "open_special_map",
+      "reads": [
+        "map"
+      ],
+      "writes": [
+        "map.special"
+      ],
+      "constraints": "canonical map type",
+      "result": "special-map state",
+      "limitations": "Deterministic local simulation; no network or physical vehicle operation."
+    },
+    {
+      "name": "optimize_navi_plan",
+      "enabled": true,
+      "availability": "implemented",
+      "handler": "optimize_navi_plan",
+      "reads": [
+        "navigation"
+      ],
+      "writes": [
+        "navigation"
+      ],
+      "constraints": "existing route required; nearest-neighbor ordering",
+      "result": "optimized simulated route",
+      "limitations": "Deterministic local simulation; no network or physical vehicle operation."
+    },
+    {
+      "name": "overview_navi_route",
+      "enabled": true,
+      "availability": "implemented",
+      "handler": "overview_navi_route",
+      "reads": [
+        "navigation",
+        "map"
+      ],
+      "writes": [
+        "map.overview"
+      ],
+      "constraints": "existing route required",
+      "result": "overview state",
+      "limitations": "Deterministic local simulation; no network or physical vehicle operation."
+    },
+    {
+      "name": "plan_navi_route",
+      "enabled": true,
+      "availability": "implemented",
+      "handler": "plan_navi_route",
+      "reads": [
+        "pois",
+        "routes",
+        "location"
+      ],
+      "writes": [
+        "navigation"
+      ],
+      "constraints": "nonempty valid POIs",
+      "result": "simulated planned route",
+      "limitations": "Deterministic local simulation; no network or physical vehicle operation."
+    },
+    {
+      "name": "play_playlist",
+      "enabled": true,
+      "availability": "implemented",
+      "handler": "play_playlist",
+      "reads": [
+        "tracks",
+        "media"
+      ],
+      "writes": [
+        "media"
+      ],
+      "constraints": "nonempty list; unknown or unplayable track rejected atomically",
+      "result": "playing queue",
+      "limitations": "Deterministic local simulation; no network or physical vehicle operation."
+    },
+    {
+      "name": "query_adas_status",
+      "enabled": true,
+      "availability": "implemented",
+      "handler": "query_adas_status",
+      "reads": [
+        "vehicle.adas"
+      ],
+      "writes": [],
+      "constraints": "none",
+      "result": "local ADAS state",
+      "limitations": "Deterministic local simulation; no network or physical vehicle operation."
+    },
+    {
+      "name": "query_traffic_ahead",
+      "enabled": true,
+      "availability": "implemented",
+      "handler": "query_traffic_ahead",
+      "reads": [
+        "navigation",
+        "routes"
+      ],
+      "writes": [],
+      "constraints": "active navigation required",
+      "result": "route-data traffic and first modeled event",
+      "limitations": "Deterministic local simulation; no network or physical vehicle operation."
+    },
+    {
+      "name": "query_vehicle_exterior_vision",
+      "enabled": true,
+      "availability": "implemented",
+      "handler": "query_vehicle_exterior_vision",
+      "reads": [
+        "visions"
+      ],
+      "writes": [],
+      "constraints": "distributed direction-specific fixed descriptions",
+      "result": "simulated asset description",
+      "limitations": "Deterministic local simulation; no network or physical vehicle operation."
+    },
+    {
+      "name": "read_file",
+      "enabled": false,
+      "availability": "implemented",
+      "handler": "read_file",
+      "reads": [
+        "session workspace"
+      ],
+      "writes": [],
+      "constraints": "relative confined UTF-8 file; maximum 64KiB",
+      "result": "file content",
+      "limitations": "Filesystem tool disabled by default; task workspace only."
+    },
+    {
+      "name": "remote_map_search",
+      "enabled": true,
+      "availability": "implemented",
+      "handler": "remote_map_search",
+      "reads": [
+        "pois",
+        "addresses",
+        "navigation"
+      ],
+      "writes": [
+        "display.candidates"
+      ],
+      "constraints": "location must resolve locally",
+      "result": "POIs around location",
+      "limitations": "Deterministic local simulation; no network or physical vehicle operation."
+    },
+    {
+      "name": "reroute",
+      "enabled": true,
+      "availability": "implemented",
+      "handler": "reroute",
+      "reads": [
+        "navigation",
+        "routes"
+      ],
+      "writes": [
+        "navigation"
+      ],
+      "constraints": "existing route required",
+      "result": "recomputed route revision",
+      "limitations": "Deterministic local simulation; no network or physical vehicle operation."
+    },
+    {
+      "name": "scheduled_task",
+      "enabled": true,
+      "availability": "implemented",
+      "handler": "scheduled_task",
+      "reads": [
+        "schedules"
+      ],
+      "writes": [
+        "schedules"
+      ],
+      "constraints": "each condition uses one trigger family; typed action validation",
+      "result": "pending local schedule; no external scheduler",
+      "limitations": "Deterministic local simulation; no network or physical vehicle operation."
+    },
+    {
+      "name": "search_along_way_poi",
+      "enabled": true,
+      "availability": "implemented",
+      "handler": "search_along_way_poi",
+      "reads": [
+        "pois",
+        "navigation"
+      ],
+      "writes": [
+        "display.candidates"
+      ],
+      "constraints": "active navigation required; route corridor filter",
+      "result": "along-route POIs",
+      "limitations": "Deterministic local simulation; no network or physical vehicle operation."
+    },
+    {
+      "name": "search_charging_station",
+      "enabled": true,
+      "availability": "implemented",
+      "handler": "search_charging_station",
+      "reads": [
+        "pois",
+        "navigation"
+      ],
+      "writes": [
+        "display.candidates"
+      ],
+      "constraints": "power range, brand, along/nearby, price sort",
+      "result": "charging stations",
+      "limitations": "Deterministic local simulation; no network or physical vehicle operation."
+    },
+    {
+      "name": "search_memory",
+      "enabled": true,
+      "availability": "implemented",
+      "handler": "search_memory",
+      "reads": [
+        "memory"
+      ],
+      "writes": [],
+      "constraints": "keyword score and integer limit",
+      "result": "matching memory entries",
+      "limitations": "Deterministic local simulation; no network or physical vehicle operation."
+    },
+    {
+      "name": "search_nearby_poi",
+      "enabled": true,
+      "availability": "implemented",
+      "handler": "search_nearby_poi",
+      "reads": [
+        "pois",
+        "location"
+      ],
+      "writes": [
+        "display.candidates"
+      ],
+      "constraints": "radius in meters",
+      "result": "nearby POIs",
+      "limitations": "Deterministic local simulation; no network or physical vehicle operation."
+    },
+    {
+      "name": "search_parking_charging_station",
+      "enabled": true,
+      "availability": "implemented",
+      "handler": "search_parking_charging_station",
+      "reads": [
+        "pois",
+        "addresses"
+      ],
+      "writes": [
+        "display.candidates"
+      ],
+      "constraints": "known location, parking/charging only",
+      "result": "parking or charging POIs",
+      "limitations": "Deterministic local simulation; no network or physical vehicle operation."
+    },
+    {
+      "name": "search_poi_by_keyword",
+      "enabled": true,
+      "availability": "implemented",
+      "handler": "search_poi_by_keyword",
+      "reads": [
+        "pois",
+        "location"
+      ],
+      "writes": [
+        "display.candidates"
+      ],
+      "constraints": "keyword, distance, sort and limit",
+      "result": "matching POIs",
+      "limitations": "Deterministic local simulation; no network or physical vehicle operation."
+    },
+    {
+      "name": "search_vehicle_knowledge",
+      "enabled": true,
+      "availability": "implemented",
+      "handler": "search_vehicle_knowledge",
+      "reads": [
+        "documents"
+      ],
+      "writes": [],
+      "constraints": "manual/brand category filtering",
+      "result": "matching fixed knowledge",
+      "limitations": "Deterministic local simulation; no network or physical vehicle operation."
+    },
+    {
+      "name": "set_display_focus",
+      "enabled": true,
+      "availability": "implemented",
+      "handler": "set_display_focus",
+      "reads": [
+        "display"
+      ],
+      "writes": [
+        "display.focus"
+      ],
+      "constraints": "canonical screen/position; reset at explicit round boundary",
+      "result": "focus state",
+      "limitations": "Deterministic local simulation; no network or physical vehicle operation."
+    },
+    {
+      "name": "set_favorite_poi",
+      "enabled": true,
+      "availability": "implemented",
+      "handler": "set_favorite_poi",
+      "reads": [
+        "pois",
+        "addresses"
+      ],
+      "writes": [
+        "addresses"
+      ],
+      "constraints": "valid POI; replace home/company or deduplicate favorites",
+      "result": "stored address",
+      "limitations": "Deterministic local simulation; no network or physical vehicle operation."
+    },
+    {
+      "name": "set_map_auto_scale",
+      "enabled": true,
+      "availability": "implemented",
+      "handler": "set_map_auto_scale",
+      "reads": [
+        "map"
+      ],
+      "writes": [
+        "map.auto_scale"
+      ],
+      "constraints": "boolean",
+      "result": "map state",
+      "limitations": "Deterministic local simulation; no network or physical vehicle operation."
+    },
+    {
+      "name": "set_map_view",
+      "enabled": true,
+      "availability": "implemented",
+      "handler": "set_map_view",
+      "reads": [
+        "map"
+      ],
+      "writes": [
+        "map.view"
+      ],
+      "constraints": "canonical view",
+      "result": "map state",
+      "limitations": "Deterministic local simulation; no network or physical vehicle operation."
+    },
+    {
+      "name": "set_navi_route_preference",
+      "enabled": true,
+      "availability": "implemented",
+      "handler": "set_navi_route_preference",
+      "reads": [
+        "navigation"
+      ],
+      "writes": [
+        "navigation.route_preference"
+      ],
+      "constraints": "canonical enum",
+      "result": "stored preference",
+      "limitations": "Deterministic local simulation; no network or physical vehicle operation."
+    },
+    {
+      "name": "set_navi_voice_mode",
+      "enabled": true,
+      "availability": "implemented",
+      "handler": "set_navi_voice_mode",
+      "reads": [
+        "navigation"
+      ],
+      "writes": [
+        "navigation.voice_mode"
+      ],
+      "constraints": "canonical enum",
+      "result": "stored voice mode",
+      "limitations": "Deterministic local simulation; no network or physical vehicle operation."
+    },
+    {
+      "name": "share_route",
+      "enabled": true,
+      "availability": "implemented",
+      "handler": "share_route",
+      "reads": [
+        "navigation"
+      ],
+      "writes": [
+        "display.share_panel"
+      ],
+      "constraints": "existing route required",
+      "result": "local share panel",
+      "limitations": "Deterministic local simulation; no network or physical vehicle operation."
+    },
+    {
+      "name": "start_navi",
+      "enabled": true,
+      "availability": "implemented",
+      "handler": "start_navi",
+      "reads": [
+        "pois",
+        "routes",
+        "vehicle.gear"
+      ],
+      "writes": [
+        "navigation"
+      ],
+      "constraints": "driving gear required",
+      "result": "active simulated navigation",
+      "limitations": "Deterministic local simulation; no network or physical vehicle operation."
+    },
+    {
+      "name": "web_search",
+      "enabled": true,
+      "availability": "implemented",
+      "handler": "web_search",
+      "reads": [
+        "documents"
+      ],
+      "writes": [],
+      "constraints": "fixed local public documents; no live data",
+      "result": "matching fixed web records",
+      "limitations": "Deterministic local simulation; no network or physical vehicle operation."
+    },
+    {
+      "name": "wiki_web_search",
+      "enabled": true,
+      "availability": "implemented",
+      "handler": "wiki_web_search",
+      "reads": [
+        "documents"
+      ],
+      "writes": [],
+      "constraints": "tag category filter; absent topics explicitly missing",
+      "result": "matching fixed encyclopedia records",
+      "limitations": "Deterministic local simulation; no network or physical vehicle operation."
+    }
+  ]
+}

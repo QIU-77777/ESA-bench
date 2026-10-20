@@ -3,6 +3,11 @@
 
 # 本地环境与运行产物
 .venv/
-jobs/
+/jobs/
+/configs/jobs/*
+!/configs/jobs/esa-offline-acceptance.yaml
 __pycache__/
 .DS_Store
+*.sqlite
+environment/.workspaces/
+.pytest_cache/

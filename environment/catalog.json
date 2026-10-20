@@ -1,0 +1,1495 @@
+{
+  "source": "mcp/internal/tools/testdata/tools_v2.0.golden",
+  "source_sha256": "4b9ef211494c1726c35cab196f12270048ec6412217943858383e244c79c4da2",
+  "tools": [
+    {
+      "name": "a2a_invoke",
+      "title": "A2A子Agent调用",
+      "description": "调用指定的Sub Agent执行任务。需要明确提供Sub Agent的名称。Sub Agent会自行和用户交互，返回结果必须包含可能存在的每轮Sub Agent和user的交互内容。可选Sub Agent名称及其描述包括：after_sale_agent（提供用户对于用车、保养、销售、故障问题、售后维修、救援等方面的咨询）、digital_service_agent（使用GUI Agent执行排队取号、订座、到店取餐、点外卖、景点门票预定、电影票预定、演出票预定、机票预定、火车票预定、酒店预定任务）",
+      "inputSchema": {
+        "properties": {
+          "agent_identifier": {
+            "description": "必须显式指定的Sub Agent名称。",
+            "enum": [
+              "after_sale_agent",
+              "digital_service_agent"
+            ],
+            "type": "string"
+          },
+          "async_mode": {
+            "description": "是否异步执行，默认false",
+            "type": "boolean"
+          },
+          "context_id": {
+            "description": "可选，会话上下文标识。首次调用为空，后续同一会话的多轮交互需携带",
+            "type": "string"
+          },
+          "streaming": {
+            "description": "是否使用流式响应，默认false",
+            "type": "boolean"
+          },
+          "task": {
+            "description": "需要子Agent执行的任务描述，应包含完整的上下文和用户意图",
+            "type": "string"
+          },
+          "task_id": {
+            "description": "可选，当继续一个已存在的任务时必填。首次调用为空",
+            "type": "string"
+          }
+        },
+        "required": [
+          "agent_identifier",
+          "task"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "activate_autopilot",
+      "title": "",
+      "description": "支持以下L2级以上高阶智驾功能的激活，包含NOA、记忆泊车、AI终点领航功能",
+      "inputSchema": {
+        "properties": {},
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "name": "add_memory",
+      "title": "主动保存记忆",
+      "description": "当用户主动表达需要记录内容时使用。1.对实事的或观点的描述，例如“记一下王总的电话号码”；2.日程或待办，例如“记得我明天下午要去见客户”；3.导航地点的别名或代称，但不包含【我的公司】和【我的家】。不适用场景：1.用户没有明确表达必须要记忆；2.用户明确表达需要创建提醒任务“下午三点提醒我去开会”",
+      "inputSchema": {
+        "properties": {
+          "content": {
+            "description": "需要模型记住的完整关键信息内容，提炼用户核心诉求、个人偏好、习惯、设定及重要事项，保留有效语义，去除冗余话术",
+            "type": "string"
+          },
+          "poi": {
+            "description": "需要记住的poi点，格式为：poi_id:地点:经度,纬度。仅当记忆内容涉及具体地点时填入",
+            "type": "string"
+          }
+        },
+        "required": [
+          "content"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "add_waypoint",
+      "title": "添加途经点",
+      "description": "在当前导航路径中的指定位置添加一个途经点Poi",
+      "inputSchema": {
+        "properties": {
+          "index": {
+            "default": -1,
+            "description": "途经点的插入位置索引。0 表示设置为第一个途经点，1 表示第二个，以此类推。若不传或传 -1 则默认添加到途经点列表最后。",
+            "type": "number"
+          },
+          "is_avp": {
+            "default": false,
+            "description": "所有目的地是否都在AVP地图全部覆盖范围内",
+            "type": "boolean"
+          },
+          "via_poi": {
+            "description": "要添加的途经点Poi信息，格式为 poi_id:地名:经度,纬度:是否停靠",
+            "type": "string"
+          }
+        },
+        "required": [
+          "via_poi"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "after_sale_agent",
+      "title": "售后服务",
+      "description": "提供用户对于用车、保养、销售、故障问题、售后维修、救援等方面的咨询",
+      "inputSchema": {
+        "properties": {
+          "historys": {
+            "description": "5轮历史对话信息",
+            "type": "array"
+          },
+          "intermediate_query": {
+            "description": "问询回复的时候传，和query二选一",
+            "type": "string"
+          },
+          "query": {
+            "description": "根据上下文改写后的关于售后服务    相关的任务意图，或者是售后服务Agent执行中，需要的用户澄清内容",
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "control_map_zoom",
+      "title": "放大/缩小地图",
+      "description": "控制地图的缩放比例。支持按比例尺进行放大或缩小，也支持直接调整至地图的最大或最小比例尺。",
+      "inputSchema": {
+        "properties": {
+          "action": {
+            "description": "缩放动作：zoom_in=放大地图，zoom_out=缩小地图，zoom_in_max=放大至最大比例尺，zoom_out_min=缩小至最小比例尺",
+            "enum": [
+              "zoom_in",
+              "zoom_out",
+              "zoom_in_max",
+              "zoom_out_min"
+            ],
+            "type": "string"
+          },
+          "level": {
+            "default": 1,
+            "description": "缩放倍数，如2表示放大/缩小2倍。仅在action为zoom_in或zoom_out时有效，不传则默认缩放1倍",
+            "type": "number"
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "delete_favorite_poi",
+      "title": "删除收藏地址",
+      "description": "删除地图收藏夹中的收藏点，支持通过poi_id精准删除，不支持删除家、公司地址、删除全部收藏点",
+      "inputSchema": {
+        "properties": {
+          "poi": {
+            "description": "删除单个收藏点，每个元素格式为 poi_id:地点:经度,纬度。注意：poi_id 是可选的，若无则留空。",
+            "type": "string"
+          }
+        },
+        "required": [
+          "poi"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "delete_waypoint",
+      "title": "删除途经点",
+      "description": "删除当前导航路径中指定的途经点Poi",
+      "inputSchema": {
+        "properties": {
+          "via_poi": {
+            "description": "要删除的途经点Poi，格式为 poi_id:地名:经度,纬度; 删除所有途径点传字符串 all",
+            "type": "string"
+          }
+        },
+        "required": [
+          "via_poi"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "digital_service_agent",
+      "title": "数字生态服务",
+      "description": "使用GUI Agent执行排队取号、订座、到店取餐、点外卖、景点门票预定、电影票预定、演出票预定、机票预定、火车票预定、酒店预定任务",
+      "inputSchema": {
+        "properties": {
+          "historys": {
+            "description": "5轮历史对话信息",
+            "type": "array"
+          },
+          "intermediate_query": {
+            "description": "问询回复的时候传，和query二选一",
+            "type": "string"
+          },
+          "query": {
+            "description": "根据上下文改写后的关于数字生态服务相关的任务意图，或者是GUI Agent执行中，需要的用户澄清内容，首次请求时传",
+            "type": "string"
+          }
+        },
+        "required": [
+          "historys"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "display_candidate_cards",
+      "title": "POI卡片",
+      "description": "无入参。用于确认候选结果需要做成卡片上屏，必须在完成口语化转述后调用。",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "name": "eco_info_search",
+      "title": "",
+      "description": "根据用户指定的城市、商圈或关键词，可检索生活服务类信息poi数据。美食查询支持当地美食、餐厅、特色小吃等POI信息，包含位置、评分、推荐菜品、营业时间等详情。酒店查询支持根据目的地、入住日期、价格区间等条件，检索酒店、民宿、公寓等住宿信息，包含位置、价格、星级、评分、设施及空房情况。电影查询支持正在热映、即将上映的电影信息，包括影片简介、演员阵容、上映时间、评分、影院排期及购票相关信息。景点查询支持检索城市或区域内的旅游景点、景区、地标、公园等信息，包含开放时间、门票价格、游玩攻略、推荐路线及用户评价。演出查询支持查询演唱会、话剧、音乐剧、展览、赛事、脱口秀等线下演出信息，包含时间、地点、票价、阵容及购票指引。支持演出地点查询和推荐。机票/火车票支持根据出发地、目的地、出行日期，查询飞机航班、高铁动车及火车班次信息，包含时间、票价、耗时、座席等级及余票情况。",
+      "inputSchema": {
+        "properties": {
+          "category": {
+            "description": "food=美食信息查询，hotel=酒店信息查询，movie=电影票查询，scene=景点查询，show=演出查询，ticket=机票/火车票信息查询",
+            "enum": [
+              "food",
+              "hotel",
+              "movie",
+              "scene",
+              "show",
+              "ticket"
+            ],
+            "type": "string"
+          },
+          "location": {
+            "description": "这个字段用于辅助定位搜索范围，根据上下文判断填充与用户意图相关的位置地点信息，默认为当前位置信息；需要明确的位置信息，不支持家/公司/目的地等代指信息",
+            "type": "string"
+          },
+          "query": {
+            "description": "搜索关键词，可包含城市、区域、美食、酒店、电影、景点、演出、机票/火车票等类型。",
+            "type": "string"
+          }
+        },
+        "required": [
+          "query",
+          "category"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "eco_info_search_1",
+      "title": "",
+      "description": "根据用户指定的城市、商圈或关键词，可检索生活服务类信息poi数据。美食查询支持当地美食、餐厅、特色小吃等POI信息，包含位置、评分、推荐菜品、营业时间等详情。酒店查询支持根据目的地、入住日期、价格区间等条件，检索酒店、民宿、公寓等住宿信息，包含位置、价格、星级、评分、设施及空房情况。电影查询支持正在热映、即将上映的电影信息，包括影片简介、演员阵容、上映时间、评分、影院排期及购票相关信息。景点查询支持检索城市或区域内的旅游景点、景区、地标、公园等信息，包含开放时间、门票价格、游玩攻略、推荐路线及用户评价。演出查询支持查询演唱会、话剧、音乐剧、展览、赛事、脱口秀等线下演出信息，包含时间、地点、票价、阵容及购票指引。支持演出地点查询和推荐。机票/火车票支持根据出发地、目的地、出行日期，查询飞机航班、高铁动车及火车班次信息，包含时间、票价、耗时、座席等级及余票情况。",
+      "inputSchema": {
+        "properties": {
+          "category": {
+            "description": "food=美食信息查询，hotel=酒店信息查询，movie=电影票查询，scene=景点查询，show=演出查询，ticket=机票/火车票信息查询",
+            "enum": [
+              "food",
+              "hotel",
+              "movie",
+              "scene",
+              "show",
+              "ticket"
+            ],
+            "type": "string"
+          },
+          "location": {
+            "description": "这个字段用于辅助定位搜索范围，根据上下文判断填充与用户意图相关的位置地点信息，默认为当前位置信息；需要明确的位置信息，不支持家/公司/目的地等代指信息",
+            "type": "string"
+          },
+          "query": {
+            "description": "搜索关键词，可包含城市、区域、美食、酒店、电影、景点、演出、机票/火车票等类型。",
+            "type": "string"
+          }
+        },
+        "required": [
+          "query",
+          "category"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "end_chat",
+      "title": "结束聊天",
+      "description": "结束聊天/语音交互。用于用户明确表达会话结束意图，如退出、退下、不聊了、再见、你先撤吧等。",
+      "inputSchema": {
+        "properties": {},
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "name": "estimate_trip_info",
+      "title": "",
+      "description": "预测从起点到终点的行程信息，包括距离、时间、费用等",
+      "inputSchema": {
+        "properties": {
+          "from_poi": {
+            "description": "起点，格式为 poi_id:地名:经度,纬度; 默认为当前地点",
+            "type": "string"
+          },
+          "to_poi": {
+            "description": "终点，格式为 poi_id:地名:经度,纬度",
+            "type": "string"
+          }
+        },
+        "required": [
+          "to_poi"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "execute_vehicle_control",
+      "title": "车辆控制",
+      "description": "执行车辆设备控制指令，包括空调、座椅、门窗、氛围灯等设备的控制",
+      "inputSchema": {
+        "properties": {
+          "query": {
+            "description": "一条清晰、简洁、可独立执行的中文控制指令。不要包含寒暄、背景、情绪、推理过程、解释或给用户的回复等与控制指令无关的内容。",
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "exit_navigation",
+      "title": "结束导航",
+      "description": "退出导航",
+      "inputSchema": {
+        "properties": {},
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "name": "financial_information_agent",
+      "title": "查询财经信息",
+      "description": "财经信息查询工具。用于财经新闻、经济政策、金融市场行情、个股/板块/ETF信息、财报指标、宏观经济、汇率、财经知识、经济法律法规、市场解读等问题。",
+      "inputSchema": {
+        "properties": {
+          "query": {
+            "description": "财经问题，补充必要对象和时间",
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "get_all_waypoint",
+      "title": "查询所有途经点",
+      "description": "查询当前导航路线中所有的途经点列表（名称、序号、poi_id），用于确认已设途经点或作为修改/删除途经点的前置步骤。",
+      "inputSchema": {
+        "properties": {},
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "name": "get_favorite_poi",
+      "title": "查询收藏地址",
+      "description": "查询用户收藏过的地址，用于信息的查询或导航任务的执行，适用的场景包括：1.明确声明收藏过的地点或地点类型；2.用户自己的家；3.用户自己的工作地。不适用的场景：1.用户过往的导航历史；2.其他人的家和工作地。",
+      "inputSchema": {
+        "properties": {
+          "address_type": {
+            "description": "要查询的地址类型，地址类型。home=家，company=公司，favorite=收藏点",
+            "enum": [
+              "home",
+              "company",
+              "favorite"
+            ],
+            "type": "string"
+          },
+          "limit": {
+            "default": 10,
+            "description": "限制返回查询结果数量，默认是10",
+            "type": "number"
+          }
+        },
+        "required": [
+          "address_type",
+          "limit"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "get_home_or_company_address",
+      "title": "",
+      "description": "查询用户的家或公司地址",
+      "inputSchema": {
+        "properties": {
+          "poi_type": {
+            "description": "要查询的地址类型只能选择家或者公司",
+            "enum": [
+              "home",
+              "company"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "poi_type"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "get_joke",
+      "title": "",
+      "description": "笑话检索，根据关键词返回对应的笑话",
+      "inputSchema": {
+        "properties": {
+          "query": {
+            "description": "笑话关键词，例如：'冷笑话', '职场笑话', '苏联笑话' 等",
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "get_navi_info",
+      "title": "",
+      "description": "获取当前导航的途径点和终点的ETA（预计到达时间，距离，红绿灯，过路费）",
+      "inputSchema": {
+        "properties": {},
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "name": "get_skill_prompt",
+      "title": "",
+      "description": "获取 Skills 系统提示词片段（XML 格式），包含所有可用 Skill 的元数据目录和使用指引",
+      "inputSchema": {
+        "properties": {},
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "name": "get_story",
+      "title": "",
+      "description": "内置故事检索工具。用于用户要求讲故事、睡前故事、童话、寓言、悬疑故事等叙事内容时调用。",
+      "inputSchema": {
+        "properties": {
+          "query": {
+            "description": "提炼故事主题、风格、受众或长度偏好，故事主题或风格，如\"睡前故事\"\"悬疑故事\"，没有特殊需求为空字符",
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "get_vehicle_status",
+      "title": "",
+      "description": "用于查询基础的车辆状态信息，支持车窗、车门、车内温度、挡位、当前车速、剩余油量、剩余电量、剩余续航，其余状态不支持",
+      "inputSchema": {
+        "properties": {
+          "query_items": {
+            "description": "支持查询的车辆状态项列表",
+            "items": {
+              "enum": [
+                "WINDOW_STATUS",
+                "DOOR_STATUS",
+                "INSIDE_TEMPERATURE",
+                "GEAR_STATUS",
+                "VEHICLE_SPEED",
+                "REMAINING_FUEL",
+                "REMAINING_BATTERY",
+                "REMAINING_RANGE"
+              ],
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "query_items"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "get_weather",
+      "title": "",
+      "description": "查询天气及空气质量（含PM2.5）、生活指数（穿衣、紫外线、感冒风险、洗车、舒适度）、风速风向。",
+      "inputSchema": {
+        "properties": {
+          "dailysteps": {
+            "description": "未来天数（包含当日）。用于查询从今天开始的连续几天天气，与 date 参数二选一使用。比如：1=今天、2=今天+明天。",
+            "type": "number"
+          },
+          "date": {
+            "description": "具体查询日期。格式为YYYY-MM-DD。与 dailysteps 参数二选一使用。",
+            "type": "string"
+          },
+          "district": {
+            "description": "城市或县区，比如北京市、杭州市、上海市徐汇区等",
+            "type": "string"
+          },
+          "hourlysteps": {
+            "description": "查询当天时段范围，可以选定具体范围：morning/noon/afternoon/evening/all，不指定时段时默认为all（全天）",
+            "enum": [
+              "morning",
+              "noon",
+              "afternoon",
+              "evening",
+              "all"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "district"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "list_directory",
+      "title": "",
+      "description": "列出目录内容",
+      "inputSchema": {
+        "properties": {
+          "path": {
+            "description": "要查看的相对路径，例如 '.' 或 'skills'",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "list_skills",
+      "title": "",
+      "description": "列出所有可用的 Skills 元数据（name、description、location），用于判断哪个 Skill 与当前任务相关",
+      "inputSchema": {
+        "properties": {},
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "name": "map_search",
+      "title": "搜索地图",
+      "description": "地图POI检索工具。用于普通POI信息查询和当前定位附近检索，如医院、商超、KTV、停车场、地铁站、加油站、充电站等。",
+      "inputSchema": {
+        "properties": {
+          "query": {
+            "description": "具体的搜索关键词或地点名称。",
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "multi_task_agent",
+      "title": "多任务Agent",
+      "description": "用于所有导航、路线规划、途经点调整、普通POI和生活服务检索、异地或指定参照地附近检索、停车场与充电站检索、地图操作（放大缩小、查看路况、路线全览）、导航设置（语音播报模式、路线偏好）、收藏地址管理、智驾激活查询、场景任务创建（在特定场景下触发特定行为）、生活服务信息查询与推荐（餐饮零售、酒店住宿、电影影院、演出、景点场馆、机票、火车票等）、生活服务订购与预订（排队取号、订座、到店取餐、关闭小程序、点外卖、景点门票预订、电影票预订、演出票预订、机票预订、火车票预订、酒店预订）、车辆售后业务Agent能力（创建保养订单、创建维修订单、创建救援订单、单独创建取送车订单、查询保养状态情况、查询订单，包括保养/维修/取送车订单，变更保养订单、变更维修订单、变更取送车订单，取消保养单、取消维修单、取消取送车单、取消道路救援）、车辆售后咨询与维修预约，以及多意图、多步骤、跨域编排任务。所有POI、生活服务、停车充电和地图相关查询统一使用本工具。",
+      "inputSchema": {
+        "properties": {
+          "query": {
+            "description": "用户的完整任务请求，需保留用户明确提供的服务类型、查询或执行动作、对象、预约/出行时间、目标地点或搜索参照地、数量、价格、评分、设施、票务、停车或充电偏好等关键信息；query中要保留搜索对象、搜索中心、范围和条件；售后业务需保留订单类型和动作，例如保养/维修/救援/取送车的创建、查询、变更、取消，以及道路救援取消等；多意图或多步骤任务需合并完整描述。不要额外传递用户未提及的当前地址、当前时间、车辆状态等上下文信息。",
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "music_search",
+      "title": "音乐检索",
+      "description": "检索歌曲、歌手、专辑内容,返回当前任务内有效的候选集引用和结构化歌曲候选。不用于导航、车控等非媒体任务。",
+      "inputSchema": {
+        "properties": {
+          "limit": {
+            "default": 10,
+            "description": "限制返回最大歌曲数量，默认10条，最多10条",
+            "type": "number"
+          },
+          "query": {
+            "description": "表达搜歌改写后的query，描述要搜索歌曲的特点",
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "open_or_close_map",
+      "title": "设置导航界面",
+      "description": "控制导航应用的前后台与界面跳转：打开/关闭导航App，返回导航主界面，或继续当前导航引导。纯界面控制，不改变导航路线。",
+      "inputSchema": {
+        "properties": {
+          "action": {
+            "description": "操作类型。open=打开导航应用，close=关闭导航应用，return=返回导航主界面/地图页，continue=继续当前导航引导",
+            "enum": [
+              "open",
+              "close",
+              "return",
+              "continue"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "open_special_map",
+      "title": "打开/关闭特殊地图",
+      "description": "打开或关闭美食/酒店/景点/充电等特殊主题地图图层，切换 POI 展示模式以配合相应场景的浏览与检索。",
+      "inputSchema": {
+        "properties": {
+          "action": {
+            "description": "操作类型。open=打开，close=关闭",
+            "enum": [
+              "open",
+              "close"
+            ],
+            "type": "string"
+          },
+          "map_type": {
+            "description": "地图类型。food=美食地图，hotel=酒店地图，attraction=景点地图，charge=充电地图",
+            "enum": [
+              "food",
+              "hotel",
+              "attraction",
+              "charge"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "map_type",
+          "action"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "optimize_navi_plan",
+      "title": "",
+      "description": "对当前所有途经点进行智能排序，规划出最优路径顺序",
+      "inputSchema": {
+        "properties": {},
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "name": "overview_navi_route",
+      "title": "",
+      "description": "切换导航路线全览模式与常规导航模式。全览模式下展示完整导航路线及途经地点；退出全览后恢复实时跟随车辆的常规导航视角。",
+      "inputSchema": {
+        "properties": {
+          "action": {
+            "description": "操作类型。enter: 进入路线全览模式; exit: 退出路线全览模式, 恢复常规导航视角",
+            "enum": [
+              "enter",
+              "exit"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "plan_navi_route",
+      "title": "",
+      "description": "规划到指定目的地的导航路线，支持多个途经点规划。",
+      "inputSchema": {
+        "properties": {
+          "is_avp": {
+            "default": false,
+            "description": "所有目的地是否都在AVP地图全部覆盖范围内",
+            "type": "boolean"
+          },
+          "poi_list": {
+            "description": "目的地及途经点列表，每个元素格式为 poi_id:地点:经度,纬度，最后一个为目的地",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "poi_list"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "play_playlist",
+      "title": "播放歌单",
+      "description": "把候选歌曲组成歌单,插入当前播放列表最前并立即开始播放。工具内部完成歌曲排序、三方音乐平台歌曲校验与不可播放歌曲替换,最终生成端侧可执行的歌单并执行播放。",
+      "inputSchema": {
+        "properties": {
+          "playlist": {
+            "description": "待组成歌单的结构化候选歌曲列表,工具基于该列表完成排序和三方音乐平台校验。",
+            "items": {
+              "properties": {
+                "artist": {
+                  "description": "歌手名。多个歌手使用约定分隔格式,例如:'罗文, 甄妮';无法稳定识别歌手时可为空字符串。",
+                  "type": "string"
+                },
+                "name": {
+                  "description": "歌曲名。",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name",
+                "artist"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "playlist"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "query_adas_status",
+      "title": "查询智驾状态",
+      "description": "查询当前车辆智能驾驶功能（如ACC/LCC/NOA/记忆泊车/AI终点领航）的运行状态信息，获取当前智驾状态（就绪/激活中/不可用）、当前生效的智驾功能、跟车距离、巡航车速等。",
+      "inputSchema": {
+        "properties": {},
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "name": "query_traffic_ahead",
+      "title": "",
+      "description": "查询车辆导航路径前方的路况信息，返回前方发生的首个事件信息。仅在车辆处于导航状态时可用。",
+      "inputSchema": {
+        "properties": {},
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "name": "query_vehicle_exterior_vision",
+      "title": "查看车外画面",
+      "description": "车外视觉问答工具。调用指定方位的摄像头拍照，并利用视觉语言模型（VLM）回答关于车外环境的问题（如周边物体等）。",
+      "inputSchema": {
+        "properties": {
+          "direction": {
+            "description": "车外摄像头方位。枚举值说明：前方(front)、后方(rear)、左方(left)、右方(right)、左前方(front_left)、右前方(front_right)、左后方(rear_left)、右后方(rear_right)、周边(surround)、未知/未指定(unknown)",
+            "enum": [
+              "front",
+              "rear",
+              "left",
+              "right",
+              "front_left",
+              "front_right",
+              "rear_left",
+              "rear_right",
+              "surround",
+              "unknown"
+            ],
+            "type": "string"
+          },
+          "query": {
+            "description": "针对车外画面的提问，如「前面是什么车？」",
+            "type": "string"
+          }
+        },
+        "required": [
+          "direction",
+          "query"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "read_file",
+      "title": "",
+      "description": "读取文件内容",
+      "inputSchema": {
+        "properties": {
+          "path": {
+            "description": "要读取的相对路径，例如 'skills/deploy/SKILL.md'",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "remote_map_search",
+      "title": "",
+      "description": "异地POI检索工具。用于用户明确指定位置搜索中心的POI查询，例如家、公司、目的地、途经点等代指搜索中心。",
+      "inputSchema": {
+        "properties": {
+          "location": {
+            "description": "搜索中心，可填写家、公司、目的地、途经点等代指信息，也可填写城市、商圈、地标或地址。若用户说“A附近/周边/旁边的B”，location 必须写 A，例如“目的地附近的厕所”填写“目的地”。",
+            "type": "string"
+          },
+          "poi_search_precision": {
+            "default": "normal",
+            "description": "POI搜索精度。normal=普通搜索，AllHighPrecision=返回AVP高精信息，TerminalHighPrecision=仅第一个/终点结果返回AVP高精信息",
+            "enum": [
+              "normal",
+              "AllHighPrecision",
+              "TerminalHighPrecision"
+            ],
+            "type": "string"
+          },
+          "query": {
+            "description": "要检索的明确普通POI类型或地点名，只填写用户说的POI原词。若用户说“A附近/周边/旁边的B”，query 只写 B；query 中不得再出现 location、附近、周边、旁边、最近等搜索中心或范围词。",
+            "type": "string"
+          }
+        },
+        "required": [
+          "location",
+          "query"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "reroute",
+      "title": "刷新路线",
+      "description": "基于当前导航上下文重新计算并刷新路线（未指定新偏好时沿用当前设置），用于路况变化、偏航恢复或用户主动要求刷新路线；需存在正在进行的导航。",
+      "inputSchema": {
+        "properties": {},
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "name": "scheduled_task",
+      "title": "创建计划任务",
+      "description": "创建计划任务。任务由一组 step 构成，每个 step 在 condition 满足时执行 actions。\n\n## condition（触发条件）\n支持以下几类触发条件，每次只能使用其中一类，不可跨类组合：\n\n### 事件类：event_type + event_position\n描述车内人员的上下车事件，两个字段必须同时出现。\n- event_type: 事件类型。可选值：board（上车）、exit（下车）。\n- event_position: 座位位置。可选值：driver（主驾）、copilot（副驾）、rear_left（二排左）、rear_right（二排右）、any（任意位置）。\n\n### 距离类：poi + distance\n表示与某个地点的距离关系，两个字段必须同时出现。\n- poi: 目标地点，格式为 \"{POI_ID}:{POI_NAME}:{LON},{LAT}\"。\n- distance: 距离判定。可选值：arrive（到达）、near（接近）、depart（离开）。\n\n### 时间类：datetime 和/或 duration\n- datetime: 绝对时间，ISO 8601 格式。支持完整日期时间（\"2025-07-15T14:30\"）、仅日期（\"2025-07-15\"）、仅时刻（\"14:30\"）。\n- duration: 相对延迟，ISO 8601 Duration 格式，如 \"PT5M\"（5分钟后）、\"P1D\"（1天后）。\n- datetime + duration 可组合使用，表示偏移到目标日期后在指定时刻触发，此时 datetime 只能是纯时刻格式（HH:MM）。\n\n## actions（动作列表）\n每个动作对象必须包含 type 字段：\n- type: \"navigate\": 发起导航。附加字段 poi（必填），格式为 \"{POI_ID}:{POI_NAME}:{LON},{LAT}\"。\n- type: \"remind\": 提醒通知。附加字段 content（必填），为提醒内容文本。\n- type: \"announce\": 自动播报。附加字段 content（必填），为对景点的简要描述或选择理由，20字以内。\n\n## 调用示例\n\n### 事件触发导航\n用户说：\"副驾驶上车的时候，导航去联合广场\"\n{\"task_type\":\"general\",\"title\":\"副驾上车导航\",\"steps\":[{\"condition\":{\"event_type\":\"board\",\"event_position\":\"copilot\"},\"actions\":[{\"type\":\"navigate\",\"poi\":\"B123:联合广场:121.4737,31.2304\"}]}]}\n\n### 距离触发提醒\n用户说：\"快到家的时候提醒我把后备箱的雨伞拿走\"\n{\"task_type\":\"general\",\"title\":\"到家提醒\",\"steps\":[{\"condition\":{\"poi\":\"A001:家:121.4700,31.2300\",\"distance\":\"near\"},\"actions\":[{\"type\":\"remind\",\"content\":\"把后备箱的雨伞拿走\"}]}]}\n\n### 时间触发提醒\n用户说：\"明天下午两点半提醒我开会\"\n{\"task_type\":\"general\",\"title\":\"明天开会提醒\",\"steps\":[{\"condition\":{\"datetime\":\"14:30\",\"duration\":\"P1D\"},\"actions\":[{\"type\":\"remind\",\"content\":\"该开会了\"}]}]}\n\n### 多动作组合\n用户说：\"到了机场提醒我拿行李，然后导航去T2航站楼\"\n{\"task_type\":\"general\",\"title\":\"机场到达\",\"steps\":[{\"condition\":{\"poi\":\"E001:浦东国际机场:121.8050,31.1443\",\"distance\":\"arrive\"},\"actions\":[{\"type\":\"remind\",\"content\":\"拿行李\"},{\"type\":\"navigate\",\"poi\":\"E002:T2航站楼:121.8120,31.1500\"}]}]}",
+      "inputSchema": {
+        "properties": {
+          "steps": {
+            "description": "任务步骤列表，按顺序执行。每个 step 包含 condition（触发条件）和 actions（动作列表），前一个 step 触发后才开始监听下一个 step。单条任务是 steps 长度为 1 的特殊情况。",
+            "type": "array"
+          },
+          "task_type": {
+            "description": "任务类型：general（通用任务）或 guided_tour（导览任务）",
+            "enum": [
+              "general",
+              "guided_tour"
+            ],
+            "type": "string"
+          },
+          "title": {
+            "description": "任务标题，用于展示和任务管理",
+            "type": "string"
+          }
+        },
+        "required": [
+          "task_type",
+          "title",
+          "steps"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "search_along_way_poi",
+      "title": "沿途搜索",
+      "description": "在当前导航路径沿途搜索指定类型的POI地点",
+      "inputSchema": {
+        "properties": {
+          "limit": {
+            "default": 5,
+            "description": "返回结果的最大数量",
+            "type": "number"
+          },
+          "query": {
+            "description": "搜索关键词",
+            "type": "string"
+          },
+          "sort_by": {
+            "default": "relevance",
+            "description": "排序方式。distance=按距离，price_asc=价格升序，price_desc=价格降序，rating=按评分，relevance=按相关度(默认)",
+            "enum": [
+              "distance",
+              "price_asc",
+              "price_desc",
+              "rating",
+              "relevance"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "search_charging_station",
+      "title": "充电桩搜索",
+      "description": "搜索充电站类型POI，支持距离、相关性、价格排序，支持选择充电功率选择，包括慢充（3.5kW-30kW）、快充（30kW-120kW）、超充（120kW-480kW）、闪充（≥480kW），支持使用品牌关键字搜索，支持周边搜索时使用指定中心点坐标",
+      "inputSchema": {
+        "properties": {
+          "brand": {
+            "description": "默认null，极氪自营、三方品牌（直接填关键词），非必选",
+            "type": "string"
+          },
+          "center_poi_pos": {
+            "description": "搜索中心点，格式为：经度,纬度。仅在search_type=nearby时生效，keyword/along时忽略此参数。若不传此参数，工具内部默认使用当前设备定位的经纬度作为中心点；若传入此参数，则优先使用传入值。",
+            "type": "string"
+          },
+          "charging_type": {
+            "description": "充电桩类型。slow=慢充，fast=快充，super=超充，lightning=闪充，default=默认",
+            "enum": [
+              "slow",
+              "fast",
+              "super",
+              "lightning",
+              "default"
+            ],
+            "type": "string"
+          },
+          "limit": {
+            "description": "返回结果的最大数量，默认5",
+            "type": "number"
+          },
+          "poi_search_precision": {
+            "description": "地图poi搜索方式。normal=普通地图搜索；AllHighPrecision=全程高精地图搜索；TerminalHighPrecision=目的地高精地图搜索",
+            "enum": [
+              "normal",
+              "AllHighPrecision",
+              "TerminalHighPrecision"
+            ],
+            "type": "string"
+          },
+          "query": {
+            "description": "搜索关键词",
+            "type": "string"
+          },
+          "search_type": {
+            "description": "搜索方式。keyword=关键字搜索，nearby=周边搜索，along=沿途搜索",
+            "enum": [
+              "keyword",
+              "nearby",
+              "along"
+            ],
+            "type": "string"
+          },
+          "sort_type": {
+            "description": "排序方式。distance=距离排序；relevance=相关性排序，默认排序；price=价格排序",
+            "enum": [
+              "distance",
+              "relevance",
+              "price",
+              "default"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "search_memory",
+      "title": "查询用户记忆",
+      "description": "当用户明确要求查询历史导航信息、日程待办信息、备忘记事内容时，或当导航任务涉及到对历史导航信息的查询时调用该工具；用于辅助当前问答、个性化回复、关联历史上下文，补齐当前对话所需的背景信息。当涉及到对用户个人信息、偏好、状态、社会关系的查询时，不使用此工具。",
+      "inputSchema": {
+        "properties": {
+          "limit": {
+            "default": 5,
+            "description": "限制返回记忆条目数量，不传则使用默认条数",
+            "type": "number"
+          },
+          "query": {
+            "description": "检索记忆的核心语义问句，提炼用户当前诉求，精准描述需要查找的关键信息，例如用户说'导航去上次去的餐厅'，检索信息是'上次去的餐厅'，不应带有'导航'这个动作词",
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "search_nearby_poi",
+      "title": "搜索周边地点",
+      "description": "搜索指定位置周围的poi",
+      "inputSchema": {
+        "properties": {
+          "center_poi_pos": {
+            "description": "搜索中心点，格式为: 经度,纬度",
+            "type": "string"
+          },
+          "limit": {
+            "default": 5,
+            "description": "返回结果的最大数量",
+            "type": "number"
+          },
+          "poi_search_precision": {
+            "default": "normal",
+            "description": "POI搜索精度。normal=普通搜索，AllHighPrecision=所有结果返回AVP高精信息，TerminalHighPrecision=仅第一个/终点结果返回AVP高精信息",
+            "enum": [
+              "normal",
+              "AllHighPrecision",
+              "TerminalHighPrecision"
+            ],
+            "type": "string"
+          },
+          "query": {
+            "description": "搜索关键词",
+            "type": "string"
+          },
+          "radius": {
+            "default": 3000,
+            "description": "半径，单位 米",
+            "type": "number"
+          },
+          "sort_type": {
+            "description": "排序方式：relevance-按相关度，distance-按距离",
+            "enum": [
+              "relevance",
+              "distance"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "search_parking_charging_station",
+      "title": "",
+      "description": "停车场和充电站POI检索工具。支持查询停车场、停车库、停车场入口、停车位、充电站、充电桩、超充站等信息；未指定搜索范围中心时默认以当前位置为中心。",
+      "inputSchema": {
+        "properties": {
+          "location": {
+            "description": "搜索范围中心，可填写城市、商圈、地标、地址、家、公司或用户明确给出的参照地点；用户未指定时不要填写，默认使用当前位置。",
+            "type": "string"
+          },
+          "poi_search_precision": {
+            "default": "normal",
+            "description": "POI搜索精度。normal=普通搜索，AllHighPrecision=返回AVP高精信息，TerminalHighPrecision=仅第一个/终点结果返回AVP高精信息",
+            "enum": [
+              "normal",
+              "AllHighPrecision",
+              "TerminalHighPrecision"
+            ],
+            "type": "string"
+          },
+          "query": {
+            "description": "搜索关键词，只填写要搜索的停车或充电对象和关键条件；如果用户给出城市、区域、商圈、地标、家、公司等搜索范围中心，应放入 location，不要重复写在 query 中。",
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "search_poi_by_keyword",
+      "title": "搜索地点",
+      "description": "搜索关键词的poi信息",
+      "inputSchema": {
+        "properties": {
+          "distance_range": {
+            "description": "距离范围",
+            "properties": {
+              "max": {
+                "description": "最大距离（米）",
+                "type": "number"
+              }
+            },
+            "type": "object"
+          },
+          "limit": {
+            "default": 5,
+            "description": "返回结果的最大数量",
+            "type": "number"
+          },
+          "poi_search_precision": {
+            "default": "normal",
+            "description": "POI搜索精度。normal=普通搜索，AllHighPrecision=返回AVP高精地图及点位信息，TerminalHighPrecision=仅第一个/终点结果返回AVP高精地图及点位信息",
+            "enum": [
+              "normal",
+              "AllHighPrecision",
+              "TerminalHighPrecision"
+            ],
+            "type": "string"
+          },
+          "query": {
+            "description": "搜索关键词",
+            "type": "string"
+          },
+          "sort_by": {
+            "default": "relevance",
+            "description": "排序方式。distance=按距离，price_asc=价格升序，price_desc=价格降序，rating=按评分，relevance=按相关度(默认)",
+            "enum": [
+              "distance",
+              "price_asc",
+              "price_desc",
+              "rating",
+              "relevance"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "search_vehicle_knowledge",
+      "title": "",
+      "description": "查询车辆知识库，解决关于车辆功能操作、车型配置、故障处理、品牌信息等问题。",
+      "inputSchema": {
+        "properties": {
+          "category": {
+            "description": "知识库类别。manual: 包含功能操作指南、故障处理、保养维护等（对应车书手册）；brand: 包含品牌历史、价值观、公司介绍、品牌关系等信息。",
+            "enum": [
+              "manual",
+              "brand"
+            ],
+            "type": "string"
+          },
+          "query": {
+            "description": "对原始用户查询的改写优化语句，用于提高知识库检索的匹配度，示例：汽车空调制冷故障解决方法",
+            "type": "string"
+          }
+        },
+        "required": [
+          "query",
+          "category"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "set_display_focus",
+      "title": "屏幕焦点设置",
+      "description": "设置当前轮次后续工具调用所使用的目标屏幕焦点。仅当用户明确指定或明确提及屏幕类型、屏幕位置时调用本工具。screen_type 和 position 可单独或组合使用，仅填写用户明确提及的参数，缺失信息由工具内部自动匹配。设置结果仅在当前 round 内生效，每个新 round 开始时屏幕焦点会自动恢复到前排中控屏。",
+      "inputSchema": {
+        "anyOf": [
+          {
+            "required": [
+              "screen_type"
+            ]
+          },
+          {
+            "required": [
+              "position"
+            ]
+          }
+        ],
+        "properties": {
+          "position": {
+            "description": "用户指定的屏幕位置；如果用户没有提到则缺省。可选值：DRIVER=主驾，PASSENGER=副驾，SECOND_ROW_LEFT=二排左，SECOND_ROW_RIGHT=二排右，THIRD_ROW_LEFT=三排左，THIRD_ROW_RIGHT=三排右，FRONT_ROW=前排，SECOND_ROW=二排，THIRD_ROW=三排，REAR_ROW=后排。",
+            "enum": [
+              "DRIVER",
+              "PASSENGER",
+              "SECOND_ROW_LEFT",
+              "SECOND_ROW_RIGHT",
+              "THIRD_ROW_LEFT",
+              "THIRD_ROW_RIGHT",
+              "FRONT_ROW",
+              "SECOND_ROW",
+              "THIRD_ROW",
+              "REAR_ROW"
+            ],
+            "type": "string"
+          },
+          "screen_type": {
+            "description": "用户指定的屏幕类型；如果用户没有提到则缺省。可选值：SEATBACK_SCREEN=靠背屏，SLIDING_SCREEN=滑移屏，INSTRUMENT_SCREEN=仪表屏，HEADREST_SCREEN=头枕屏，ARMREST_SCREEN=扶手屏，FRIDGE_SCREEN=冰箱屏，SMART_SCREEN=智慧屏，LARGE_TV=大电视，FOLDABLE_SCREEN=折叠屏，ROOF_SCREEN=吸顶屏，CENTER_SCREEN=中控屏，ENTERTAINMENT_SCREEN=娱乐屏，DETACHABLE_SCREEN=可拆卸屏，SMALL_SCREEN=小屏，PANORAMIC_SCREEN=带鱼屏。",
+            "enum": [
+              "SEATBACK_SCREEN",
+              "SLIDING_SCREEN",
+              "INSTRUMENT_SCREEN",
+              "HEADREST_SCREEN",
+              "ARMREST_SCREEN",
+              "FRIDGE_SCREEN",
+              "SMART_SCREEN",
+              "LARGE_TV",
+              "FOLDABLE_SCREEN",
+              "ROOF_SCREEN",
+              "CENTER_SCREEN",
+              "ENTERTAINMENT_SCREEN",
+              "DETACHABLE_SCREEN",
+              "SMALL_SCREEN",
+              "PANORAMIC_SCREEN"
+            ],
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    },
+    {
+      "name": "set_favorite_poi",
+      "title": "收藏地址",
+      "description": "添加收藏地址，支持将当前位置或指定POI或终点设为地图收藏夹中的收藏点，收藏点包含三种类型：1.明确声明要收藏的地点；2.用户自己的家；3.用户自己的工作地。不适用的场景：1.把指定地点记录为其他人的家和公司；2.把指定地点记录为其他指定代称",
+      "inputSchema": {
+        "properties": {
+          "address_type": {
+            "description": "地址类型。home=家，company=公司，favorite=收藏点",
+            "enum": [
+              "home",
+              "company",
+              "favorite"
+            ],
+            "type": "string"
+          },
+          "poi": {
+            "description": "位置信息列表，每个元素格式为 poi_id:地点:经度,纬度。注意：poi_id 是可选的，若无则留空。",
+            "type": "string"
+          }
+        },
+        "required": [
+          "address_type",
+          "poi"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "set_map_auto_scale",
+      "title": "设置自动比例尺",
+      "description": "开启或关闭地图随车速自动调整比例尺的能力；开启后比例尺随速度动态变化，关闭后保持当前手动设定的比例尺。",
+      "inputSchema": {
+        "properties": {
+          "enabled": {
+            "description": "是否开启自动比例尺。true=开启，false=关闭",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "enabled"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "set_map_view",
+      "title": "导航视角控制",
+      "description": "切换导航地图的车头朝向（2D正北向上 / 2D车头向上 / 3D车头向上），仅改变地图展示方式，不改变导航路线。",
+      "inputSchema": {
+        "properties": {
+          "view": {
+            "description": "视角类型。2d_north_up=2D正北向上，2d_head_up=2D车头向上，3d_head_up=3D车头向上",
+            "enum": [
+              "2d_north_up",
+              "2d_head_up",
+              "3d_head_up"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "view"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "set_navi_route_preference",
+      "title": "",
+      "description": "设置导航路线规划偏好，支持躲避拥堵、少收费、高速优先、智能推荐、速度最快、不走高速、大路优先7个选项，仅支持单选，导航中与非导航状态下均可生效。",
+      "inputSchema": {
+        "properties": {
+          "route_preference": {
+            "description": "路线偏好选项，单选。avoid_congestion=躲避拥堵，less_toll=少收费，highway_priority=高速优先，smart_recommend=智能推荐，fastest_speed=速度最快，no_highway=不走高速，main_road_priority=大路优先。",
+            "enum": [
+              "avoid_congestion",
+              "less_toll",
+              "highway_priority",
+              "smart_recommend",
+              "fastest_speed",
+              "no_highway",
+              "main_road_priority"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "route_preference"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "set_navi_voice_mode",
+      "title": "",
+      "description": "设置导航语音播报模式，支持开启/关闭导航语音播报，以及在开启状态下选择智能、详细、极简三种播报模式之一。",
+      "inputSchema": {
+        "properties": {
+          "voice_mode": {
+            "description": "语音播报模式。on=默认模式；off=关闭播报；smart=智能模式；detailed=详细模式；simple=极简模式。",
+            "enum": [
+              "on",
+              "off",
+              "smart",
+              "detailed",
+              "simple"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "voice_mode"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "share_route",
+      "title": "分享行程",
+      "description": "唤起当前导航行程/路线的分享面板，供用户选择分享渠道；需存在有效导航或已规划路线，否则提示无法分享。",
+      "inputSchema": {
+        "properties": {},
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "name": "start_navi",
+      "title": "开始导航",
+      "description": "规划到指定目的地的导航路径，支持多个途经点。必须在行车状态中，才能发起导航",
+      "inputSchema": {
+        "properties": {
+          "is_avp": {
+            "default": false,
+            "description": "所有目的地是否都在AVP地图全部覆盖范围内",
+            "type": "boolean"
+          },
+          "poi_list": {
+            "description": "目的地及途经点列表，每个元素格式为 poi_id:地点:经度,纬度:是否停靠，最后一个为目的地",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "poi_list"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "web_search",
+      "title": "Web检索",
+      "description": "联网搜索，可搜索实时公开信息",
+      "inputSchema": {
+        "properties": {
+          "query": {
+            "description": "搜索关键词。必要时加上明确的时间日期获得更准确的检索结果。",
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "wiki_web_search",
+      "title": "百科搜索",
+      "description": "联网搜索公开事实、知识、定义、原理、历史、作品/人物信息、新闻热点、政策规则、翻译和其他需要核验的信息。知识型问题必须调用本工具；当前候选、附近地点、餐厅/酒店/景点推荐、评分价格、余票、路线、导航、预订、购买等生活服务请求不要调用本工具，应交给 multi_task_agent。调用时必须同时提供完整 query 和 tag。",
+      "inputSchema": {
+        "properties": {
+          "query": {
+            "description": "用于联网检索的完整问题。保留主题对象、关键限定条件、时间范围、地点、比较维度和用户真正要查的内容；不得只截取一个动作词或过度压缩。",
+            "type": "string"
+          },
+          "tag": {
+            "description": "必填。按用户问题的主要知识对象选择最具体类别：general_web_query仅用于无明确领域的综合新闻/泛化查询；product_price价格行情；enterprise_info企业；tech_product科技产品；history_knowledge/history_event历史；poetry_info诗词；audio_content歌曲歌手专辑有声书事实；translation翻译；education_learning学习考试；why_question为什么/原理；world_records最高最大最快；city_info城市；travel_transport交通政策/航班规则；movie/tv_drama/anime_variety影视动漫综艺；fitness运动；pet_info宠物；parenting育儿；food_nutrition营养；food_item食物品种；recipe菜谱；household_tips家务；dream_interpretation梦境；unit_conversion单位换算；astrology星座；chinese_classics古典文学；literature文学；folklore_culture民俗节日；human_geography地理；natural_science自然科学；aerospace航天；art_info艺术；expert_knowledge游戏/其他专业知识。",
+            "enum": [
+              "general_web_query",
+              "product_price",
+              "enterprise_info",
+              "tech_product",
+              "history_knowledge",
+              "history_event",
+              "chinese_classics",
+              "literature",
+              "folklore_culture",
+              "human_geography",
+              "city_info",
+              "travel_transport",
+              "natural_science",
+              "aerospace",
+              "why_question",
+              "world_records",
+              "art_info",
+              "expert_knowledge",
+              "astrology",
+              "auto_brand_info",
+              "fitness",
+              "pet_info",
+              "education_learning",
+              "parenting",
+              "food_nutrition",
+              "food_item",
+              "recipe",
+              "household_tips",
+              "dream_interpretation",
+              "unit_conversion",
+              "poetry_info",
+              "translation",
+              "movie",
+              "tv_drama",
+              "audio_content",
+              "anime_variety",
+              "other"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "query",
+          "tag"
+        ],
+        "type": "object"
+      }
+    }
+  ]
+}

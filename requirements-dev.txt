@@ -1,0 +1,3 @@
+harbor==0.24.0
+litellm==1.105.0
+PyYAML==6.0.3

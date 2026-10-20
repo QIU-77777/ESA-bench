@@ -1,0 +1,1445 @@
+{
+  "dataset_version": "esa-local-v1",
+  "pois": [
+    {
+      "id": "poi_westlake",
+      "name": "西湖",
+      "category": "scene",
+      "lon": 120.149,
+      "lat": 30.242,
+      "price": 0,
+      "rating": 4.8,
+      "brand": "",
+      "address": "杭州市钱江新城",
+      "city": "杭州市",
+      "tags": [
+        "scene",
+        "景点 旅游"
+      ],
+      "power_kw": 0,
+      "available": null,
+      "avp": false
+    },
+    {
+      "id": "poi_mall",
+      "name": "杭州万象城",
+      "category": "mall",
+      "lon": 120.212,
+      "lat": 30.253,
+      "price": 0,
+      "rating": 4.7,
+      "brand": "",
+      "address": "杭州市钱江新城",
+      "city": "杭州市",
+      "tags": [
+        "mall",
+        "mall"
+      ],
+      "power_kw": 0,
+      "available": null,
+      "avp": false
+    },
+    {
+      "id": "poi_coffee",
+      "name": "星巴克钱江新城店",
+      "category": "food",
+      "lon": 120.21,
+      "lat": 30.254,
+      "price": 32,
+      "rating": 4.4,
+      "brand": "",
+      "address": "杭州市钱江新城",
+      "city": "杭州市",
+      "tags": [
+        "food",
+        "餐厅 美食 咖啡"
+      ],
+      "power_kw": 0,
+      "available": null,
+      "avp": false
+    },
+    {
+      "id": "poi_restaurant",
+      "name": "外婆家万象城店",
+      "category": "food",
+      "lon": 120.213,
+      "lat": 30.252,
+      "price": 85,
+      "rating": 4.6,
+      "brand": "",
+      "address": "杭州市钱江新城",
+      "city": "杭州市",
+      "tags": [
+        "food",
+        "餐厅 美食 咖啡"
+      ],
+      "power_kw": 0,
+      "available": null,
+      "avp": false
+    },
+    {
+      "id": "poi_hotel",
+      "name": "杭州柏悦酒店",
+      "category": "hotel",
+      "lon": 120.215,
+      "lat": 30.251,
+      "price": 1800,
+      "rating": 4.9,
+      "brand": "",
+      "address": "杭州市钱江新城",
+      "city": "杭州市",
+      "tags": [
+        "hotel",
+        "hotel"
+      ],
+      "power_kw": 0,
+      "available": null,
+      "avp": false
+    },
+    {
+      "id": "poi_charge",
+      "name": "极氪超充站万象城",
+      "category": "charge",
+      "lon": 120.211,
+      "lat": 30.254,
+      "price": 1.2,
+      "rating": 4.8,
+      "brand": "极氪",
+      "address": "杭州市钱江新城",
+      "city": "杭州市",
+      "tags": [
+        "charge",
+        "充电站 充电桩 超充"
+      ],
+      "power_kw": 360,
+      "available": 6,
+      "avp": true
+    },
+    {
+      "id": "poi_charge_fast",
+      "name": "国家电网快充站",
+      "category": "charge",
+      "lon": 120.22,
+      "lat": 30.258,
+      "price": 0.9,
+      "rating": 4.3,
+      "brand": "国家电网",
+      "address": "杭州市钱江新城",
+      "city": "杭州市",
+      "tags": [
+        "charge",
+        "充电站 充电桩 超充"
+      ],
+      "power_kw": 90,
+      "available": 6,
+      "avp": true
+    },
+    {
+      "id": "poi_park",
+      "name": "万象城地下停车场",
+      "category": "parking",
+      "lon": 120.212,
+      "lat": 30.253,
+      "price": 10,
+      "rating": 4.5,
+      "brand": "",
+      "address": "杭州市钱江新城",
+      "city": "杭州市",
+      "tags": [
+        "parking",
+        "停车场 车位"
+      ],
+      "power_kw": 0,
+      "available": 48,
+      "avp": true
+    },
+    {
+      "id": "poi_toilet",
+      "name": "钱江新城公共卫生间",
+      "category": "toilet",
+      "lon": 120.214,
+      "lat": 30.255,
+      "price": 0,
+      "rating": 4.2,
+      "brand": "",
+      "address": "杭州市钱江新城",
+      "city": "杭州市",
+      "tags": [
+        "toilet",
+        "toilet"
+      ],
+      "power_kw": 0,
+      "available": null,
+      "avp": false
+    },
+    {
+      "id": "poi_home",
+      "name": "家",
+      "category": "residential",
+      "lon": 120.2,
+      "lat": 30.26,
+      "price": 0,
+      "rating": 0,
+      "brand": "",
+      "address": "杭州市钱江新城",
+      "city": "杭州市",
+      "tags": [
+        "residential",
+        "residential"
+      ],
+      "power_kw": 0,
+      "available": null,
+      "avp": false
+    },
+    {
+      "id": "poi_company",
+      "name": "公司",
+      "category": "office",
+      "lon": 120.22,
+      "lat": 30.25,
+      "price": 0,
+      "rating": 0,
+      "brand": "",
+      "address": "杭州市钱江新城",
+      "city": "杭州市",
+      "tags": [
+        "office",
+        "office"
+      ],
+      "power_kw": 0,
+      "available": null,
+      "avp": false
+    },
+    {
+      "id": "poi_shanghai",
+      "name": "上海虹桥站",
+      "category": "station",
+      "lon": 121.327,
+      "lat": 31.2,
+      "price": 0,
+      "rating": 4.5,
+      "brand": "",
+      "address": "上海市",
+      "city": "上海市",
+      "tags": [
+        "station",
+        "火车站"
+      ],
+      "power_kw": 0,
+      "available": null,
+      "avp": false
+    },
+    {
+      "id": "poi_beijing",
+      "name": "北京南站",
+      "category": "station",
+      "lon": 116.379,
+      "lat": 39.865,
+      "price": 0,
+      "rating": 4.5,
+      "brand": "",
+      "address": "北京市",
+      "city": "北京市",
+      "tags": [
+        "station",
+        "火车站"
+      ],
+      "power_kw": 0,
+      "available": null,
+      "avp": false
+    },
+    {
+      "id": "100001",
+      "name": "汇贤居小区",
+      "category": "residential",
+      "lon": 121.445,
+      "lat": 31.21,
+      "price": 0,
+      "rating": 4.5,
+      "brand": "国家电网",
+      "address": "上海市徐汇区汇贤居小区",
+      "city": "上海市",
+      "tags": [
+        "residential",
+        "汇贤居小区"
+      ],
+      "power_kw": 0,
+      "available": 48,
+      "avp": false
+    },
+    {
+      "id": "200001",
+      "name": "科技园 A 座",
+      "category": "office",
+      "lon": 121.42,
+      "lat": 31.19,
+      "price": 0,
+      "rating": 4.5,
+      "brand": "国家电网",
+      "address": "上海市徐汇区科技园 A 座",
+      "city": "上海市",
+      "tags": [
+        "office",
+        "科技园 A 座"
+      ],
+      "power_kw": 0,
+      "available": 48,
+      "avp": false
+    },
+    {
+      "id": "200002",
+      "name": "科技园 B 座",
+      "category": "office",
+      "lon": 121.4215,
+      "lat": 31.1895,
+      "price": 0,
+      "rating": 4.5,
+      "brand": "国家电网",
+      "address": "上海市徐汇区科技园 B 座",
+      "city": "上海市",
+      "tags": [
+        "office",
+        "科技园 B 座"
+      ],
+      "power_kw": 0,
+      "available": 48,
+      "avp": false
+    },
+    {
+      "id": "200003",
+      "name": "科技园停车场",
+      "category": "parking",
+      "lon": 121.4198,
+      "lat": 31.1902,
+      "price": 10,
+      "rating": 4.5,
+      "brand": "国家电网",
+      "address": "上海市徐汇区科技园停车场",
+      "city": "上海市",
+      "tags": [
+        "parking",
+        "科技园停车场"
+      ],
+      "power_kw": 0,
+      "available": 48,
+      "avp": true
+    },
+    {
+      "id": "300001",
+      "name": "浦东国际机场 T2 航站楼",
+      "category": "airport",
+      "lon": 121.805,
+      "lat": 31.152,
+      "price": 0,
+      "rating": 4.5,
+      "brand": "国家电网",
+      "address": "上海市徐汇区浦东国际机场 T2 航站楼",
+      "city": "上海市",
+      "tags": [
+        "airport",
+        "浦东国际机场 T2 航站楼"
+      ],
+      "power_kw": 0,
+      "available": 48,
+      "avp": false
+    },
+    {
+      "id": "300002",
+      "name": "市第一医院",
+      "category": "hospital",
+      "lon": 121.481,
+      "lat": 31.239,
+      "price": 0,
+      "rating": 4.5,
+      "brand": "国家电网",
+      "address": "上海市徐汇区市第一医院",
+      "city": "上海市",
+      "tags": [
+        "hospital",
+        "市第一医院"
+      ],
+      "power_kw": 0,
+      "available": 48,
+      "avp": false
+    },
+    {
+      "id": "300003",
+      "name": "万象城川菜馆",
+      "category": "food",
+      "lon": 121.4455,
+      "lat": 31.221,
+      "price": 0,
+      "rating": 4.5,
+      "brand": "国家电网",
+      "address": "上海市徐汇区万象城川菜馆",
+      "city": "上海市",
+      "tags": [
+        "food",
+        "万象城川菜馆"
+      ],
+      "power_kw": 0,
+      "available": 48,
+      "avp": false
+    },
+    {
+      "id": "500001",
+      "name": "老家",
+      "category": "residential",
+      "lon": 118.338,
+      "lat": 29.715,
+      "price": 0,
+      "rating": 4.5,
+      "brand": "国家电网",
+      "address": "安徽省黄山市屯溪区新安路88号",
+      "city": "黄山市",
+      "tags": [
+        "residential",
+        "老家"
+      ],
+      "power_kw": 0,
+      "available": 48,
+      "avp": false
+    },
+    {
+      "id": "400001",
+      "name": "中山西路慢充站",
+      "category": "charge",
+      "lon": 121.451,
+      "lat": 31.221,
+      "price": 1.1,
+      "rating": 4.5,
+      "brand": "国家电网",
+      "address": "上海市徐汇区中山西路慢充站",
+      "city": "上海市",
+      "tags": [
+        "充电站 充电桩",
+        "慢充 慢充桩"
+      ],
+      "power_kw": 7,
+      "available": 4,
+      "avp": false,
+      "status": "营业中"
+    },
+    {
+      "id": "400002",
+      "name": "虹桥路快充站",
+      "category": "charge",
+      "lon": 121.447,
+      "lat": 31.218,
+      "price": 1.1,
+      "rating": 4.5,
+      "brand": "国家电网",
+      "address": "上海市徐汇区虹桥路快充站",
+      "city": "上海市",
+      "tags": [
+        "充电站 充电桩",
+        "快充 快充桩"
+      ],
+      "power_kw": 120,
+      "available": 0,
+      "avp": false,
+      "status": "维修"
+    },
+    {
+      "id": "400003",
+      "name": "宜山路快充站",
+      "category": "charge",
+      "lon": 121.443,
+      "lat": 31.215,
+      "price": 1.1,
+      "rating": 4.5,
+      "brand": "国家电网",
+      "address": "上海市徐汇区宜山路快充站",
+      "city": "上海市",
+      "tags": [
+        "充电站 充电桩",
+        "快充 快充桩"
+      ],
+      "power_kw": 180,
+      "available": 3,
+      "avp": false,
+      "status": "营业中"
+    },
+    {
+      "id": "400004",
+      "name": "漕溪北路快充站",
+      "category": "charge",
+      "lon": 121.438,
+      "lat": 31.209,
+      "price": 1.1,
+      "rating": 4.5,
+      "brand": "国家电网",
+      "address": "上海市徐汇区漕溪北路快充站",
+      "city": "上海市",
+      "tags": [
+        "充电站 充电桩",
+        "快充 快充桩"
+      ],
+      "power_kw": 120,
+      "available": 1,
+      "avp": false,
+      "status": "营业中"
+    },
+    {
+      "id": "400005",
+      "name": "桂林路慢充站",
+      "category": "charge",
+      "lon": 121.42,
+      "lat": 31.2,
+      "price": 1.1,
+      "rating": 4.5,
+      "brand": "国家电网",
+      "address": "上海市徐汇区桂林路慢充站",
+      "city": "上海市",
+      "tags": [
+        "充电站 充电桩",
+        "慢充 慢充桩"
+      ],
+      "power_kw": 7,
+      "available": 8,
+      "avp": false,
+      "status": "营业中"
+    }
+  ],
+  "tracks": [
+    {
+      "id": "track_2",
+      "name": "稻香",
+      "artist": "周杰伦",
+      "tags": "流行 华语 轻快",
+      "playable": true,
+      "duration_seconds": 240
+    },
+    {
+      "id": "track_3",
+      "name": "夜曲",
+      "artist": "周杰伦",
+      "tags": "流行 华语",
+      "playable": true,
+      "duration_seconds": 240
+    },
+    {
+      "id": "track_4",
+      "name": "红豆",
+      "artist": "王菲",
+      "tags": "流行 华语 抒情",
+      "playable": true,
+      "duration_seconds": 240
+    },
+    {
+      "id": "track_5",
+      "name": "海阔天空",
+      "artist": "Beyond",
+      "tags": "摇滚 粤语 经典",
+      "playable": true,
+      "duration_seconds": 240
+    },
+    {
+      "id": "track_6",
+      "name": "孤勇者",
+      "artist": "陈奕迅",
+      "tags": "流行 华语",
+      "playable": true,
+      "duration_seconds": 240
+    },
+    {
+      "id": "track_7",
+      "name": "River Flows in You",
+      "artist": "Yiruma",
+      "tags": "纯音乐 钢琴 安静",
+      "playable": true,
+      "duration_seconds": 240
+    },
+    {
+      "id": "track_8",
+      "name": "童话",
+      "artist": "光良",
+      "tags": "流行 华语",
+      "playable": true,
+      "duration_seconds": 240
+    },
+    {
+      "id": "track_9",
+      "name": "青花瓷",
+      "artist": "周杰伦",
+      "tags": "古风 华语",
+      "playable": true,
+      "duration_seconds": 240
+    },
+    {
+      "id": "track_10",
+      "name": "夜空中最亮的星",
+      "artist": "逃跑计划",
+      "tags": "摇滚 华语",
+      "playable": true,
+      "duration_seconds": 240
+    },
+    {
+      "id": "S10001",
+      "name": "晴天",
+      "artist": "周杰伦",
+      "album": "叶惠美",
+      "version": "original",
+      "tags": "晴天 华语 流行",
+      "playable": true,
+      "duration_seconds": 269
+    },
+    {
+      "id": "S10002",
+      "name": "晴天 (翻唱)",
+      "artist": "翻唱歌手",
+      "album": "翻唱作品",
+      "version": "cover",
+      "tags": "晴天 华语 流行",
+      "playable": true,
+      "duration_seconds": 269
+    },
+    {
+      "id": "S10003",
+      "name": "晴天 (Live)",
+      "artist": "周杰伦",
+      "album": "演唱会",
+      "version": "live",
+      "tags": "晴天 华语 流行",
+      "playable": true,
+      "duration_seconds": 269
+    },
+    {
+      "id": "S10004",
+      "name": "晴天娃娃",
+      "artist": "江语晨",
+      "album": "晴天娃娃",
+      "version": "original",
+      "tags": "晴天 华语 流行",
+      "playable": true,
+      "duration_seconds": 269
+    }
+  ],
+  "documents": [
+    {
+      "id": "doc_manual_ac",
+      "category": "manual",
+      "title": "空调制冷操作和维护",
+      "content": "开启空调后选择制冷模式。检查温度设置和滤芯。持续故障时联系授权服务中心。",
+      "tags": "空调 制冷 温度 维护"
+    },
+    {
+      "id": "doc_manual_tire",
+      "category": "manual",
+      "title": "轮胎胎压与保养",
+      "content": "冷胎压力参考车门标牌。定期检查轮胎磨损与胎压。",
+      "tags": "轮胎 胎压 保养"
+    },
+    {
+      "id": "doc_brand",
+      "category": "brand",
+      "title": "极氪品牌",
+      "content": "极氪提供智能电动车型与充电服务。此资料为固定模拟数据。",
+      "tags": "极氪 品牌"
+    },
+    {
+      "id": "doc_finance",
+      "category": "finance",
+      "title": "固定财经资料",
+      "content": "示例市场数据：模拟指数1000点，日变化0.5%。固定资料不代表实时行情。",
+      "tags": "财经 股票 指数"
+    },
+    {
+      "id": "doc_wiki",
+      "category": "natural_science",
+      "title": "水的沸点",
+      "content": "标准大气压下纯水的沸点约为100摄氏度。",
+      "tags": "水 沸点 科学"
+    },
+    {
+      "id": "doc_city",
+      "category": "city_info",
+      "title": "杭州城市资料",
+      "content": "杭州位于浙江省，西湖是当地著名景区。",
+      "tags": "杭州 西湖 城市"
+    },
+    {
+      "id": "doc_web",
+      "category": "web",
+      "title": "杭州出行资料",
+      "content": "固定资料：杭州城市道路和公共交通可连接西湖与钱江新城。",
+      "tags": "杭州 出行 新闻"
+    },
+    {
+      "id": "doc_joke",
+      "category": "joke",
+      "title": "冷笑话",
+      "content": "小明问书为什么那么安静。书回答：我有很多页，但不想翻脸。",
+      "tags": "冷笑话 职场 笑话"
+    },
+    {
+      "id": "doc_story",
+      "category": "story",
+      "title": "睡前故事",
+      "content": "小狐狸在湖边发现一盏灯。它把灯送给迷路的小鹿，两位朋友一起回家。",
+      "tags": "睡前 童话 儿童 故事"
+    },
+    {
+      "id": "doc_skill",
+      "category": "skill",
+      "title": "导航任务技能",
+      "content": "先查询目的地，确认结果，再规划路线。行车状态允许开始导航。",
+      "tags": "导航 规划 技能"
+    }
+  ],
+  "routes": [
+    {
+      "id": "route_home_company",
+      "from_poi": "poi_home",
+      "to_poi": "poi_company",
+      "distance_m": 3600,
+      "duration_s": 480,
+      "toll": 0,
+      "traffic": "畅通"
+    }
+  ],
+  "weather": [
+    {
+      "id": "weather_0_0",
+      "district": "杭州市",
+      "date": "2026-10-20",
+      "condition": "晴",
+      "temperature_min": 16,
+      "temperature_max": 24,
+      "precipitation_probability": 0.1,
+      "hourly": {
+        "morning": "多云",
+        "noon": "晴",
+        "afternoon": "晴",
+        "evening": "多云"
+      }
+    },
+    {
+      "id": "weather_0_1",
+      "district": "杭州市",
+      "date": "2026-10-21",
+      "condition": "多云",
+      "temperature_min": 17,
+      "temperature_max": 25,
+      "precipitation_probability": 0.1,
+      "hourly": {
+        "morning": "多云",
+        "noon": "晴",
+        "afternoon": "晴",
+        "evening": "多云"
+      }
+    },
+    {
+      "id": "weather_0_2",
+      "district": "杭州市",
+      "date": "2026-10-22",
+      "condition": "小雨",
+      "temperature_min": 18,
+      "temperature_max": 26,
+      "precipitation_probability": 0.7,
+      "hourly": {
+        "morning": "多云",
+        "noon": "晴",
+        "afternoon": "晴",
+        "evening": "多云"
+      }
+    },
+    {
+      "id": "weather_0_3",
+      "district": "杭州市",
+      "date": "2026-10-23",
+      "condition": "晴",
+      "temperature_min": 16,
+      "temperature_max": 24,
+      "precipitation_probability": 0.1,
+      "hourly": {
+        "morning": "多云",
+        "noon": "晴",
+        "afternoon": "晴",
+        "evening": "多云"
+      }
+    },
+    {
+      "id": "weather_0_4",
+      "district": "杭州市",
+      "date": "2026-10-24",
+      "condition": "多云",
+      "temperature_min": 17,
+      "temperature_max": 25,
+      "precipitation_probability": 0.1,
+      "hourly": {
+        "morning": "多云",
+        "noon": "晴",
+        "afternoon": "晴",
+        "evening": "多云"
+      }
+    },
+    {
+      "id": "weather_0_5",
+      "district": "杭州市",
+      "date": "2026-10-25",
+      "condition": "小雨",
+      "temperature_min": 18,
+      "temperature_max": 26,
+      "precipitation_probability": 0.7,
+      "hourly": {
+        "morning": "多云",
+        "noon": "晴",
+        "afternoon": "晴",
+        "evening": "多云"
+      }
+    },
+    {
+      "id": "weather_0_6",
+      "district": "杭州市",
+      "date": "2026-10-26",
+      "condition": "晴",
+      "temperature_min": 16,
+      "temperature_max": 24,
+      "precipitation_probability": 0.1,
+      "hourly": {
+        "morning": "多云",
+        "noon": "晴",
+        "afternoon": "晴",
+        "evening": "多云"
+      }
+    },
+    {
+      "id": "weather_0_7",
+      "district": "杭州市",
+      "date": "2026-10-27",
+      "condition": "多云",
+      "temperature_min": 17,
+      "temperature_max": 25,
+      "precipitation_probability": 0.1,
+      "hourly": {
+        "morning": "多云",
+        "noon": "晴",
+        "afternoon": "晴",
+        "evening": "多云"
+      }
+    },
+    {
+      "id": "weather_0_8",
+      "district": "杭州市",
+      "date": "2026-10-28",
+      "condition": "小雨",
+      "temperature_min": 18,
+      "temperature_max": 26,
+      "precipitation_probability": 0.7,
+      "hourly": {
+        "morning": "多云",
+        "noon": "晴",
+        "afternoon": "晴",
+        "evening": "多云"
+      }
+    },
+    {
+      "id": "weather_0_9",
+      "district": "杭州市",
+      "date": "2026-10-29",
+      "condition": "晴",
+      "temperature_min": 16,
+      "temperature_max": 24,
+      "precipitation_probability": 0.1,
+      "hourly": {
+        "morning": "多云",
+        "noon": "晴",
+        "afternoon": "晴",
+        "evening": "多云"
+      }
+    },
+    {
+      "id": "weather_1_0",
+      "district": "上海市",
+      "date": "2026-10-20",
+      "condition": "晴",
+      "temperature_min": 17,
+      "temperature_max": 25,
+      "precipitation_probability": 0.1,
+      "hourly": {
+        "morning": "多云",
+        "noon": "晴",
+        "afternoon": "晴",
+        "evening": "多云"
+      }
+    },
+    {
+      "id": "weather_1_1",
+      "district": "上海市",
+      "date": "2026-10-21",
+      "condition": "多云",
+      "temperature_min": 18,
+      "temperature_max": 26,
+      "precipitation_probability": 0.1,
+      "hourly": {
+        "morning": "多云",
+        "noon": "晴",
+        "afternoon": "晴",
+        "evening": "多云"
+      }
+    },
+    {
+      "id": "weather_1_2",
+      "district": "上海市",
+      "date": "2026-10-22",
+      "condition": "小雨",
+      "temperature_min": 19,
+      "temperature_max": 27,
+      "precipitation_probability": 0.7,
+      "hourly": {
+        "morning": "多云",
+        "noon": "晴",
+        "afternoon": "晴",
+        "evening": "多云"
+      }
+    },
+    {
+      "id": "weather_1_3",
+      "district": "上海市",
+      "date": "2026-10-23",
+      "condition": "晴",
+      "temperature_min": 17,
+      "temperature_max": 25,
+      "precipitation_probability": 0.1,
+      "hourly": {
+        "morning": "多云",
+        "noon": "晴",
+        "afternoon": "晴",
+        "evening": "多云"
+      }
+    },
+    {
+      "id": "weather_1_4",
+      "district": "上海市",
+      "date": "2026-10-24",
+      "condition": "多云",
+      "temperature_min": 18,
+      "temperature_max": 26,
+      "precipitation_probability": 0.1,
+      "hourly": {
+        "morning": "多云",
+        "noon": "晴",
+        "afternoon": "晴",
+        "evening": "多云"
+      }
+    },
+    {
+      "id": "weather_1_5",
+      "district": "上海市",
+      "date": "2026-10-25",
+      "condition": "小雨",
+      "temperature_min": 19,
+      "temperature_max": 27,
+      "precipitation_probability": 0.7,
+      "hourly": {
+        "morning": "多云",
+        "noon": "晴",
+        "afternoon": "晴",
+        "evening": "多云"
+      }
+    },
+    {
+      "id": "weather_1_6",
+      "district": "上海市",
+      "date": "2026-10-26",
+      "condition": "晴",
+      "temperature_min": 17,
+      "temperature_max": 25,
+      "precipitation_probability": 0.1,
+      "hourly": {
+        "morning": "多云",
+        "noon": "晴",
+        "afternoon": "晴",
+        "evening": "多云"
+      }
+    },
+    {
+      "id": "weather_1_7",
+      "district": "上海市",
+      "date": "2026-10-27",
+      "condition": "多云",
+      "temperature_min": 18,
+      "temperature_max": 26,
+      "precipitation_probability": 0.1,
+      "hourly": {
+        "morning": "多云",
+        "noon": "晴",
+        "afternoon": "晴",
+        "evening": "多云"
+      }
+    },
+    {
+      "id": "weather_1_8",
+      "district": "上海市",
+      "date": "2026-10-28",
+      "condition": "小雨",
+      "temperature_min": 19,
+      "temperature_max": 27,
+      "precipitation_probability": 0.7,
+      "hourly": {
+        "morning": "多云",
+        "noon": "晴",
+        "afternoon": "晴",
+        "evening": "多云"
+      }
+    },
+    {
+      "id": "weather_1_9",
+      "district": "上海市",
+      "date": "2026-10-29",
+      "condition": "晴",
+      "temperature_min": 17,
+      "temperature_max": 25,
+      "precipitation_probability": 0.1,
+      "hourly": {
+        "morning": "多云",
+        "noon": "晴",
+        "afternoon": "晴",
+        "evening": "多云"
+      }
+    },
+    {
+      "id": "weather_2_0",
+      "district": "北京市",
+      "date": "2026-10-20",
+      "condition": "晴",
+      "temperature_min": 18,
+      "temperature_max": 26,
+      "precipitation_probability": 0.1,
+      "hourly": {
+        "morning": "多云",
+        "noon": "晴",
+        "afternoon": "晴",
+        "evening": "多云"
+      }
+    },
+    {
+      "id": "weather_2_1",
+      "district": "北京市",
+      "date": "2026-10-21",
+      "condition": "多云",
+      "temperature_min": 19,
+      "temperature_max": 27,
+      "precipitation_probability": 0.1,
+      "hourly": {
+        "morning": "多云",
+        "noon": "晴",
+        "afternoon": "晴",
+        "evening": "多云"
+      }
+    },
+    {
+      "id": "weather_2_2",
+      "district": "北京市",
+      "date": "2026-10-22",
+      "condition": "小雨",
+      "temperature_min": 20,
+      "temperature_max": 28,
+      "precipitation_probability": 0.7,
+      "hourly": {
+        "morning": "多云",
+        "noon": "晴",
+        "afternoon": "晴",
+        "evening": "多云"
+      }
+    },
+    {
+      "id": "weather_2_3",
+      "district": "北京市",
+      "date": "2026-10-23",
+      "condition": "晴",
+      "temperature_min": 18,
+      "temperature_max": 26,
+      "precipitation_probability": 0.1,
+      "hourly": {
+        "morning": "多云",
+        "noon": "晴",
+        "afternoon": "晴",
+        "evening": "多云"
+      }
+    },
+    {
+      "id": "weather_2_4",
+      "district": "北京市",
+      "date": "2026-10-24",
+      "condition": "多云",
+      "temperature_min": 19,
+      "temperature_max": 27,
+      "precipitation_probability": 0.1,
+      "hourly": {
+        "morning": "多云",
+        "noon": "晴",
+        "afternoon": "晴",
+        "evening": "多云"
+      }
+    },
+    {
+      "id": "weather_2_5",
+      "district": "北京市",
+      "date": "2026-10-25",
+      "condition": "小雨",
+      "temperature_min": 20,
+      "temperature_max": 28,
+      "precipitation_probability": 0.7,
+      "hourly": {
+        "morning": "多云",
+        "noon": "晴",
+        "afternoon": "晴",
+        "evening": "多云"
+      }
+    },
+    {
+      "id": "weather_2_6",
+      "district": "北京市",
+      "date": "2026-10-26",
+      "condition": "晴",
+      "temperature_min": 18,
+      "temperature_max": 26,
+      "precipitation_probability": 0.1,
+      "hourly": {
+        "morning": "多云",
+        "noon": "晴",
+        "afternoon": "晴",
+        "evening": "多云"
+      }
+    },
+    {
+      "id": "weather_2_7",
+      "district": "北京市",
+      "date": "2026-10-27",
+      "condition": "多云",
+      "temperature_min": 19,
+      "temperature_max": 27,
+      "precipitation_probability": 0.1,
+      "hourly": {
+        "morning": "多云",
+        "noon": "晴",
+        "afternoon": "晴",
+        "evening": "多云"
+      }
+    },
+    {
+      "id": "weather_2_8",
+      "district": "北京市",
+      "date": "2026-10-28",
+      "condition": "小雨",
+      "temperature_min": 20,
+      "temperature_max": 28,
+      "precipitation_probability": 0.7,
+      "hourly": {
+        "morning": "多云",
+        "noon": "晴",
+        "afternoon": "晴",
+        "evening": "多云"
+      }
+    },
+    {
+      "id": "weather_2_9",
+      "district": "北京市",
+      "date": "2026-10-29",
+      "condition": "晴",
+      "temperature_min": 18,
+      "temperature_max": 26,
+      "precipitation_probability": 0.1,
+      "hourly": {
+        "morning": "多云",
+        "noon": "晴",
+        "afternoon": "晴",
+        "evening": "多云"
+      }
+    },
+    {
+      "id": "weather_3_0",
+      "district": "上海市徐汇区",
+      "date": "2026-10-20",
+      "condition": "晴",
+      "temperature_min": 19,
+      "temperature_max": 27,
+      "precipitation_probability": 0.1,
+      "hourly": {
+        "morning": "多云",
+        "noon": "晴",
+        "afternoon": "晴",
+        "evening": "多云"
+      }
+    },
+    {
+      "id": "weather_3_1",
+      "district": "上海市徐汇区",
+      "date": "2026-10-21",
+      "condition": "多云",
+      "temperature_min": 20,
+      "temperature_max": 28,
+      "precipitation_probability": 0.1,
+      "hourly": {
+        "morning": "多云",
+        "noon": "晴",
+        "afternoon": "晴",
+        "evening": "多云"
+      }
+    },
+    {
+      "id": "weather_3_2",
+      "district": "上海市徐汇区",
+      "date": "2026-10-22",
+      "condition": "小雨",
+      "temperature_min": 21,
+      "temperature_max": 29,
+      "precipitation_probability": 0.7,
+      "hourly": {
+        "morning": "多云",
+        "noon": "晴",
+        "afternoon": "晴",
+        "evening": "多云"
+      }
+    },
+    {
+      "id": "weather_3_3",
+      "district": "上海市徐汇区",
+      "date": "2026-10-23",
+      "condition": "晴",
+      "temperature_min": 19,
+      "temperature_max": 27,
+      "precipitation_probability": 0.1,
+      "hourly": {
+        "morning": "多云",
+        "noon": "晴",
+        "afternoon": "晴",
+        "evening": "多云"
+      }
+    },
+    {
+      "id": "weather_3_4",
+      "district": "上海市徐汇区",
+      "date": "2026-10-24",
+      "condition": "多云",
+      "temperature_min": 20,
+      "temperature_max": 28,
+      "precipitation_probability": 0.1,
+      "hourly": {
+        "morning": "多云",
+        "noon": "晴",
+        "afternoon": "晴",
+        "evening": "多云"
+      }
+    },
+    {
+      "id": "weather_3_5",
+      "district": "上海市徐汇区",
+      "date": "2026-10-25",
+      "condition": "小雨",
+      "temperature_min": 21,
+      "temperature_max": 29,
+      "precipitation_probability": 0.7,
+      "hourly": {
+        "morning": "多云",
+        "noon": "晴",
+        "afternoon": "晴",
+        "evening": "多云"
+      }
+    },
+    {
+      "id": "weather_3_6",
+      "district": "上海市徐汇区",
+      "date": "2026-10-26",
+      "condition": "晴",
+      "temperature_min": 19,
+      "temperature_max": 27,
+      "precipitation_probability": 0.1,
+      "hourly": {
+        "morning": "多云",
+        "noon": "晴",
+        "afternoon": "晴",
+        "evening": "多云"
+      }
+    },
+    {
+      "id": "weather_3_7",
+      "district": "上海市徐汇区",
+      "date": "2026-10-27",
+      "condition": "多云",
+      "temperature_min": 20,
+      "temperature_max": 28,
+      "precipitation_probability": 0.1,
+      "hourly": {
+        "morning": "多云",
+        "noon": "晴",
+        "afternoon": "晴",
+        "evening": "多云"
+      }
+    },
+    {
+      "id": "weather_3_8",
+      "district": "上海市徐汇区",
+      "date": "2026-10-28",
+      "condition": "小雨",
+      "temperature_min": 21,
+      "temperature_max": 29,
+      "precipitation_probability": 0.7,
+      "hourly": {
+        "morning": "多云",
+        "noon": "晴",
+        "afternoon": "晴",
+        "evening": "多云"
+      }
+    },
+    {
+      "id": "weather_3_9",
+      "district": "上海市徐汇区",
+      "date": "2026-10-29",
+      "condition": "晴",
+      "temperature_min": 19,
+      "temperature_max": 27,
+      "precipitation_probability": 0.1,
+      "hourly": {
+        "morning": "多云",
+        "noon": "晴",
+        "afternoon": "晴",
+        "evening": "多云"
+      }
+    }
+  ],
+  "contacts": [
+    {
+      "id": "contact_1",
+      "name": "张经理",
+      "phone": "13800000001",
+      "role": "客户"
+    },
+    {
+      "id": "contact_2",
+      "name": "李师傅",
+      "phone": "13800000002",
+      "role": "售后"
+    }
+  ],
+  "visions": [
+    {
+      "id": "vision_front",
+      "direction": "front",
+      "description": "前方有一辆白色轿车，道路干燥，信号灯为绿色。",
+      "asset": "vision-front-v1",
+      "simulated": true
+    },
+    {
+      "id": "vision_rear",
+      "direction": "rear",
+      "description": "rear方向可见城市道路和行人，固定分发资产描述。",
+      "asset": "vision-rear-v1",
+      "simulated": true
+    },
+    {
+      "id": "vision_left",
+      "direction": "left",
+      "description": "left方向可见城市道路和行人，固定分发资产描述。",
+      "asset": "vision-left-v1",
+      "simulated": true
+    },
+    {
+      "id": "vision_right",
+      "direction": "right",
+      "description": "right方向可见城市道路和行人，固定分发资产描述。",
+      "asset": "vision-right-v1",
+      "simulated": true
+    },
+    {
+      "id": "vision_front_left",
+      "direction": "front_left",
+      "description": "front_left方向可见城市道路和行人，固定分发资产描述。",
+      "asset": "vision-front_left-v1",
+      "simulated": true
+    },
+    {
+      "id": "vision_front_right",
+      "direction": "front_right",
+      "description": "front_right方向可见城市道路和行人，固定分发资产描述。",
+      "asset": "vision-front_right-v1",
+      "simulated": true
+    },
+    {
+      "id": "vision_rear_left",
+      "direction": "rear_left",
+      "description": "rear_left方向可见城市道路和行人，固定分发资产描述。",
+      "asset": "vision-rear_left-v1",
+      "simulated": true
+    },
+    {
+      "id": "vision_rear_right",
+      "direction": "rear_right",
+      "description": "rear_right方向可见城市道路和行人，固定分发资产描述。",
+      "asset": "vision-rear_right-v1",
+      "simulated": true
+    },
+    {
+      "id": "vision_surround",
+      "direction": "surround",
+      "description": "surround方向可见城市道路和行人，固定分发资产描述。",
+      "asset": "vision-surround-v1",
+      "simulated": true
+    },
+    {
+      "id": "vision_unknown",
+      "direction": "unknown",
+      "description": "unknown方向可见城市道路和行人，固定分发资产描述。",
+      "asset": "vision-unknown-v1",
+      "simulated": true
+    }
+  ],
+  "services": [
+    {
+      "id": "service_food",
+      "category": "food",
+      "title": "外婆家订座",
+      "poi_id": "poi_restaurant",
+      "price": 85,
+      "availability": 8,
+      "tags": "餐厅 美食 订座 外婆家"
+    },
+    {
+      "id": "service_hotel",
+      "category": "hotel",
+      "title": "柏悦酒店客房",
+      "poi_id": "poi_hotel",
+      "price": 1800,
+      "availability": 5,
+      "tags": "酒店 住宿 柏悦"
+    },
+    {
+      "id": "service_scene",
+      "category": "scene",
+      "title": "西湖游览",
+      "poi_id": "poi_westlake",
+      "price": 0,
+      "availability": 100,
+      "tags": "西湖 景点 旅游"
+    },
+    {
+      "id": "service_movie",
+      "category": "movie",
+      "title": "万象城电影票",
+      "poi_id": "poi_mall",
+      "price": 55,
+      "availability": 30,
+      "tags": "电影 电影票"
+    },
+    {
+      "id": "service_show",
+      "category": "show",
+      "title": "杭州音乐演出",
+      "poi_id": "poi_mall",
+      "price": 200,
+      "availability": 20,
+      "tags": "演出 音乐 演唱会"
+    },
+    {
+      "id": "service_ticket",
+      "category": "ticket",
+      "title": "杭州至上海高铁",
+      "poi_id": "poi_shanghai",
+      "price": 73,
+      "availability": 60,
+      "tags": "机票 火车票 高铁 上海"
+    }
+  ]
+}

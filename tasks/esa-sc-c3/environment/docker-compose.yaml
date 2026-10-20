@@ -1,27 +1,24 @@
-# 评测所需的服务。主容器由 Harbor 生成，这里只补评测服务。
 services:
   mock-system:
-    image: ${MOCK_SYSTEM_IMAGE:-qiguang-mock-system:eval}
-    command: ["-mode", "eval", "-config", "/app/configs/eval_tools.toml"]
+    image: ${MOCK_SYSTEM_IMAGE:-esa-local-environment:1.0.0}
     environment:
       REDIS_URL: redis://redis:6379/0
     depends_on:
       redis:
         condition: service_healthy
-
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8003/health')"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
   agent-api:
-    image: ${AGENT_API_IMAGE:-qiguang-agent-api:latest}
+    image: ${AGENT_API_IMAGE:-esa-react-runtime:1.0.0}
     environment:
-      A2A_REDIS_ADDR: redis:6379
-      MOCKSYSTEM_BASE_URL: http://mock-system:8003
       RESPONSES_API_BASE_URL: ${STEPFUN_OPENAI_BASE_URL}
       RESPONSES_API_KEY: ${STEPFUN_API_KEY}
     depends_on:
-      redis:
-        condition: service_healthy
       mock-system:
-        condition: service_started
-
+        condition: service_healthy
   redis:
     image: redis:7-alpine
     healthcheck:

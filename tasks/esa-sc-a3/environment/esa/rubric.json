@@ -2,9 +2,10 @@
   "case_id": "SC-A3",
   "dimension": "M1 任务完成度",
   "weights": {
-    "tool_use": 0.4,
-    "reply": 0.3,
-    "judge": 0.3
+    "tool_use": 0.2,
+    "reply": 0.15,
+    "judge": 0.15,
+    "state": 0.5
   },
   "tool_checks": [
     {
@@ -67,5 +68,9 @@
   "judge_criteria": [
     "说明筛选条件是快充且可用，并解释了为什么跳过更近的检修站点和慢充站点",
     "直接启动了导航，没有停下来反问用户是否前往"
-  ]
+  ],
+  "expected_state": {
+    "navigation.active": true,
+    "navigation.destination.id": "400003"
+  }
 }

@@ -71,17 +71,13 @@
         "longitude": 121.42,
         "poi_id": "200001"
       }
-    },
-    "tool_overrides": {
-      "music_search": {
-        "text": "检索到以下曲目：\n1. 晴天 — 周杰伦，专辑《叶惠美》，2003 年，时长 4:29，song_id=S10001\n2. 晴天 — 群星翻唱，专辑《热门翻唱合集》，2021 年，时长 4:12，song_id=S10002\n3. 晴天(Live) — 周杰伦，专辑《地表最强世界巡回演唱会》，2017 年，时长 5:03，song_id=S10003\n4. 晴天娃娃 — 买辣椒也用券，专辑《晴天娃娃》，2019 年，时长 3:48，song_id=S10004"
-      },
-      "play_playlist": {
-        "text": "正在播放《晴天》（周杰伦，专辑《叶惠美》），当前音量保持 12 不变。"
-      },
-      "get_vehicle_status": {
-        "text": "媒体账号已登录，当前无播放内容，音量 12。"
-      }
+    }
+  },
+  "dataset_version": "esa-local-v1",
+  "seed": 0,
+  "initial_state": {
+    "media": {
+      "volume": 12
     }
   }
 }

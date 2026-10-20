@@ -1,269 +1,253 @@
-# Harbor + 多 agent harness Benchmark
+# ESA-bench：座舱 Agent 评测框架
 
-Harbor 0.24.0（`~/qiguang/harbor_test/.venv`），用同一个任务分别驱动 OpenCode CLI、
-pi CLI 和 Claude Code CLI，在同一批任务上对比不同 agent harness 的得分与轨迹。
-三个 CLI 都采用「预构建 harness 镜像 +
-只读挂载」：镜像构建一次，每个 trial 挂载进来，不重复打包。
-运行参数分为 bench、harness、model 三层，`.env` 保存端点和 API 密钥。入口 `scripts/run.sh` 可以手动选择一次 `bench + harness + model` 组合，起跑前先做预检。
+ESA-bench 使用 Harbor 调度评测试验，在本地模拟座舱环境中运行 Agent，并记录模型轨迹、工具调用和业务状态。框架提供独立的 Go ReAct runtime、Python 工具服务、SQLite 固定数据和 Redis 会话状态。
 
-## 目录
+用户可以配置待测模型、构建自己的任务集，并通过最终状态与执行过程判定任务是否完成。现有五个任务是使用样例和回归用例，环境能力由工具目录及数据定义。
 
-```
-.env                              # 连接配置唯一源头：模型 ID + 端点 + API 密钥（.gitignore 排除，权限 600）
-.env.example                      # 不含密钥的连接配置示例
-configs/
-├── bench/                        # 任务集合和批量运行参数
-├── harnesses/                    # Agent 类、协议和运行参数
-├── models/                       # 模型身份和 .env 变量映射
-└── jobs/                         # 可选的固定组合
-harness/
-├── opencode/
-│   ├── manifest.yaml            # 版本单一来源：版本号、镜像标签、挂载路径
-│   └── Dockerfile               # harness 镜像：@opencode/cli@2.0.28
-├── pi/
-│   ├── manifest.yaml            # 同上，pi 版本单一来源
-│   └── Dockerfile               # harness 镜像：@earendil-works/pi-coding-agent@1.2.0
-└── claude-code/
-    ├── manifest.yaml            # 同上，Claude Code 版本单一来源
-    └── Dockerfile               # harness 镜像：@anthropic-ai/claude-code@2.1.299
-harbor_test_agents.py            # MountedOpenCode / MountedPi / MountedClaudeCode：挂载式 agent（不执行 npm 安装）
-harbor_test_env.py               # HarborTestDockerEnvironment：镜像挂载的 API 版本协商
-scripts/
-├── run.sh                       # 运行入口：选择配置、预检 + harbor run
-├── render-job.py                # 生成临时 Harbor job YAML
-├── manifest-env.sh              # 读取 harness/<name>/manifest.yaml，供其他脚本引用
-├── build-harness.sh             # 构建 harness 镜像（参数：harness 名）
-└── cleanup.sh                   # 清理中断运行残留的容器和 hb__ 任务镜像
-tasks/hello-opencode/
-├── task.toml                    # 任务元信息、超时、网络策略
-├── instruction.md               # 给 agent 看到的任务说明
-├── environment/Dockerfile       # 任务环境（node:22-alpine + python3 + pytest）
-├── solution/solve.sh            # 参考答案，用于验证任务本身是否成立
-└── tests/
-    ├── test.sh                  # 验证入口，写 /logs/verifier/reward.txt
-    └── test_outputs.py          # 5 条 pytest 断言
+## 评测能力
+
+- **61项工具**：覆盖导航、车辆控制、音乐、收藏、记忆、日程、知识与本地服务任务。默认启用59项；目录读取和文件读取默认关闭。
+- **可观察的业务状态**：工具查询与写入实际会话状态；失败调用回滚；状态变化、版本和参数保存为事件。
+- **会话隔离与幂等**：每次试验创建独立Redis会话；同一调用标识和参数返回已提交结果。
+- **单轮与多轮对话**：多轮共用工具会话和完整对话历史。runtime支持Responses JSON/SSE、串行工具调用、超时及迭代限制。
+- **多维评分**：最终状态、禁止变化、工具顺序、调用次数、工具参数、回复文本和可选模型评审。
+- **完整证据**：输出Harbor结果、ATIF轨迹、初始与最终快照、工具事件和环境能力清单。
+
+路线、天气、视觉、知识和外部服务使用本地模拟资料。环境不控制真实车辆，也不执行真实预订、交易或救援。具体限制见[工具能力清单](environment/manifest.json)。
+
+## 组件与目录
+
+默认运行流程：
+
+```text
+Harbor trial
+  └─ ESAAgent → driver → Go ReAct runtime → 模型 Responses API
+                             └─ MCP tools/list、tools/call → 本地工具服务
+                                                              ├─ SQLite：固定资料
+                                                              └─ Redis：会话、状态、事件
+  └─ verifier → 状态、过程、工具、回复及可选模型评审分数
 ```
 
-## 运行
+| 位置 | 内容 |
+|---|---|
+| [runtime](runtime/README.md) | 独立Go ReAct HTTP服务 |
+| [environment](environment/README.md) | 工具服务、61项schema、能力清单与版本化数据 |
+| [esa](esa/README.md) | Harbor Agent、驱动、轨迹转换和评分 |
+| [工具配置](configs/tools.json) | 默认工具启用状态 |
+| [任务集合](configs/bench/esa.yaml) | 参与评测的任务路径 |
+| [模型配置](configs/models/stepfun/step-5-preview.yaml) | 模型名称与连接变量映射 |
+| [任务样例](tasks/esa-sc-a1/task.toml) | 导航到公司等五个座舱任务 |
+| [环境规范](docs/esa-local-eval-spec.md) | 接口、状态、故障与验收契约 |
+| [题目编写指南](docs/esa-task-authoring.md) | 初始数据、多轮输入、权限和评分 |
+
+## 快速开始
+
+### 1. 准备环境
+
+需要Git、Docker及Docker Compose、Python3.12和[uv](https://docs.astral.sh/uv/getting-started/installation/)。Docker Desktop用户需要启动Docker Desktop。
 
 ```bash
-cd ~/qiguang/harbor_test
-# 复制 .env.example 为 .env，并在 .env 的 *_API_KEY 行填入密钥
-
-# 手动选择一次 bench + harness + model
-./scripts/run.sh \
-  --bench hello \
-  --harness pi \
-  --model deepseek/deepseek-flash \
-  --dry-run
-
-./scripts/run.sh \
-  --bench hello \
-  --harness pi \
-  --model deepseek/deepseek-flash \
-  --job-name '2026-10-16__10-00-00'
-
-# 使用 configs/jobs/ 中保存的固定组合
-./scripts/run.sh --job deepseek-pi-hello --dry-run
-./scripts/run.sh --job deepseek-pi-hello
+git clone --branch ESA-bench https://github.com/QIU-77777/ESA-bench.git
+cd ESA-bench
+uv venv --python 3.12 .venv
+uv pip install --python .venv/bin/python -r requirements-dev.txt
+docker info >/dev/null
 ```
 
-`run.sh` 从 `configs/bench/`、`configs/harnesses/` 和 `configs/models/` 读取配置，
-生成临时 Harbor job YAML，再调用 Harbor。`.env` 保存实际端点和 API 密钥；模型配置
-只保存模型身份和变量名称。`--job-name` 传给 Harbor，默认格式是
-`YYYY-MM-DD__HH-MM-SS`。job 名称不能包含 `:` 或 `/`，因为 Docker bind mount
-会把这些字符当作路径语法。
+日常容器评测不要求宿主安装Go或Node.js。宿主运行runtime测试需要Go1.23或更新版本，运行Node测试需要Node.js22或更新版本。
 
-先跑参考答案确认任务定义没问题（不消耗模型调用）：
+### 2. 构建公共镜像
 
 ```bash
-tmp_config="$(mktemp)"
+bash scripts/build-esa-local.sh
+```
+
+脚本生成两个镜像：
+
+- `esa-react-runtime:1.0.0`：Go ReAct runtime。
+- `esa-local-environment:1.0.0`：Python工具服务与数据。
+
+任务还使用 `redis:7-alpine` 和 `node:22-alpine`。Harbor自动构建任务容器并启动Compose服务，无需手动启动Redis或工具服务。
+
+如果需要使用镜像源，构建脚本支持 `ESA_GO_IMAGE`、`ESA_RUNTIME_BASE_IMAGE` 和 `ESA_PYTHON_IMAGE`。替换镜像源时保留对应版本：Go1.23.12-alpine3.22、Alpine3.22.1、Python3.12.9-slim。
+
+### 3. 配置待测模型
+
+复制[环境变量示例](.env.example)，填写支持OpenAI **Responses API** 的模型端点和密钥：
+
+```bash
+cp .env.example .env
+chmod 600 .env
+```
+
+当前ESA任务Compose读取以下变量。示例采用[step-5-preview模型配置](configs/models/stepfun/step-5-preview.yaml)：
+
+```bash
+STEPFUN_OPENAI_MODEL_ID=step-5-preview
+STEPFUN_OPENAI_BASE_URL=https://your-model-endpoint.example/v1
+STEPFUN_API_KEY=your-api-key
+STEPFUN_JUDGE_MODEL_ID=step-3.5-flash
+```
+
+`STEPFUN_OPENAI_MODEL_ID` 应与运行命令中的模型名称一致。更换模型名称时，增加对应模型配置，并将运行命令的 `--model` 改为该配置标识。当前任务的模型连接仍读取上述 `STEPFUN_*` 变量；变量前缀不限制实际服务提供方。
+
+默认样例会使用同一个端点与密钥进行可选模型评审。待测Agent使用Responses API，评审使用Chat Completions API。若端点不支持评审模型或接口，评审维度会显示未执行，其余可用维度重新归一化。仅使用规则评分时，将题目评分文件中的 `judge` 权重设为0，并移除 `judge_criteria`。
+
+密钥仅保存在本地 `.env`；该文件已被Git忽略。不要提交密钥或公开含凭据的运行配置。
+
+### 4. 运行五个样例
+
+在仓库根目录加载变量并生成Harbor job配置：
+
+```bash
+set -a
+source .env
+set +a
+
 .venv/bin/python scripts/render-job.py \
-  --bench hello \
-  --harness opencode \
-  --model go/mimo-v2.6-flash \
-  --output "$tmp_config"
-PYTHONPATH=$PWD .venv/bin/harbor run -c "$tmp_config" -a oracle -y
-rm -f "$tmp_config"
+  --bench esa \
+  --harness esa \
+  --model stepfun/step-5-preview \
+  --output /tmp/esa-job.yaml
+
+PYTHONPATH="$PWD" .venv/bin/harbor run \
+  -c /tmp/esa-job.yaml \
+  --job-name esa-model-run-001 \
+  -y
 ```
 
-多任务、多并发：修改 `configs/bench/<bench>.yaml` 中的 `tasks:` 和 `n_concurrent_trials`。
+每次使用不同的job名称，名称不要包含 `/` 或 `:`。[任务集合配置](configs/bench/esa.yaml)决定运行哪些任务。需要修改并发数或重复次数时，在生成的Harbor配置中设置 顶层 `n_concurrent_trials` 和 `n_attempts`，再运行该配置。
 
-## 预检（scripts/run.sh 在起容器之前全部检查）
+ESA使用上述 `render-job.py + harbor run` 流程；[通用运行脚本](scripts/run.sh)用于仓库保留的编码Agent示例，其镜像挂载预检不适用于ESA。
 
-1. 运行组合声明齐全且互相一致：`--model provider/model-id` 在 `.env` 里有对应的
-   前缀变量组（例如 `--model go/mimo-v2.6-flash` 对应 `GO_*`，本 harness 协议必需的变量
-   非空，模型 ID 与 `.env` 一致），`harness:` 与
-   `agents[0].import_path` 匹配（opencode/MountedOpenCode、pi/MountedPi、
-   claude-code/MountedClaudeCode）；
-2. 挂载镜像标签与挂载路径必须和 `harness:` 指向的 `manifest.yaml` 一致，否则报错并指出
-   两边要同步修改；
-3. harness 镜像存在，且镜像 LABEL `<harness>.version` 等于 manifest 版本，否则提示重新构建
-   （`AUTO_BUILD_HARNESS=1` 时自动构建）；
-4. Docker daemon 的 API 版本不低于 1.48（镜像挂载的最低要求）；
-5. `.env` 已载入、所选组已映射、临时配置中的真实 `model_name` 已写入、密钥非空，
-   且用它请求网关 models 端点返回 200，密钥错误在起容器前就失败
-   （网关地址按 harness 协议取：OpenCode/pi 用 `OPENAI_BASE_URL`，Claude Code 用
-   `ANTHROPIC_BASE_URL`；base URL 不带 `/v1` 时先试 `/v1/models`）；
-6. `--dry-run` 额外用 harbor 的 `--print-config` 验证配置能被解析、agent 导入路径可用。
+## 无模型凭据的集成验证
 
-## 版本升级流程
+公共镜像构建完成后，可以使用本地确定性模型接口验证Harbor、runtime、工具服务和评分链路。
 
-版本号只写在对应 harness 的 `manifest.yaml`：
+终端一：
 
 ```bash
-# 1. 修改 harness/<name>/manifest.yaml 的 version
-# 2. 构建新镜像
-./scripts/build-harness.sh <name>     # opencode | pi | claude-code
-# 3. 运行入口读取 manifest 中的新镜像标签，并检查镜像 LABEL
-# 4. ./scripts/run.sh --bench hello --harness <name> --model <provider/model-id> --dry-run
+.venv/bin/python esa/fake_responses.py --port 19090
 ```
 
-`harbor_test_agents.py` 的版本校验读同一个 manifest；镜像用 LABEL 记录版本，预检读 LABEL 比对。
-版本号由 manifest 和渲染器共同使用，预检保证镜像标签与 manifest 一致。
-
-## 自定义类的职责
-
-`run.sh` 会把 bench、harness、model 三层配置合成为临时配置，并把完整的
-`provider/model-id` 写入临时配置的 `agents[0].model_name`。
-三个类的 `install()` 继续执行各自的版本检查和运行准备，变量缺失直接报错。
-
-**MountedOpenCode**（`harbor_test_agents.py`），Harbor 内置 opencode 适配器的子类：
-
-1. `install()`：内置适配器每次 trial 执行 `npm i -g opencode-ai@latest`，实测 87 秒，且 `@latest` 会让同一批 trial 出现版本漂移。子类改为执行一次 `command -v opencode && opencode --version`，校验挂载进来的确实是 manifest 声明的版本。
-2. `run()`：内置适配器拼出 `opencode --model=X run ... --dangerously-skip-permissions`，这是 v1 的写法；v2 CLI 不接受全局 `--model`，也不认识该参数，直接打印 usage 后退出。子类改为 `opencode run --model=X --format=json --thinking --auto -- '<instruction>'`。
-
-**MountedPi**（`harbor_test_agents.py`），Harbor 内置 pi 适配器的子类，只改 `install()`：
-内置适配器每次 trial 装 nvm + `npm i -g`，子类改为执行 `command -v pi && pi --version`，
-校验挂载进来的版本。pi 的 `run()` 和轨迹逻辑保持原版——它的轨迹来自 `--session-dir`
-的会话 JSONL 文件（进程本地写入），stdout 只做兜底统计。
-
-**MountedClaudeCode**（`harbor_test_agents.py`），Harbor 内置 Claude Code 适配器的子类，
-只改 `install()`：内置适配器每次 trial 执行 `npm install -g @anthropic-ai/claude-code`
-或 bootstrap 脚本，子类改为执行 `command -v claude && claude --version`，校验挂载进来的
-版本。`run()` 保持原版（stream-json 输出、`ANTHROPIC_*` 环境变量、权限模式默认
-`bypassPermissions`）。
-
-**HarborTestDockerEnvironment**（`harbor_test_env.py`），Docker 环境的子类：
-
-`type: image` 挂载需要 Docker Engine API ≥ 1.48，部分 compose 版本不显式指定 `DOCKER_API_VERSION` 会协商出过低版本，失败表现为 trial 中途的 compose 报错。子类在挂载包含 image 类型时，读取 daemon 自报的 API 版本写入该变量；版本过旧时给出明确错误。
-
-## 模型接入与可调参数
-
-Harbor 按 agent 解析模型连接：端点、模型 ID、API 密钥的值都在 `.env`
-（一个供应商一组变量，`run.sh` 按 `--model provider/model-id` 选择供应商组），临时配置
-写入 `model_name`；端点以环境变量的
-形式进入 harbor 的模型连接解析和 trial 容器。密钥用 `--agent-env` 注入
-（`.env` 里的同一个值同时写入 `OPENAI_API_KEY` 和 `ANTHROPIC_API_KEY`），
-各适配器再转换成自己 CLI 的原生配置：
-
-| | 端点 | 密钥 | 模型选择 | 推理参数 |
-| --- | --- | --- | --- | --- |
-| OpenCode | `opencode_config` 的 `options.baseURL`（`{env:OPENAI_BASE_URL}`，容器内取值） | `opencode_config` 里 `{env:OPENAI_API_KEY}` | `model_name`（`provider/model-id`） | `--thinking`（`run()` 写死） |
-| pi | 环境变量 `OPENAI_BASE_URL`（写入 `models.json` 的 `baseUrl`） | `models.json` 引用 `$OPENAI_API_KEY` | `model_name`（`provider/model-id`，运行时 provider 换成 harbor-endpoint） | `kwargs.thinking`（off…max）、`kwargs.model_api`（API 风格）、`kwargs.max_turns` |
-| Claude Code | 环境变量 `ANTHROPIC_BASE_URL`（不带 `/v1`） | 环境变量 `ANTHROPIC_API_KEY` | `model_name`（临时配置中为 `provider/model-id`，发送给 Claude Code 时使用 model-id） | `kwargs.reasoning_effort`（`--effort`）、`kwargs.max_turns`、`kwargs.max_budget_usd`、`MAX_THINKING_TOKENS` 等 |
-
-网关的模型按协议绑定：`mimo-v2.6-flash` 只在 OpenAI 协议端点上，
-`claude-haiku-5-5` 只在 Anthropic 协议端点上；跨协议调用返回
-`ModelProtocolUnsupported`。所以 `.env` 的 go 组里 OpenCode/pi 读
-`GO_OPENAI_MODEL_ID=mimo-v2.6-flash`，Claude Code 读
-`GO_ANTHROPIC_MODEL_ID=claude-haiku-5-5`。换模型前先确认目标 harness
-说的协议与网关端点一致。
-
-## 改模型 / 换服务商
-
-- 同供应商换模型：修改命令中的 `--model provider/model-id`，并同步修改 `.env` 里该组
-  对应协议的 `*_MODEL_ID` 行。`run.sh` 会检查两处模型 ID 是否一致。
-- 换密钥：只改 `.env` 里该组的 `*_API_KEY` 一行，其余不动。
-- 新增供应商（多供应商共存，不覆盖已有组）：
-  1. 在 `.env` 末尾追加一组 `<前缀>_*` 五行（前缀用大写字母、数字、下划线，
-     参考文件里的 deepseek 示例组）；
-  2. 把命令中的 `--model` 改成完整的 `provider/model-id`，例如
-     `--model deepseek/deepseek-flash`；
-  3. 使用 `./scripts/run.sh --bench ... --harness ... --model ... --dry-run` 验证模型 ID、端点、密钥和 Harbor 配置。
-- 切回旧供应商：把命令中的 `--model` 改回对应的 `provider/model-id`，`.env` 里的供应商组一直保留。
-- jobs 列表页读取运行快照中的 `agents[].name`、`agents[].model_name`；`run.sh` 会把完整的
-  `provider/model-id` 写入快照。
-
-## 同任务对比三个 harness
+终端二，在仓库根目录执行：
 
 ```bash
-./scripts/run.sh --bench hello --harness opencode --model go/mimo-v2.6-flash
-./scripts/run.sh --bench hello --harness pi --model go/mimo-v2.6-flash
-./scripts/run.sh --bench hello --harness claude-code --model go/claude-haiku-5-5
+STEPFUN_OPENAI_BASE_URL=http://host.docker.internal:19090/v1 \
+  STEPFUN_API_KEY=offline-placeholder \
+  PYTHONPATH="$PWD" \
+  .venv/bin/harbor run \
+  -c configs/jobs/esa-offline-acceptance.yaml \
+  --job-name esa-offline-check-001 \
+  -y
 ```
 
-三个命令指向同一个 `hello` bench。OpenCode 和 pi 使用
-`--model go/mimo-v2.6-flash`，Claude Code 使用 `--model go/claude-haiku-5-5`；
-三个模型值都在 `.env` 的 go 组，协议限制见上节。
-每个 `jobs/<job-name>/` 目录里可对比：
+该配置只运行导航到公司的样例，不调用真实待测模型。命令适用于Docker Desktop；原生Linux需要为容器配置可访问的宿主地址。完成后在终端一按Ctrl+C停止本地接口。离线分数用于验证集成流程，不表示模型能力。
 
-| 对比项 | 位置 |
-| --- | --- |
-| 得分 | `verifier/reward.txt` |
-| 轨迹完整性（最终回答是否入轨迹、每步工具调用） | `agent/trajectory.json` |
-| 原始事件流 / 会话文件 | `agent/opencode.txt` 或 `agent/pi/sessions/*.jsonl` |
-| token 统计与版本信息 | `result.json` |
-
-## 分阶段耗时（同一任务实测，OpenCode）
-
-| 阶段 | 旧方式（每 trial npm 安装） | 挂载方式 |
-| --- | --- | --- |
-| environment_setup | 2.7s | 3.0s / 5.5s |
-| agent_setup | 87.1s | 0.6s / 1.2s |
-| agent_execution | 65.5s | 36.1s / 126.7s |
-| verifier | 0.5s | 0.6s / 0.9s |
-
-`agent_execution` 的波动来自模型网关延迟，与环境无关。
-
-结果目录 `jobs/<job-name>/<trial>/`（默认 job-name 格式为 `YYYY-MM-DD__HH-MM-SS`）：
-
-| 文件 | 内容 |
-| --- | --- |
-| `agent/opencode.txt` | OpenCode `run --format=json` 的原始事件流 |
-| `agent/pi.txt` / `agent/pi/sessions/` | pi 的 stdout 输出 / 会话 JSONL（轨迹来源） |
-| `agent/claude-code.txt` / `agent/sessions/` | Claude Code 的 stream-json 输出 / 会话文件 |
-| `agent/trajectory.json` | 归一化后的轨迹：每步的工具调用、参数、观察结果 |
-| `verifier/test-stdout.txt` | 验证器完整输出 |
-| `verifier/reward.txt` | 0 或 1 |
-| `result.json` | 该次 trial 的汇总，`agent_info.version` 记录实际 CLI 版本 |
-
-## Harness 镜像
+## 查看结果
 
 ```bash
-./scripts/build-harness.sh opencode    # 产物 harbor-test/harness/opencode:2.0.28，约 814MB
-./scripts/build-harness.sh pi          # 产物 harbor-test/harness/pi:1.2.0，约 389MB
-./scripts/build-harness.sh claude-code # 产物 harbor-test/harness/claude-code:2.1.299
+.venv/bin/harbor view "$PWD/jobs"
 ```
 
-镜像最终层是 `FROM scratch` 加 `COPY --from=build /usr/local/ /`，因此镜像根目录的内容就是
-`/usr/local` 的内容。trial 容器把它只读挂载到 `/usr/local`，得到 node、npm 和 CLI 可执行文件
-（`bin/opencode`、`bin/pi` 是相对符号链接，挂载后仍可解析；`pi` 的 shebang 是
-`#!/usr/bin/env node`，node 同样来自挂载）。每个镜像只存一份，所有 trial 共用。
+默认打开 `http://127.0.0.1:8080`。结果位于 `jobs/<job-name>/`：
 
-opencode 版本必须写在 `@opencode/cli`：`opencode-ai` 这个旧包只发布到 1.x，2.0.28 属于 v2 CLI。
-pi 的包在 0.74.0 时从 `@mariozechner/pi-coding-agent` 改名为 `@earendil-works/pi-coding-agent`。
+```text
+result.json                              # job汇总、评分与异常数量
+<trial>/result.json                      # 单次试验结果
+<trial>/agent/trajectory.json            # ATIF模型轨迹
+<trial>/agent/tool-calls.json             # 工具调用与结果
+<trial>/agent/reply.txt                   # 最终回复
+<trial>/agent/snapshot-initial.json       # 初始状态
+<trial>/agent/snapshot-final.json         # 最终状态
+<trial>/agent/state-events.json           # 执行过程与状态差异
+<trial>/agent/environment-manifest.json   # 环境及工具能力证据
+<trial>/verifier/reward.json              # 分维度评分
+```
 
-## 残留清理
+检查状态快照和工具事件可以确认操作是否真正改变业务状态。模型回复文本与状态评分独立。
 
-正常运行会删除自己的 trial 容器。中断的运行会留下 `hb__<hash>` 容器和任务镜像：
+若Harbor0.24.0/LiteLLM1.105.0的Viewer出现 `KeyError: 'litellm'` 日志异常，可应用[版本限定的日志修复](scripts/fix-litellm-viewer.py)，然后重启Viewer：
 
 ```bash
-./scripts/cleanup.sh    # 删除 hb__ 前缀的容器和任务镜像，保留 harness 镜像和基础层
+.venv/bin/python scripts/fix-litellm-viewer.py
 ```
 
-## 这台机器上的两个环境问题
+此修复保留日志脱敏，使原始异步异常能够输出。修复仅适用于指定LiteLLM版本；重新安装依赖可能覆盖它。
 
-1. Docker Hub 直连被重置，基础镜像改从 `docker.m.daocloud.io` 拉取后打本地标签：
-   `docker tag docker.m.daocloud.io/library/node:22-alpine node:22-alpine`
-2. 容器里的 OpenCode 拿不到本机 `auth.json`，因此用 `opencode_config` 定义一个
-   openai-compatible provider：baseURL 用 `{env:OPENAI_BASE_URL}`、密钥用
-   `{env:OPENAI_API_KEY}`，都由 `--agent-env` 注入（值来自 `.env` 的 go 组）；
-   pi 走同样的网关，端点读环境变量
-   `OPENAI_BASE_URL`，密钥是 `--agent-env` 注入的 `OPENAI_API_KEY`。
+## 编写自己的座舱任务
 
-## 任务镜像设计要点
+### 1. 复制任务模板
 
-任务镜像用 `node:22-alpine`（musl）：Harbor 的 OpenCode 适配器在 glibc 镜像上会先装 nvm
-和 Node 22，实测超过 360 秒的安装超时。改用挂载模式后这一步已经不再执行，基础镜像保留
-Alpine 是为了与 harness 镜像的 node 布局一致，两者挂载后路径不冲突。
+```bash
+cp -R tasks/esa-sc-a1 tasks/esa-my-case
+```
+
+修改新目录中的文件：
+
+| 模板位置 | 修改内容 |
+|---|---|
+| [task.toml](tasks/esa-sc-a1/task.toml) | 任务名称、ESA_CASE_ID、超时及评审变量 |
+| [instruction.md](tasks/esa-sc-a1/instruction.md) | 单轮用户指令 |
+| [initial_state.json](tasks/esa-sc-a1/environment/esa/initial_state.json) | case_id、context、initial_state、数据覆盖、工具权限与多轮输入 |
+| [rubric.json](tasks/esa-sc-a1/environment/esa/rubric.json) | 状态、工具、回复、过程约束及权重 |
+
+Harbor单轮输入优先使用任务的 `instruction.md`。多轮输入在初始数据中设置 `user_messages`，取代单轮指令；每轮保留同一会话与对话历史。
+
+### 2. 定义初态与目标
+
+例如，初始数据可限制工具权限并提供两轮输入：
+
+```json
+{
+ "case_id": "navigation-example",
+ "dataset_version": "esa-local-v1",
+ "seed": 0,
+ "initial_state": {"vehicle": {"gear": "D"}},
+ "tool_profile": ["get_favorite_poi", "start_navi", "get_navi_info"],
+ "user_messages": ["导航去公司", "现在的目的地是什么？"]
+}
+```
+
+在独立评分文件中定义目标状态和过程约束：
+
+```json
+{
+ "expected_state": {
+   "navigation.active": true,
+   "navigation.destination.id": "200001"
+ },
+ "forbidden_changes": ["vehicle.volume"],
+ "process_constraints": [
+   {"type": "max_calls", "tool": "start_navi", "count": 1}
+ ],
+ "weights": {"state": 1}
+}
+```
+
+目标状态和评分条件仅由verifier读取，不进入模型初始数据。导航启动遵循工具契约，需要D/R挡位。工具参数、数据ID和状态字段应以[工具目录](environment/catalog.json)、[能力清单](environment/manifest.json)和[seed资料](environment/seed-v1.json)为准。
+
+`data_overlays` 只能覆盖现有资料的已知ID与字段。增加实体时，准备符合[数据schema](environment/seed-schema.json)的新seed，并通过工具环境的 `--seed-file` 或 `ESA_SEED_FILE` 配置分发它。故障注入和完整评分格式见[题目编写指南](docs/esa-task-authoring.md)。
+
+### 3. 加入任务集合
+
+修改[任务集合配置](configs/bench/esa.yaml)，将新任务加入 `tasks`：
+
+```yaml
+tasks:
+  - path: tasks/esa-my-case
+```
+
+重新执行生成配置与Harbor运行命令。题目输入、评分和任务Dockerfile由Harbor构建；只修改题目时无需重建公共runtime与工具服务镜像。修改公共代码、工具配置或seed后，应重新执行镜像构建脚本。
+
+## 开发验证
+
+```bash
+uv pip install --python .venv/bin/python -r environment/requirements.txt
+.venv/bin/python -m unittest environment.test_environment -v
+.venv/bin/python -m unittest esa.test_state_score esa.test_trajectory esa.test_verifier -v
+node --test esa/test-driver.mjs
+(cd runtime && go test -race -cover ./... && go vet ./...)
+```
+
+默认环境测试使用显式内存测试存储，Redis集成测试会跳过。验证Redis事务与隔离时，设置 `ESA_TEST_REDIS_URL` 指向专用测试Redis；测试会创建、过期和删除会话，请勿指向业务数据库。[验证记录](docs/esa-validation.md)说明已执行的测试和容器验收范围。真实模型表现需使用实际模型配置独立评测。

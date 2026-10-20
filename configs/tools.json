@@ -1,0 +1,249 @@
+{
+  "version": 1,
+  "tools": [
+    {
+      "name": "a2a_invoke",
+      "enabled": true
+    },
+    {
+      "name": "activate_autopilot",
+      "enabled": true
+    },
+    {
+      "name": "add_memory",
+      "enabled": true
+    },
+    {
+      "name": "add_waypoint",
+      "enabled": true
+    },
+    {
+      "name": "after_sale_agent",
+      "enabled": true
+    },
+    {
+      "name": "control_map_zoom",
+      "enabled": true
+    },
+    {
+      "name": "delete_favorite_poi",
+      "enabled": true
+    },
+    {
+      "name": "delete_waypoint",
+      "enabled": true
+    },
+    {
+      "name": "digital_service_agent",
+      "enabled": true
+    },
+    {
+      "name": "display_candidate_cards",
+      "enabled": true
+    },
+    {
+      "name": "eco_info_search",
+      "enabled": true
+    },
+    {
+      "name": "eco_info_search_1",
+      "enabled": true
+    },
+    {
+      "name": "end_chat",
+      "enabled": true
+    },
+    {
+      "name": "estimate_trip_info",
+      "enabled": true
+    },
+    {
+      "name": "execute_vehicle_control",
+      "enabled": true
+    },
+    {
+      "name": "exit_navigation",
+      "enabled": true
+    },
+    {
+      "name": "financial_information_agent",
+      "enabled": true
+    },
+    {
+      "name": "get_all_waypoint",
+      "enabled": true
+    },
+    {
+      "name": "get_favorite_poi",
+      "enabled": true
+    },
+    {
+      "name": "get_home_or_company_address",
+      "enabled": true
+    },
+    {
+      "name": "get_joke",
+      "enabled": true
+    },
+    {
+      "name": "get_navi_info",
+      "enabled": true
+    },
+    {
+      "name": "get_skill_prompt",
+      "enabled": true
+    },
+    {
+      "name": "get_story",
+      "enabled": true
+    },
+    {
+      "name": "get_vehicle_status",
+      "enabled": true
+    },
+    {
+      "name": "get_weather",
+      "enabled": true
+    },
+    {
+      "name": "list_directory",
+      "enabled": false
+    },
+    {
+      "name": "list_skills",
+      "enabled": true
+    },
+    {
+      "name": "map_search",
+      "enabled": true
+    },
+    {
+      "name": "multi_task_agent",
+      "enabled": true
+    },
+    {
+      "name": "music_search",
+      "enabled": true
+    },
+    {
+      "name": "open_or_close_map",
+      "enabled": true
+    },
+    {
+      "name": "open_special_map",
+      "enabled": true
+    },
+    {
+      "name": "optimize_navi_plan",
+      "enabled": true
+    },
+    {
+      "name": "overview_navi_route",
+      "enabled": true
+    },
+    {
+      "name": "plan_navi_route",
+      "enabled": true
+    },
+    {
+      "name": "play_playlist",
+      "enabled": true
+    },
+    {
+      "name": "query_adas_status",
+      "enabled": true
+    },
+    {
+      "name": "query_traffic_ahead",
+      "enabled": true
+    },
+    {
+      "name": "query_vehicle_exterior_vision",
+      "enabled": true
+    },
+    {
+      "name": "read_file",
+      "enabled": false
+    },
+    {
+      "name": "remote_map_search",
+      "enabled": true
+    },
+    {
+      "name": "reroute",
+      "enabled": true
+    },
+    {
+      "name": "scheduled_task",
+      "enabled": true
+    },
+    {
+      "name": "search_along_way_poi",
+      "enabled": true
+    },
+    {
+      "name": "search_charging_station",
+      "enabled": true
+    },
+    {
+      "name": "search_memory",
+      "enabled": true
+    },
+    {
+      "name": "search_nearby_poi",
+      "enabled": true
+    },
+    {
+      "name": "search_parking_charging_station",
+      "enabled": true
+    },
+    {
+      "name": "search_poi_by_keyword",
+      "enabled": true
+    },
+    {
+      "name": "search_vehicle_knowledge",
+      "enabled": true
+    },
+    {
+      "name": "set_display_focus",
+      "enabled": true
+    },
+    {
+      "name": "set_favorite_poi",
+      "enabled": true
+    },
+    {
+      "name": "set_map_auto_scale",
+      "enabled": true
+    },
+    {
+      "name": "set_map_view",
+      "enabled": true
+    },
+    {
+      "name": "set_navi_route_preference",
+      "enabled": true
+    },
+    {
+      "name": "set_navi_voice_mode",
+      "enabled": true
+    },
+    {
+      "name": "share_route",
+      "enabled": true
+    },
+    {
+      "name": "start_navi",
+      "enabled": true
+    },
+    {
+      "name": "web_search",
+      "enabled": true
+    },
+    {
+      "name": "wiki_web_search",
+      "enabled": true
+    }
+  ]
+}

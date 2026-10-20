@@ -21,6 +21,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 from typing import Any
+from state_score import score_state
 
 AGENT_DIR = Path("/logs/agent")
 VERIFIER_DIR = Path("/logs/verifier")
@@ -42,9 +43,16 @@ def main() -> int:
     tool_score, tool_detail = score_tools(rubric, tool_data)
     reply_score, reply_detail = score_reply(rubric, reply)
     judge_score, judge_detail = score_judge(rubric, reply, tool_data)
+    state_value, state_detail = score_state(
+        rubric, read_json(AGENT_DIR / "snapshot-initial.json", None),
+        read_json(AGENT_DIR / "snapshot-final.json", None), tool_data.get("events") or [],
+        tool_data.get("truncated", False))
 
     weights = dict(rubric.get("weights") or {"tool_use": 0.4, "reply": 0.3, "judge": 0.3})
     parts = {"tool_use": tool_score, "reply": reply_score}
+    if state_detail.get("applicable"):
+        parts["state"] = state_value
+        weights.setdefault("state", 0.5)
     if judge_score is None:
         weights.pop("judge", None)
     else:
@@ -61,6 +69,8 @@ def main() -> int:
         "tool_use": round(tool_score, 4),
         "reply": round(reply_score, 4),
     }
+    if state_detail.get("applicable"):
+        rewards["state"] = round(state_value, 4)
     if judge_score is not None:
         rewards["judge"] = round(judge_score, 4)
 
@@ -74,6 +84,7 @@ def main() -> int:
                 "tool_use": tool_detail,
                 "reply": reply_detail,
                 "judge": judge_detail,
+                "state": state_detail,
             },
             ensure_ascii=False,
             indent=2,

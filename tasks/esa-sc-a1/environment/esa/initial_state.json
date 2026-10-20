@@ -31,7 +31,7 @@
       "location_name": "汇贤居小区地面停车场"
     },
     "vehicle": {
-      "gear": "P",
+      "gear": "D",
       "speed": 0,
       "window": {
         "front_left": 0,
@@ -88,14 +88,8 @@
           "poi_id": "200003"
         }
       ]
-    },
-    "tool_overrides": {
-      "start_navi": {
-        "text": "已开始导航前往 200001:上海市徐汇区科技园 A 座:121.420000,31.190000，全程 6.8 公里，预计 18 分钟，途经 9 个红绿灯。"
-      },
-      "estimate_trip_info": {
-        "text": "前往 上海市徐汇区科技园 A 座：距离 6.8 公里，预计耗时 18 分钟，过路费 0 元。"
-      }
     }
-  }
+  },
+  "dataset_version": "esa-local-v1",
+  "seed": 0
 }

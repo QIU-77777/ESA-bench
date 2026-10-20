@@ -2,9 +2,10 @@
   "case_id": "SC-B1",
   "dimension": "M2 澄清追问合理性",
   "weights": {
-    "tool_use": 0.3,
-    "reply": 0.3,
-    "judge": 0.4
+    "tool_use": 0.2,
+    "reply": 0.15,
+    "judge": 0.15,
+    "state": 0.5
   },
   "tool_checks": [
     {
@@ -45,5 +46,8 @@
     "给出 2 到 4 个候选地点，每个候选都带到访时间",
     "一轮澄清即可完成，没有反复追问",
     "没有只反问「去哪个」而不提供候选"
-  ]
+  ],
+  "expected_state": {
+    "navigation.active": false
+  }
 }

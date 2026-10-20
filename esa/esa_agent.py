@@ -92,6 +92,13 @@ class ESAAgent(BaseAgent):
             "caseId": task_state.get("case_id") or self._case_id(),
             "instruction": (instruction or "").strip() or (task_state.get("instruction") or ""),
             "initialContext": task_state.get("context") or {},
+            "initialState": task_state.get("initial_state") or {},
+            "dataOverlays": task_state.get("data_overlays") or {},
+            "toolProfile": task_state.get("tool_profile"),
+            "faults": task_state.get("faults") or [],
+            "seed": task_state.get("seed", 0),
+            "datasetVersion": task_state.get("dataset_version"),
+            "userMessages": task_state.get("user_messages"),
             "mockSystemUrl": self._env_or("ESA_MOCK_URL", DEFAULT_MOCK_SYSTEM_URL),
             "mockSystemInternalUrl": self._env_or(
                 "ESA_MOCK_INTERNAL_URL", self._env_or("ESA_MOCK_URL", DEFAULT_MOCK_SYSTEM_URL)
@@ -107,7 +114,7 @@ class ESAAgent(BaseAgent):
         await self._exec(environment, f"mkdir -p {WORK_DIR}")
         await environment.upload_file(self._write_driver_config(config), CONFIG_PATH)
 
-        timeout = int(config["turnTimeoutSec"]) + 120
+        timeout = int(config["turnTimeoutSec"]) * max(1, len(config.get("userMessages") or [])) + 120
         result = await environment.exec(
             command=f"node {DRIVER_PATH} --config {CONFIG_PATH}",
             timeout_sec=timeout,
@@ -117,6 +124,8 @@ class ESAAgent(BaseAgent):
         driver_output = await self._read_result(environment)
         self._write_artifacts(driver_output)
         self._populate_context(context, driver_output)
+        if driver_output.get("errors") or driver_output.get("turnStatus") != "completed":
+            raise RuntimeError(f"ESA 执行失败：{driver_output.get("errors") or driver_output.get("turnStatus")}")
 
     # ---- 文件与配置 ----
 
@@ -214,6 +223,7 @@ class ESAAgent(BaseAgent):
                     "session_id": driver_output.get("sessionId"),
                     "calls": driver_output.get("toolCalls", []),
                     "events": driver_output.get("toolEvents", []),
+                    "truncated": (driver_output.get("eventMetadata") or {}).get("truncated", False),
                 },
                 ensure_ascii=False,
                 indent=2,
@@ -221,6 +231,9 @@ class ESAAgent(BaseAgent):
             "utf8",
         )
         (logs / "reply.txt").write_text(driver_output.get("reply") or "", "utf8")
+        for name, key in [("snapshot-initial.json", "initialSnapshot"), ("snapshot-final.json", "finalSnapshot"),
+                          ("state-events.json", "eventEvidence"), ("environment-manifest.json", "manifest")]:
+            (logs / name).write_text(json.dumps(driver_output.get(key), ensure_ascii=False, indent=2), "utf8")
         (logs / "trajectory.json").write_text(
             json.dumps(self._build_trajectory(driver_output), ensure_ascii=False, indent=2),
             "utf8",
@@ -233,12 +246,13 @@ class ESAAgent(BaseAgent):
         用户指令是第一个 step。
         """
         iterations = driver_output.get("iterations") or []
+        messages = driver_output.get("userMessages") or [driver_output.get("instruction") or ""]
         steps: list[dict[str, Any]] = [
             {
                 "step_id": 1,
                 "timestamp": driver_output.get("startedAt"),
                 "source": "user",
-                "message": driver_output.get("instruction") or "",
+                "message": messages[0],
                 "extra": {
                     "case_id": driver_output.get("caseId"),
                     "session_id": driver_output.get("sessionId"),
@@ -246,8 +260,14 @@ class ESAAgent(BaseAgent):
             }
         ]
 
-        for index, iteration in enumerate(iterations):
-            steps.append(self._iteration_step(index + 2, iteration))
+        current_turn = 0
+        for iteration in iterations:
+            turn_index = iteration.get("turnIndex", 0)
+            while current_turn < turn_index:
+                current_turn += 1
+                steps.append({"step_id": len(steps) + 1, "timestamp": iteration.get("receivedAt"),
+                              "source": "user", "message": messages[current_turn] if current_turn < len(messages) else ""})
+            steps.append(self._iteration_step(len(steps) + 1, iteration))
 
         trajectory: dict[str, Any] = {
             "schema_version": "ATIF-v1.7",
@@ -317,7 +337,8 @@ class ESAAgent(BaseAgent):
                     "latency_ms": iteration.get("latencyMs"),
                     "status": iteration.get("status"),
                     "fallback": iteration.get("fallback") or None,
-                    "stop_reason": "tool_use" if tool_calls else "end_turn",
+                    "stop_reason": ("error" if iteration.get("status") in {"failed", "error"} else "tool_use" if tool_calls else "end_turn"),
+                    "turn_index": iteration.get("turnIndex", 0),
                 }
             ),
         }
@@ -364,19 +385,24 @@ class ESAAgent(BaseAgent):
             latency += iteration.get("latencyMs") or 0
 
         metrics: dict[str, Any] = {
-            "total_steps": len(iterations) + 1,
+            "total_steps": len(iterations) + len(driver_output.get("userMessages") or [driver_output.get("instruction")]),
             "extra": self._prune(
                 {
                     "total_latency_ms": latency or None,
                     "tool_call_count": len(driver_output.get("toolCalls") or []) or None,
                     "total_reasoning_tokens": totals["reasoning"] if has_usage else None,
+                    "usage_coverage": sum(bool(item.get("usage")) for item in iterations) / len(iterations) if iterations else None,
                 }
             ),
         }
         if has_usage:
-            metrics["total_prompt_tokens"] = totals["prompt"]
-            metrics["total_completion_tokens"] = totals["completion"]
-            metrics["total_cached_tokens"] = totals["cached"]
+            for source, target, total in [("input_tokens", "total_prompt_tokens", "prompt"),
+                                          ("output_tokens", "total_completion_tokens", "completion"),
+                                          ("cached_tokens", "total_cached_tokens", "cached")]:
+                covered = sum(source in (item.get("usage") or {}) for item in iterations)
+                if covered:
+                    metrics[target] = totals[total]
+                    metrics["extra"][source + "_coverage"] = covered / len(iterations)
         return metrics
 
     @staticmethod

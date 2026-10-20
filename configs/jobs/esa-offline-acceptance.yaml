@@ -1,0 +1,18 @@
+job_name: esa-offline-acceptance
+jobs_dir: jobs
+n_attempts: 1
+orchestrator:
+  type: local
+  n_concurrent_trials: 1
+environment:
+  type: docker
+  import_path: harbor_test_env:HarborTestDockerEnvironment
+  force_build: true
+  delete: true
+agents:
+  - name: ESA
+    import_path: esa.esa_agent:ESAAgent
+    model_name: local/offline-fixture
+    kwargs: {}
+tasks:
+  - path: tasks/esa-sc-a1
