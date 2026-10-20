@@ -1,5 +1,11 @@
 # ESA-bench：座舱 Agent 评测框架
 
+![](./assets/create-evalution.png "创建 evaluation")
+![](./assets/completed-evaluations.png "已完成的 evaluations")
+![](./assets/rollout-trials.png "一次 evaluation 中的所有 trials")
+![](./assets/trial-details.png "trial 详情")
+
+
 ESA-bench 使用 Harbor 调度评测试验，在本地模拟座舱环境中运行 Agent，并记录模型轨迹、工具调用和业务状态。框架提供独立的 Go ReAct runtime、Python 工具服务、SQLite 固定数据和 Redis 会话状态。
 
 用户可以配置待测模型、构建自己的任务集，并通过最终状态与执行过程判定任务是否完成。现有五个任务是使用样例和回归用例，环境能力由工具目录及数据定义。
