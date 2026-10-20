@@ -24,6 +24,7 @@
   <b>trial 详情</b>
 </div>
 
+<br>
 
 ESA-bench 使用 Harbor 调度评测试验，在本地模拟座舱环境中运行 Agent，并记录模型轨迹、工具调用和业务状态。框架提供独立的 Go ReAct runtime、Python 工具服务、SQLite 固定数据和 Redis 会话状态。
 
@@ -36,7 +37,7 @@ ESA-bench 使用 Harbor 调度评测试验，在本地模拟座舱环境中运�
 - **会话隔离与幂等**：每次试验创建独立Redis会话；同一调用标识和参数返回已提交结果。
 - **单轮与多轮对话**：多轮共用工具会话和完整对话历史。runtime支持Responses JSON/SSE、串行工具调用、超时及迭代限制。
 - **多维评分**：最终状态、禁止变化、工具顺序、调用次数、工具参数、回复文本和可选模型评审。
-- **完整证据**：输出Harbor结果、ATIF轨迹、初始与最终快照、工具事件和环境能力清单。
+- **完整证据**：输出Harbor结果、ATIF格式轨迹、初始与最终快照、工具事件和环境能力清单。
 
 路线、天气、视觉、知识和外部服务使用本地模拟资料。环境不控制真实车辆，也不执行真实预订、交易或救援。具体限制见[工具能力清单](environment/manifest.json)。
 
@@ -180,7 +181,7 @@ STEPFUN_OPENAI_BASE_URL=http://host.docker.internal:19090/v1 \
 ```text
 result.json                              # job汇总、评分与异常数量
 <trial>/result.json                      # 单次试验结果
-<trial>/agent/trajectory.json            # ATIF模型轨迹
+<trial>/agent/trajectory.json            # ATIF格式轨迹（Agent Trajectory Interchange Format）
 <trial>/agent/tool-calls.json             # 工具调用与结果
 <trial>/agent/reply.txt                   # 最终回复
 <trial>/agent/snapshot-initial.json       # 初始状态
@@ -191,6 +192,8 @@ result.json                              # job汇总、评分与异常数量
 ```
 
 检查状态快照和工具事件可以确认操作是否真正改变业务状态。模型回复文本与状态评分独立。
+
+`trajectory.json` 采用Harbor的ATIF（Agent Trajectory Interchange Format）标准格式，记录每次ReAct迭代的推理、工具调用与工具结果，并附带token用量和延迟。`steps`按交互顺序排列，`source`区分`user`与`agent`，用户指令是第一个step。
 
 若Harbor0.24.0/LiteLLM1.105.0的Viewer出现 `KeyError: 'litellm'` 日志异常，可应用[版本限定的日志修复](scripts/fix-litellm-viewer.py)，然后重启Viewer：
 
