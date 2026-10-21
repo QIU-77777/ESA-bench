@@ -267,25 +267,116 @@ def summarize_output(raw):
     return summary if len(summary) <= 200 else summary[:197] + "..."
 
 
-def render_turn(result, verbose=False):
-    for iteration in result.get("iterations") or []:
-        for call in iteration.get("toolCalls") or []:
-            marker = "完成 " if call.get("status") == "completed" else "失败 "
-            print("  " + marker + str(call.get("name")) + " " + compact_arguments(call.get("arguments")))
-            print("      " + summarize_output(call.get("output")) + " (" + str(call.get("latencyMs")) + "ms)")
-        if verbose and iteration.get("reasoning"):
-            print("  思考: " + " ".join(str(iteration["reasoning"]).split())[:500])
-    reply = result.get("reply") or ""
-    if reply:
-        print("")
-        print("ESA > " + reply)
-        print("")
-    status = result.get("status")
-    if status != "completed":
-        label = STATUS_LABELS.get(status, str(status))
-        error = result.get("error") or ""
-        print("[本轮" + label + (": " + error if error else "") + "]")
-        print("")
+def styled(text, code):
+    if sys.stdout.isatty():
+        return "\x1b[" + code + "m" + text + "\x1b[0m"
+    return text
+
+
+DIM = "2"
+CYAN = "36"
+RED = "31"
+
+
+def http_sse(url, body, on_event, timeout=60):
+    """发起请求。响应为 SSE 时逐事件回调并返回 None；否则返回解析后的 JSON。"""
+    data = json.dumps(body, ensure_ascii=False).encode("utf-8")
+    request = urllib.request.Request(
+        url,
+        data=data,
+        method="POST",
+        headers={"Content-Type": "application/json", "Accept": "text/event-stream"},
+    )
+    try:
+        response = urllib.request.urlopen(request, timeout=timeout)
+    except urllib.error.HTTPError as error:
+        detail = error.read().decode("utf-8", "replace")[:500]
+        raise CliError("POST " + url + " 返回 " + str(error.code) + ": " + detail) from error
+    except urllib.error.URLError as error:
+        raise CliError("无法连接 " + url + ": " + str(error.reason)) from error
+    with response:
+        if "text/event-stream" not in (response.headers.get("Content-Type") or ""):
+            raw = response.read()
+            return json.loads(raw) if raw else {}
+        event_name = ""
+        for raw_line in response:
+            line = raw_line.decode("utf-8", "replace").rstrip("\r\n")
+            if line.startswith("event:"):
+                event_name = line[len("event:"):].strip()
+            elif line.startswith("data:"):
+                payload = line[len("data:"):].strip()
+                if payload:
+                    try:
+                        on_event(event_name, json.loads(payload))
+                    except ValueError:
+                        pass
+            elif not line:
+                event_name = ""
+    return None
+
+
+class TurnRenderer:
+    """逐事件渲染一轮对话：思考、工具调用、工具结果、回复。"""
+
+    def __init__(self, verbose=False):
+        self.verbose = verbose
+        self.reasoning = ""
+        self.text_started = False
+
+    def event(self, name, payload):
+        if name == "reasoning_delta":
+            self.reasoning += str(payload.get("text") or "")
+        elif name == "text_delta":
+            self.flush_reasoning()
+            if not self.text_started:
+                print("ESA > ", end="", flush=True)
+                self.text_started = True
+            print(str(payload.get("text") or ""), end="", flush=True)
+        elif name == "tool_call":
+            self.flush_reasoning()
+            print(styled("  " + str(payload.get("name")) + " " + compact_arguments(payload.get("arguments")), CYAN))
+        elif name == "tool_result":
+            status = str(payload.get("status"))
+            latency = str(payload.get("latency_ms"))
+            if status == "completed":
+                summary = str(payload.get("output") or "") if self.verbose else summarize_output(payload.get("output"))
+                print(styled("    → " + summary + " (" + latency + "ms)", DIM))
+            else:
+                print(styled("    → 失败 (" + latency + "ms)", RED))
+        elif name == "turn_end":
+            self.finish()
+            if str(payload.get("status")) != "completed":
+                label = STATUS_LABELS.get(str(payload.get("status")), str(payload.get("status")))
+                error = str(payload.get("error") or "")
+                print(styled("[" + label + (": " + error if error else "") + "]", RED))
+
+    def flush_reasoning(self):
+        if not self.reasoning:
+            return
+        content = " ".join(self.reasoning.split())
+        if not self.verbose and len(content) > 300:
+            content = content[:300] + "..."
+        print(styled("  思考 " + content, DIM))
+        self.reasoning = ""
+
+    def finish(self):
+        self.flush_reasoning()
+        if self.text_started:
+            print()
+            self.text_started = False
+
+
+def render_result(result, renderer):
+    """把完整结果转换为渲染事件，兼容不支持流式的 runtime。"""
+    for item in result.get("iterations") or []:
+        if item.get("reasoning"):
+            renderer.event("reasoning_delta", {"text": item["reasoning"]})
+        if item.get("message"):
+            renderer.event("text_delta", {"text": item["message"]})
+        for call in item.get("toolCalls") or []:
+            renderer.event("tool_call", {"name": call.get("name"), "arguments": call.get("arguments")})
+            renderer.event("tool_result", {"status": call.get("status"), "output": call.get("output"), "latency_ms": call.get("latencyMs")})
+    renderer.event("turn_end", {"status": result.get("status"), "error": result.get("error")})
 
 
 class VehicleChat:
@@ -295,6 +386,7 @@ class VehicleChat:
         self.transcript = transcript if isinstance(transcript, list) else []
         self.initial_snapshot = None
         self.turn_count = 0
+        self.results = []
         self.started_at = datetime.now(timezone.utc).isoformat()
 
     @property
@@ -342,17 +434,33 @@ class VehicleChat:
         }
         if self.settings.model:
             body["model"] = self.settings.model
-        result = http_json(self.settings.runtime_url + "/v1/run", "POST", body, timeout=self.settings.turn_timeout + 30)
+        renderer = TurnRenderer(self.settings.verbose)
+        collected = {}
+
+        def on_event(name, payload):
+            if name == "run_end":
+                collected["result"] = payload.get("result") or {}
+            else:
+                renderer.event(name, payload)
+
+        fallback = http_sse(self.settings.runtime_url + "/v1/run", body, on_event, timeout=self.settings.turn_timeout + 30)
+        if fallback is not None:
+            collected["result"] = fallback
+            render_result(fallback, renderer)
+        else:
+            renderer.finish()
+        result = collected.get("result") or {}
         if isinstance(result.get("transcript"), list):
             self.transcript = result["transcript"]
         self.turn_count += 1
+        self.results.append(result)
         return result
 
 
 def write_evidence(chat):
     directory = chat.evidence_dir
     directory.mkdir(parents=True, exist_ok=True)
-    files = {"transcript.json": chat.transcript, "snapshot-initial.json": chat.initial_snapshot or {}}
+    files = {"transcript.json": chat.transcript, "snapshot-initial.json": chat.initial_snapshot or {}, "turn-results.json": chat.results}
     try:
         files["snapshot-final.json"] = chat.snapshot()
     except CliError:
@@ -465,9 +573,7 @@ class ChatController:
         self.reset_count = 0
 
     def respond(self, message):
-        print("ESA 思考中…", flush=True)
-        result = self.chat.turn(message)
-        render_turn(result, self.settings.verbose)
+        self.chat.turn(message)
 
     def command_state(self):
         snapshot = self.chat.snapshot()

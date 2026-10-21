@@ -158,6 +158,8 @@ ESA使用上述 `render-job.py + harbor run` 流程；[通用运行脚本](scrip
 
 对话中的车辆状态跨轮保留，模型对话历史跨轮保留，Agent 能引用前文。等待模型期间按 `Ctrl+C` 取消当前轮，会话保留。
 
+回复与思考逐段显示：思考内容以暗色显示在工具调用之前，工具调用用青色，工具结果用暗色，失败用红色。仅在终端中启用颜色，管道输出为纯文本。`--verbose` 显示完整的工具结果与思考内容，默认各截断到 200 与 300 字符。模型的思考内容同时写入证据目录的 `turn-results.json`。
+
 命令要求 `.env` 中配置 `STEPFUN_OPENAI_BASE_URL` 与 `STEPFUN_API_KEY`（见配置待测模型）。缺失时启动前直接报错；启动横幅显示解析到的模型端点，可据此确认。
 
 ### 交互命令
@@ -199,6 +201,7 @@ ESA使用上述 `render-job.py + harbor run` 流程；[通用运行脚本](scrip
 默认写入 `~/.esa/sessions/<会话标识>/`，文件名与批量评测证据一致：
 
 - `transcript.json`：完整对话历史
+- `turn-results.json`：每轮 runtime 完整响应，含模型思考
 - `snapshot-initial.json`、`snapshot-final.json`：初态与结束状态
 - `state-events.json`：工具调用与状态变化过程
 - `meta.json`：模型、任务、起止时间、轮数

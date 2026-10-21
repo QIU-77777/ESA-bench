@@ -220,13 +220,38 @@ func (rt *Runtime) Handler() http.Handler {
 			http.Error(w, "invalid transcript: "+err.Error(), 400)
 			return
 		}
+		if strings.Contains(r.Header.Get("Accept"), "text/event-stream") {
+			flusher, ok := w.(http.Flusher)
+			if !ok {
+				http.Error(w, "streaming unsupported", 500)
+				return
+			}
+			w.Header().Set("Content-Type", "text/event-stream")
+			w.Header().Set("Cache-Control", "no-cache")
+			emit := func(event map[string]any) {
+				data, err := json.Marshal(event)
+				if err != nil {
+					return
+				}
+				fmt.Fprintf(w, "event: %s\ndata: %s\n\n", text(event["type"]), data)
+				flusher.Flush()
+			}
+			result := rt.Run(r.Context(), req, emit)
+			emit(map[string]any{"type": "run_end", "result": result})
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(rt.Run(r.Context(), req))
+		json.NewEncoder(w).Encode(rt.Run(r.Context(), req, nil))
 	})
 	return mux
 }
-func (rt *Runtime) Run(parent context.Context, req RunRequest) RunResult {
+func (rt *Runtime) Run(parent context.Context, req RunRequest, emit func(map[string]any)) RunResult {
 	result := RunResult{Iterations: []Iteration{}, ToolCalls: []ToolCall{}, Turns: []Turn{}, Status: "completed", RuntimeVersion: runtimeVersion}
+	send := func(event map[string]any) {
+		if emit != nil {
+			emit(event)
+		}
+	}
 	if engine := text(req.Agent["engine"]); engine != "" && engine != "react" {
 		result.Status = "failed"
 		result.Error = "agent engine must be react"
@@ -274,8 +299,10 @@ func (rt *Runtime) Run(parent context.Context, req RunRequest) RunResult {
 			turn.Status = failureStatus(ctx)
 			turn.Error = listErr.Error()
 		} else {
+			send(map[string]any{"type": "turn_start", "turn_index": ti, "instruction": msg})
 			transcript = append(transcript, map[string]any{"role": "user", "content": msg})
 			for n := 1; n <= req.MaxIterations; n++ {
+				send(map[string]any{"type": "iteration_start", "turn_index": ti, "iteration": n})
 				it := Iteration{Iteration: n, TurnIndex: ti, ToolCalls: []ToolCall{}, Status: "completed", ReceivedAt: time.Now().UTC().Format(time.RFC3339Nano)}
 				start := time.Now()
 				body := cfg.body(transcript, tools)
@@ -285,10 +312,18 @@ func (rt *Runtime) Run(parent context.Context, req RunRequest) RunResult {
 				}
 				var output map[string]any
 				var modelErr error
+				streamed := false
 				if len(marshal(body)) > budget {
 					modelErr = errors.New("context budget exceeded; transcript was not truncated")
 				} else {
-					output, modelErr = rt.respond(ctx, cfg, body)
+					output, modelErr = rt.respond(ctx, cfg, body, func(event map[string]any) {
+						if kind := text(event["type"]); kind == "text_delta" || kind == "reasoning_delta" {
+							streamed = true
+						}
+						event["turn_index"] = ti
+						event["iteration"] = n
+						send(event)
+					})
 				}
 				it.LatencyMS = time.Since(start).Milliseconds()
 				it.ReceivedAt = time.Now().UTC().Format(time.RFC3339Nano)
@@ -351,10 +386,19 @@ func (rt *Runtime) Run(parent context.Context, req RunRequest) RunResult {
 						it.ToolCalls[j].Status = "cancelled"
 					}
 				} else {
+					if !streamed {
+						if it.Reasoning != "" {
+							send(map[string]any{"type": "reasoning_delta", "turn_index": ti, "iteration": n, "text": it.Reasoning})
+						}
+						if it.Message != "" {
+							send(map[string]any{"type": "text_delta", "turn_index": ti, "iteration": n, "text": it.Message})
+						}
+					}
 					transcript = append(transcript, replay...)
 					for j := range it.ToolCalls {
 						callStart := time.Now()
 						call := &it.ToolCalls[j]
+						send(map[string]any{"type": "tool_call", "turn_index": ti, "iteration": n, "call_id": call.CallID, "name": call.Name, "arguments": call.Arguments})
 						output, callErr := rt.callTool(ctx, req, *call)
 						call.LatencyMS = time.Since(callStart).Milliseconds()
 						call.Status = "completed"
@@ -379,6 +423,7 @@ func (rt *Runtime) Run(parent context.Context, req RunRequest) RunResult {
 							}
 							break
 						}
+						send(map[string]any{"type": "tool_result", "turn_index": ti, "iteration": n, "call_id": call.CallID, "status": call.Status, "output": call.Output, "latency_ms": call.LatencyMS, "output_chars": call.OutputChars})
 						transcript = append(transcript, map[string]any{"type": "function_call_output", "call_id": call.CallID, "output": output})
 					}
 				}
@@ -401,6 +446,7 @@ func (rt *Runtime) Run(parent context.Context, req RunRequest) RunResult {
 			}
 		}
 		cancel()
+		send(map[string]any{"type": "turn_end", "turn_index": ti, "status": turn.Status, "reply": turn.Reply, "error": turn.Error})
 		result.Turns = append(result.Turns, turn)
 		result.Reply = turn.Reply
 		if turn.Status != "completed" {

@@ -105,25 +105,76 @@ class ChatTurnTests(unittest.TestCase):
                 {"type": "function_call_output", "call_id": "c1", "output": "done"},
                 {"type": "message", "role": "assistant", "content": [{"type": "output_text", "text": "本轮回复"}]},
             ]
-            with patch.object(cli, "http_json", return_value={"status": "completed", "reply": "本轮回复", "transcript": returned}) as mocked:
+            def fake_sse(url, body, on_event, timeout=60):
+                self.captured_body = body
+                on_event("run_end", {"result": {"status": "completed", "reply": "本轮回复", "transcript": returned}})
+                return None
+
+            with patch.object(cli, "http_sse", side_effect=fake_sse):
                 result = chat.turn("新消息")
             self.assertEqual(result["reply"], "本轮回复")
             self.assertEqual(chat.transcript, returned)
             self.assertEqual(chat.turn_count, 1)
-            body = mocked.call_args.args[2]
+            body = self.captured_body
             self.assertEqual(body["user_messages"], ["新消息"])
             self.assertEqual(body["transcript"], [{"role": "user", "content": "上一轮"}])
             self.assertEqual(body["mockSystemUrl"], settings.mock_internal_url)
             self.assertEqual(body["sessionId"], "session-1")
             self.assertNotIn("model", body)
 
+    def test_turn_renders_streamed_events(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = make_settings(Path(tmp))
+            chat = self.build_chat(settings)
+            events = [
+                ("reasoning_delta", {"text": "计划"}),
+                ("tool_call", {"name": "echo", "arguments": "{}"}),
+                ("tool_result", {"status": "completed", "output": "完成", "latency_ms": 5}),
+                ("text_delta", {"text": "回复内容"}),
+                ("run_end", {"result": {"status": "completed", "reply": "回复内容", "transcript": []}}),
+            ]
+
+            def fake_sse(url, body, on_event, timeout=60):
+                for name, payload in events:
+                    on_event(name, payload)
+                return None
+
+            stream = io.StringIO()
+            with patch.object(cli, "http_sse", side_effect=fake_sse), contextlib.redirect_stdout(stream):
+                result = chat.turn("消息")
+            output = stream.getvalue()
+            self.assertIn("思考 计划", output)
+            self.assertIn("echo", output)
+            self.assertIn("ESA > 回复内容", output)
+            self.assertEqual(result["reply"], "回复内容")
+
+    def test_turn_falls_back_to_json_response(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = make_settings(Path(tmp))
+            chat = self.build_chat(settings)
+            payload = {
+                "status": "completed",
+                "reply": "完整回复",
+                "transcript": [],
+                "iterations": [{"reasoning": "内部计划", "message": "完整回复", "toolCalls": [{"name": "echo", "arguments": "{}", "status": "completed", "output": "完成", "latencyMs": 5}]}],
+            }
+            with patch.object(cli, "http_sse", return_value=payload):
+                result = chat.turn("消息")
+            self.assertEqual(result["reply"], "完整回复")
+            self.assertEqual(chat.turn_count, 1)
+
     def test_turn_includes_model_override(self):
         with tempfile.TemporaryDirectory() as tmp:
             settings = make_settings(Path(tmp), model="override-model")
             chat = self.build_chat(settings)
-            with patch.object(cli, "http_json", return_value={"status": "completed", "reply": "", "transcript": []}) as mocked:
+            def fake_sse(url, body, on_event, timeout=60):
+                self.captured_body = body
+                on_event("run_end", {"result": {"status": "completed", "reply": "", "transcript": []}})
+                return None
+
+            with patch.object(cli, "http_sse", side_effect=fake_sse):
                 chat.turn("消息")
-            self.assertEqual(mocked.call_args.args[2]["model"], "override-model")
+            self.assertEqual(self.captured_body["model"], "override-model")
 
 
 class EvidenceTests(unittest.TestCase):

@@ -44,6 +44,20 @@
 
 对话项结构非法时返回 HTTP 400，错误信息指明具体原因。非法情况包括：对话项不是对象；用户消息缺少字符串 `content`；助手消息角色错误或内容数组为空；内容元素类型不受支持；工具调用缺少 `call_id`、`name` 或 `arguments` 不是字符串；工具结果缺少 `call_id` 或 `output` 不是字符串；对话项类型不受支持。
 
+### 事件流
+
+`/v1/run` 支持 SSE 响应。请求头带 `Accept: text/event-stream` 时返回 `text/event-stream`，逐条推送事件；不带时返回 JSON，行为与之前一致。事件类型：
+
+- `turn_start`：一轮开始，带 `turn_index` 与 `instruction`。
+- `iteration_start`：一次模型调用开始，带 `turn_index` 与 `iteration`。
+- `reasoning_delta`：模型思考增量，带 `text`。
+- `text_delta`：助手文本增量，带 `text`。
+- `tool_call`：一次工具调用开始，带 `turn_index`、`iteration`、`call_id`、`name`、`arguments`。
+- `tool_result`：一次工具调用结束，带 `call_id`、`status`、`output`、`latency_ms`、`output_chars`。
+- `turn_end`：一轮结束，带 `turn_index`、`status`、`reply`、`error`。
+- `run_end`：整个运行结束，`result` 字段为完整 `RunResult`，与 JSON 响应内容相同。
+
+模型以 SSE 响应时，思考与文本增量来自模型流。模型以 JSON 响应时，运行结束后补发单条 `reasoning_delta` 与 `text_delta`，命令行渲染一致。批量评测不使用事件流，接口无变化。
 ## 开发服务组合
 
 `docker-compose.dev.yaml` 位于仓库根目录，项目名 `esa-dev`：
@@ -81,9 +95,11 @@
 
 1. 读取用户输入。空输入跳过；以 `/` 开头按斜杠命令处理。
 2. 向 `/v1/run` 发送请求：`agent`、`model`（有覆盖时）、`user_messages` 为单条新消息、`transcript` 为已保存的历史、`mockSystemUrl`、`sessionId`、`maxIterations`、`turnTimeoutSec`。
-3. 等待期间显示提示。
-4. 渲染本次返回的迭代：每次工具调用显示工具名、参数、结果摘要、耗时与状态；`--verbose` 时追加显示模型思考内容。随后显示助手回复。状态不是 `completed` 时显示对应标签与错误信息。
-5. 用响应中的 `transcript` 更新已保存历史。
+3. 请求带 `Accept: text/event-stream`，逐事件渲染：思考内容先缓冲，遇到文本、工具调用或轮结束时输出；工具调用显示工具名与参数；工具结果显示摘要与耗时；助手文本以 `ESA > ` 开头逐段输出。
+4. 样式区分：思考与工具结果使用暗色，工具调用使用青色，失败与异常状态使用红色。仅终端为 TTY 时启用颜色，管道输出为纯文本。`--verbose` 显示完整工具结果与完整思考，默认摘要各截断到 300 与 200 字符。
+5. 状态不是 `completed` 时显示对应标签与错误信息。
+6. 用 `run_end` 事件中的 `transcript` 更新已保存历史。
+7. runtime 不支持事件流时（响应为 JSON），把完整结果转换成同类事件后渲染，显示内容一致。
 
 ### 斜杠命令
 
@@ -119,6 +135,7 @@
 证据目录默认为 `~/.esa/sessions/<会话标识>/`，`--session-dir` 可改为其他位置。首次创建会话时建立目录，退出与每次 `/reset` 时写出：
 
 - `transcript.json`：完整对话历史。
+- `turn-results.json`：每轮的 runtime 完整响应，含模型思考、工具调用与结果。
 - `snapshot-initial.json`：会话初态快照。
 - `snapshot-final.json`：写出时刻的状态快照。
 - `state-events.json`：工具调用与状态变化事件。
@@ -167,3 +184,7 @@
 启动服务前校验模型端点：`.env` 与 shell 环境均未提供 `STEPFUN_OPENAI_BASE_URL` 时直接报错并说明配置方法，不在首轮对话时才失败。启动横幅显示解析到的端点，便于确认。Docker 模式修改端点后重新执行命令会重建 runtime 容器，已实测确认。
 
 输入 `/` 显示命令列表，输入前缀按前缀过滤，无匹配时显示全部命令；该行为有单元测试覆盖。
+
+流式渲染：runtime 事件流、单测覆盖事件顺序与载荷、JSON 回退渲染、终端样式与非 TTY 纯文本均有单元测试。假模型接口支持 SSE 输出，集成冒烟覆盖流式路径。真实模型冒烟通过：思考内容与回复文本逐段显示，证据中的 `turn-results.json` 含思考内容。
+
+本轮未执行 Docker 服务组合冒烟：用户正在使用该服务组合，测试会重建并销毁运行时环境。

@@ -13,6 +13,10 @@ import (
 	"time"
 )
 
+func runOnce(req RunRequest) RunResult {
+	return (&Runtime{}).Run(context.Background(), req, nil)
+}
+
 func testAgent(endpoint string) map[string]any {
 	return map[string]any{"react": map[string]any{"instructions": "system instruction", "model": map[string]any{"model_id": "fake", "stream": false}, "model_params": map[string]any{"explicit_api_base": endpoint}, "tools": map[string]any{"legacy": map[string]any{}}}}
 }
@@ -96,7 +100,7 @@ func TestReplayMultiTurnAndUsage(t *testing.T) {
 	}))
 	defer model.Close()
 	req := RunRequest{Agent: testAgent(model.URL + "/v1"), Model: "override", MockSystemURL: mcp.URL, SessionID: "session", UserMessages: []string{"first user", "second user"}, ToolProfile: []string{"echo"}}
-	result := (&Runtime{}).Run(context.Background(), req)
+	result := runOnce(req)
 	if result.Status != "completed" || result.Reply != "second" || len(result.Iterations) != 3 || len(result.Turns) != 2 || len(result.ToolCalls) != 1 {
 		t.Fatalf("bad result: %s", marshal(result))
 	}
@@ -129,7 +133,7 @@ func TestSSEAndDisconnect(t *testing.T) {
 			defer model.Close()
 			req := RunRequest{Agent: testAgent(model.URL), MockSystemURL: mcp.URL, SessionID: "session", Instruction: "run"}
 			object(object(req.Agent["react"])["model"])["stream"] = true
-			result := (&Runtime{}).Run(context.Background(), req)
+			result := runOnce(req)
 			if complete {
 				if result.Status != "completed" || calls.Load() != 1 || result.Reply != "done" {
 					t.Fatal(marshal(result))
@@ -160,7 +164,7 @@ func TestToolErrorReplayed(t *testing.T) {
 		}
 	}))
 	defer model.Close()
-	result := (&Runtime{}).Run(context.Background(), RunRequest{Agent: testAgent(model.URL), MockSystemURL: mcp.URL, SessionID: "session", Instruction: "run"})
+	result := runOnce(RunRequest{Agent: testAgent(model.URL), MockSystemURL: mcp.URL, SessionID: "session", Instruction: "run"})
 	if result.Status != "completed" || result.ToolCalls[0].Status != "failed" {
 		t.Fatal(marshal(result))
 	}
@@ -197,7 +201,7 @@ func TestLimitsTimeoutProfileAndCredentialRedaction(t *testing.T) {
 			case "key", "model-failure":
 				object(object(req.Agent["react"])["model_params"])["explicit_api_key"] = "test-credential-sentinel"
 			}
-			result := rt.Run(context.Background(), req)
+			result := rt.Run(context.Background(), req, nil)
 			expected := map[string]string{"limit": "limit_exceeded", "timeout": "timeout", "budget": "failed", "profile": "failed", "key": "completed", "model-failure": "failed"}[mode]
 			if result.Status != expected {
 				t.Fatalf("wanted %s: %s", expected, marshal(result))
@@ -230,7 +234,7 @@ func TestHTTPValidationAndCancellation(t *testing.T) {
 	defer model.Close()
 	ctx, cancel := context.WithCancel(context.Background())
 	time.AfterFunc(20*time.Millisecond, cancel)
-	result := rt.Run(ctx, RunRequest{Agent: testAgent(model.URL), MockSystemURL: mcp.URL, SessionID: "session", Instruction: "run"})
+	result := rt.Run(ctx, RunRequest{Agent: testAgent(model.URL), MockSystemURL: mcp.URL, SessionID: "session", Instruction: "run"}, nil)
 	if result.Status != "cancelled" {
 		t.Fatal(marshal(result))
 	}
@@ -264,7 +268,7 @@ func TestToolTransportFailureStopsLoop(t *testing.T) {
 			}))
 			defer model.Close()
 			req := RunRequest{Agent: testAgent(model.URL), MockSystemURL: mcp.URL, SessionID: "session", Instruction: "run", TurnTimeoutSec: .2}
-			result := (&Runtime{}).Run(context.Background(), req)
+			result := runOnce(req)
 			expected := "failed"
 			if mode == "timeout" {
 				expected = "timeout"
@@ -278,7 +282,7 @@ func TestToolTransportFailureStopsLoop(t *testing.T) {
 func TestSSETextReasoningAndTerminalErrors(t *testing.T) {
 	prefix := "data: {\"type\":\"response.output_text.delta\",\"output_index\":0,\"delta\":\"partial\"}\n\ndata: {\"type\":\"response.reasoning_summary_text.delta\",\"output_index\":1,\"delta\":\"plan\"}\n\n"
 	for _, suffix := range []string{"", "data: {\"type\":\"response.failed\"}\n\n", "data: {\"type\":\"response.completed\",\"response\":{\"status\":\"completed\"}}\n\n"} {
-		out, err := readSSE(strings.NewReader(prefix + suffix))
+		out, err := readSSE(strings.NewReader(prefix+suffix), nil)
 		if (err == nil) != strings.Contains(suffix, "response.completed") {
 			t.Fatal("incorrect stream terminal result")
 		}
@@ -316,7 +320,7 @@ func TestRoundInitialization(t *testing.T) {
 				json.NewEncoder(w).Encode(response(message("done")))
 			}))
 			defer model.Close()
-			result := (&Runtime{}).Run(context.Background(), RunRequest{Agent: testAgent(model.URL), MockSystemURL: mcp.URL, SessionID: "session", UserMessages: []string{"first", "second"}})
+			result := runOnce(RunRequest{Agent: testAgent(model.URL), MockSystemURL: mcp.URL, SessionID: "session", UserMessages: []string{"first", "second"}})
 			if fail {
 				if result.Status != "failed" || models.Load() != 0 || rounds.Load() != 1 {
 					t.Fatal(marshal(result))
@@ -331,7 +335,7 @@ func TestRoundInitialization(t *testing.T) {
 }
 
 func TestEngineValidation(t *testing.T) {
-	result := (&Runtime{}).Run(context.Background(), RunRequest{Agent: map[string]any{"engine": "voice"}})
+	result := runOnce(RunRequest{Agent: map[string]any{"engine": "voice"}})
 	if result.Status != "failed" || result.Error != "agent engine must be react" {
 		t.Fatal(marshal(result))
 	}
@@ -352,7 +356,7 @@ func TestMalformedArgumentsAndDuplicateCallIDs(t *testing.T) {
 		json.NewEncoder(w).Encode(response(function("same"), function("same")))
 	}))
 	defer model.Close()
-	result := (&Runtime{}).Run(context.Background(), RunRequest{Agent: testAgent(model.URL), MockSystemURL: mcp.URL, SessionID: "session", Instruction: "run"})
+	result := runOnce(RunRequest{Agent: testAgent(model.URL), MockSystemURL: mcp.URL, SessionID: "session", Instruction: "run"})
 	if result.Status != "failed" || calls.Load() != 0 {
 		t.Fatal(marshal(result))
 	}
@@ -384,7 +388,7 @@ func TestTranscriptContinuation(t *testing.T) {
 	}))
 	defer model.Close()
 	agent := testAgent(model.URL + "/v1")
-	first := (&Runtime{}).Run(context.Background(), RunRequest{Agent: agent, MockSystemURL: mcp.URL, SessionID: "session", UserMessages: []string{"第一轮"}})
+	first := runOnce(RunRequest{Agent: agent, MockSystemURL: mcp.URL, SessionID: "session", UserMessages: []string{"第一轮"}})
 	if first.Status != "completed" || first.Reply != "reply" || len(first.Transcript) != 4 {
 		t.Fatal(marshal(first))
 	}
@@ -394,7 +398,7 @@ func TestTranscriptContinuation(t *testing.T) {
 	if strings.Contains(marshal(first.Transcript), "item-secret-id") || strings.Contains(marshal(first.Transcript), "resp-logged-only") {
 		t.Error("internal IDs leaked into transcript")
 	}
-	second := (&Runtime{}).Run(context.Background(), RunRequest{Agent: agent, MockSystemURL: mcp.URL, SessionID: "session", UserMessages: []string{"第二轮"}, Transcript: first.Transcript})
+	second := runOnce(RunRequest{Agent: agent, MockSystemURL: mcp.URL, SessionID: "session", UserMessages: []string{"第二轮"}, Transcript: first.Transcript})
 	if second.Status != "completed" || second.Reply != "reply" || len(second.Transcript) != 6 {
 		t.Fatal(marshal(second))
 	}
@@ -430,9 +434,116 @@ func TestTranscriptDuplicateCallIDRejected(t *testing.T) {
 		map[string]any{"type": "function_call_output", "call_id": "dup", "output": "done"},
 		map[string]any{"type": "message", "role": "assistant", "content": []any{map[string]any{"type": "output_text", "text": "ok"}}},
 	}
-	result := (&Runtime{}).Run(context.Background(), RunRequest{Agent: testAgent(model.URL), MockSystemURL: mcp.URL, SessionID: "session", UserMessages: []string{"next"}, Transcript: history})
+	result := runOnce(RunRequest{Agent: testAgent(model.URL), MockSystemURL: mcp.URL, SessionID: "session", UserMessages: []string{"next"}, Transcript: history})
 	if result.Status != "failed" || !strings.Contains(result.Error, "duplicate") {
 		t.Fatal(marshal(result))
+	}
+}
+
+func TestStreamedEvents(t *testing.T) {
+	mcp := fakeMCP(t, func(p map[string]any) map[string]any {
+		return map[string]any{"content": []any{map[string]any{"type": "text", "text": "42"}}}
+	})
+	var calls atomic.Int32
+	model := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		emit := func(v any) { fmt.Fprintf(w, "data: %s\n\n", marshal(v)); w.(http.Flusher).Flush() }
+		emit(map[string]any{"type": "response.created", "response": map[string]any{"id": "s", "status": "in_progress"}})
+		if calls.Add(1) == 1 {
+			emit(map[string]any{"type": "response.output_text.delta", "output_index": 0, "delta": "流式文本"})
+			emit(map[string]any{"type": "response.reasoning_summary_text.delta", "output_index": 1, "delta": "内部计划"})
+			emit(map[string]any{"type": "response.output_item.added", "output_index": 2, "item": map[string]any{"type": "function_call", "name": "echo", "call_id": "c1", "arguments": ""}})
+			emit(map[string]any{"type": "response.function_call_arguments.delta", "output_index": 2, "delta": "{\"value\":42}"})
+			emit(map[string]any{"type": "response.output_item.done", "output_index": 2, "item": function("c1")})
+			emit(map[string]any{"type": "response.completed", "response": response(function("c1"))})
+			return
+		}
+		emit(map[string]any{"type": "response.output_text.delta", "output_index": 0, "delta": "最终回复"})
+		emit(map[string]any{"type": "response.completed", "response": response(message("最终回复"))})
+	}))
+	defer model.Close()
+	var events []map[string]any
+	result := (&Runtime{}).Run(context.Background(), RunRequest{Agent: testAgent(model.URL), MockSystemURL: mcp.URL, SessionID: "session", Instruction: "run"}, func(event map[string]any) {
+		events = append(events, event)
+	})
+	if result.Status != "completed" || result.Reply != "最终回复" {
+		t.Fatal(marshal(result))
+	}
+	types := []string{}
+	for _, event := range events {
+		types = append(types, text(event["type"]))
+	}
+	expected := "turn_start,iteration_start,text_delta,reasoning_delta,tool_call,tool_result,iteration_start,text_delta,turn_end"
+	if strings.Join(types, ",") != expected {
+		t.Fatalf("event order wrong: %s", strings.Join(types, ","))
+	}
+	if text(events[2]["text"]) != "流式文本" || text(events[3]["text"]) != "内部计划" {
+		t.Fatal("delta payload wrong")
+	}
+	if text(events[4]["name"]) != "echo" || text(events[4]["call_id"]) != "c1" {
+		t.Fatal("tool call payload wrong")
+	}
+	if text(events[5]["status"]) != "completed" || !strings.Contains(text(events[5]["output"]), "42") {
+		t.Fatal("tool result payload wrong")
+	}
+	if text(events[8]["status"]) != "completed" || text(events[7]["text"]) != "最终回复" {
+		t.Fatal("turn end payload wrong")
+	}
+}
+
+func TestNonStreamingEmitsSingleDeltas(t *testing.T) {
+	mcp := fakeMCP(t, func(p map[string]any) map[string]any { return map[string]any{} })
+	model := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(response(map[string]any{"type": "reasoning", "summary": []any{map[string]any{"text": "计划内容"}}}, message("完整回复")))
+	}))
+	defer model.Close()
+	var events []map[string]any
+	result := (&Runtime{}).Run(context.Background(), RunRequest{Agent: testAgent(model.URL), MockSystemURL: mcp.URL, SessionID: "session", Instruction: "run"}, func(event map[string]any) {
+		events = append(events, event)
+	})
+	if result.Status != "completed" || result.Reply != "完整回复" {
+		t.Fatal(marshal(result))
+	}
+	var reasoning, texts []string
+	for _, event := range events {
+		switch text(event["type"]) {
+		case "reasoning_delta":
+			reasoning = append(reasoning, text(event["text"]))
+		case "text_delta":
+			texts = append(texts, text(event["text"]))
+		}
+	}
+	if len(reasoning) != 1 || reasoning[0] != "计划内容" {
+		t.Fatalf("reasoning emission wrong: %v", reasoning)
+	}
+	if len(texts) != 1 || texts[0] != "完整回复" {
+		t.Fatalf("text emission wrong: %v", texts)
+	}
+}
+
+func TestHandlerStreamingResponse(t *testing.T) {
+	mcp := fakeMCP(t, func(p map[string]any) map[string]any { return map[string]any{} })
+	model := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(response(message("流式响应")))
+	}))
+	defer model.Close()
+	handler := (&Runtime{}).Handler()
+	body := map[string]any{"agent": testAgent(model.URL), "sessionId": "session", "mockSystemUrl": mcp.URL, "instruction": "run"}
+	request := httptest.NewRequest("POST", "/v1/run", strings.NewReader(marshal(body)))
+	request.Header.Set("Accept", "text/event-stream")
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, request)
+	if !strings.Contains(recorder.Header().Get("Content-Type"), "text/event-stream") {
+		t.Fatalf("expected event stream content type: %s", recorder.Header().Get("Content-Type"))
+	}
+	output := recorder.Body.String()
+	for _, want := range []string{"event: turn_start", "event: iteration_start", "event: text_delta", "event: turn_end", "event: run_end"} {
+		if !strings.Contains(output, want) {
+			t.Errorf("missing %s in stream", want)
+		}
+	}
+	if !strings.Contains(output, "流式响应") {
+		t.Error("streamed text missing")
 	}
 }
 
