@@ -163,3 +163,5 @@
 - README 增加交互式使用章节。
 
 验证中发现并修复的问题：本地 runtime 进程需要接收 `RESPONSES_API_BASE_URL` 与 `RESPONSES_API_KEY`，而非 `.env` 中的 `STEPFUN_*` 名称；`go run` 派生的子进程需要按进程组终止，否则退出后占用端口；会话目录判定使用 `meta.json`，排除开发数据库与日志子目录。
+
+启动服务前校验模型端点：`.env` 与 shell 环境均未提供 `STEPFUN_OPENAI_BASE_URL` 时直接报错并说明配置方法，不在首轮对话时才失败。启动横幅显示解析到的端点，便于确认。Docker 模式修改端点后重新执行命令会重建 runtime 容器，已实测确认。

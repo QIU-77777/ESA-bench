@@ -158,6 +158,8 @@ ESA使用上述 `render-job.py + harbor run` 流程；[通用运行脚本](scrip
 
 对话中的车辆状态跨轮保留，模型对话历史跨轮保留，Agent 能引用前文。等待模型期间按 `Ctrl+C` 取消当前轮，会话保留。
 
+命令要求 `.env` 中配置 `STEPFUN_OPENAI_BASE_URL` 与 `STEPFUN_API_KEY`（见配置待测模型）。缺失时启动前直接报错；启动横幅显示解析到的模型端点，可据此确认。
+
 ### 交互命令
 
 | 输入 | 作用 |

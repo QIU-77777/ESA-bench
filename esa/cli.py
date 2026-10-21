@@ -189,12 +189,8 @@ def start_local_stack(settings, log_dir):
         env = dict(os.environ)
         env.update(settings.env)
         env["PORT"] = "18080"
-        base = settings.env.get("STEPFUN_OPENAI_BASE_URL", "")
-        key = settings.env.get("STEPFUN_API_KEY", "")
-        if not base:
-            base = os.environ.get("STEPFUN_OPENAI_BASE_URL", "")
-        if not key:
-            key = os.environ.get("STEPFUN_API_KEY", "")
+        base = model_endpoint(settings)
+        key = settings.env.get("STEPFUN_API_KEY") or os.environ.get("STEPFUN_API_KEY", "")
         if base:
             env["RESPONSES_API_BASE_URL"] = base
         if key:
@@ -205,11 +201,18 @@ def start_local_stack(settings, log_dir):
     return processes
 
 
+def model_endpoint(settings):
+    """解析模型端点。来源顺序：.env 文件、shell 环境变量。"""
+    return settings.env.get("STEPFUN_OPENAI_BASE_URL") or os.environ.get("STEPFUN_OPENAI_BASE_URL") or os.environ.get("RESPONSES_API_BASE_URL") or ""
+
+
 def ensure_services(settings, log_dir):
     if health_ok(settings.mock_url + "/health") and health_ok(settings.runtime_url + "/v1/health"):
         return []
     if settings.no_stack:
         raise CliError("环境服务或 runtime 不可达。请先启动服务，或去掉 --no-stack 由命令自动启动。")
+    if not model_endpoint(settings):
+        raise CliError("未配置模型端点。请在 .env 中设置 STEPFUN_OPENAI_BASE_URL 与 STEPFUN_API_KEY，或导出同名环境变量后重试。变量名前缀不限服务提供方，端点需兼容 OpenAI Responses API。")
     if settings.local:
         return start_local_stack(settings, log_dir)
     return start_docker_stack(settings)
@@ -417,6 +420,9 @@ def print_banner(chat, settings):
     print("ESA 交互会话")
     print("  会话标识: " + str(chat.session_id))
     print("  模型: " + str(settings.model_id))
+    endpoint = model_endpoint(settings)
+    if endpoint:
+        print("  模型端点: " + endpoint)
     print("  启用工具: " + str(enabled) + " 项")
     if settings.task_path:
         print("  任务: " + str(settings.task_path))

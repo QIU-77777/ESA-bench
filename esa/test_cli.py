@@ -1,4 +1,5 @@
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -7,16 +8,21 @@ from unittest.mock import patch
 from esa import cli
 
 
-def make_settings(tmp, **overrides):
+def make_settings(tmp, no_stack=True, **overrides):
     parser = cli.build_parser()
-    arguments = ["chat", "--session-dir", str(tmp / "sessions"), "--no-stack"]
+    arguments = ["chat", "--session-dir", str(tmp / "sessions")]
+    if no_stack:
+        arguments.append("--no-stack")
     for key, value in overrides.items():
         flag = "--" + key.replace("_", "-")
         arguments.append(flag)
         if not isinstance(value, bool):
             arguments.append(str(value))
     args = parser.parse_args(arguments)
-    return cli.Settings(args, {})
+    env_path = Path(args.env)
+    if not env_path.is_absolute():
+        env_path = Path.cwd() / env_path
+    return cli.Settings(args, cli.load_env_file(env_path))
 
 
 class EnvAndTaskTests(unittest.TestCase):
@@ -223,6 +229,32 @@ class ControllerTests(unittest.TestCase):
             archive.assert_called_once()
             self.assertEqual(chat.transcript, [])
             self.assertTrue(any(url.endswith("/reset") for _, url in calls))
+
+
+class ServiceStartupTests(unittest.TestCase):
+    def test_missing_endpoint_reports_configuration_error(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            settings = make_settings(root, no_stack=False)
+            with patch.dict(os.environ, {}, clear=True), patch.object(cli, "health_ok", return_value=False):
+                with self.assertRaisesRegex(cli.CliError, "未配置模型端点"):
+                    cli.ensure_services(settings, root / "logs")
+
+    def test_configured_endpoint_starts_stack(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "chat.env").write_text("STEPFUN_OPENAI_BASE_URL=https://example.invalid/v1\nSTEPFUN_API_KEY=offline\n", "utf-8")
+            settings = make_settings(root, no_stack=False, env=str(root / "chat.env"))
+            with patch.dict(os.environ, {}, clear=True), patch.object(cli, "health_ok", return_value=False), patch.object(cli, "start_docker_stack", return_value=[]) as start:
+                cli.ensure_services(settings, root / "logs")
+            start.assert_called_once()
+
+    def test_healthy_services_skip_startup(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            settings = make_settings(root)
+            with patch.dict(os.environ, {}, clear=True), patch.object(cli, "health_ok", return_value=True):
+                self.assertEqual(cli.ensure_services(settings, root / "logs"), [])
 
 
 if __name__ == "__main__":
