@@ -431,15 +431,31 @@ def print_banner(chat, settings):
     print("")
 
 
-def print_help():
-    print("可用命令:")
-    print("  /state   显示当前车辆状态快照")
-    print("  /events  显示工具调用记录与状态变化")
-    print("  /tools   显示当前会话启用的工具")
-    print("  /reset   重置车辆状态并清空对话历史")
-    print("  /resume  列出已保存的交互会话并续聊")
-    print("  /quit    写出证据并退出")
+COMMANDS = [
+    ("/state", "显示当前车辆状态快照"),
+    ("/events", "显示工具调用记录与状态变化"),
+    ("/tools", "显示当前会话启用的工具"),
+    ("/reset", "重置车辆状态并清空对话历史"),
+    ("/resume", "列出已保存的交互会话并续聊"),
+    ("/quit", "写出证据并退出"),
+    ("/help", "显示命令列表"),
+]
+
+
+def command_box(prefix):
+    """按前缀过滤显示命令列表。输入 / 时显示全部命令。"""
+    matched = [item for item in COMMANDS if item[0].startswith(prefix)]
+    if matched:
+        print("可用命令:")
+    else:
+        print("没有以 " + prefix + " 开头的命令。全部命令:")
+    for name, description in matched or COMMANDS:
+        print("  " + name.ljust(9) + description)
     print("普通输入直接作为用户消息发送。")
+
+
+def print_help():
+    command_box("/")
 
 
 class ChatController:
@@ -532,7 +548,8 @@ class ChatController:
         elif command == "/resume":
             self.command_resume()
         else:
-            print("未知命令 " + command + "，/help 查看可用命令。")
+            print("未知命令 " + command + "。")
+            command_box(command)
         return True
 
 
@@ -570,6 +587,9 @@ def run_repl(controller):
         if not line:
             continue
         if line.startswith("/"):
+            if line.strip() == "/":
+                command_box("/")
+                continue
             if not controller.dispatch(line):
                 break
             continue

@@ -1,3 +1,5 @@
+import contextlib
+import io
 import json
 import os
 import tempfile
@@ -235,7 +237,8 @@ class ServiceStartupTests(unittest.TestCase):
     def test_missing_endpoint_reports_configuration_error(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            settings = make_settings(root, no_stack=False)
+            (root / "empty.env").write_text("", "utf-8")
+            settings = make_settings(root, no_stack=False, env=str(root / "empty.env"))
             with patch.dict(os.environ, {}, clear=True), patch.object(cli, "health_ok", return_value=False):
                 with self.assertRaisesRegex(cli.CliError, "未配置模型端点"):
                     cli.ensure_services(settings, root / "logs")
@@ -255,6 +258,31 @@ class ServiceStartupTests(unittest.TestCase):
             settings = make_settings(root)
             with patch.dict(os.environ, {}, clear=True), patch.object(cli, "health_ok", return_value=True):
                 self.assertEqual(cli.ensure_services(settings, root / "logs"), [])
+
+
+class CommandBoxTests(unittest.TestCase):
+    def capture(self, prefix):
+        stream = io.StringIO()
+        with contextlib.redirect_stdout(stream):
+            cli.command_box(prefix)
+        return stream.getvalue()
+
+    def test_slash_shows_all_commands(self):
+        output = self.capture("/")
+        self.assertIn("可用命令:", output)
+        for name, _ in cli.COMMANDS:
+            self.assertIn(name, output)
+
+    def test_prefix_filters_commands(self):
+        output = self.capture("/st")
+        self.assertIn("/state", output)
+        self.assertNotIn("/events", output)
+
+    def test_no_match_shows_all_commands(self):
+        output = self.capture("/zz")
+        self.assertIn("没有以 /zz 开头的命令", output)
+        for name, _ in cli.COMMANDS:
+            self.assertIn(name, output)
 
 
 if __name__ == "__main__":
