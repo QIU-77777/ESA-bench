@@ -146,6 +146,61 @@ PYTHONPATH="$PWD" .venv/bin/harbor run \
 
 ESA使用上述 `render-job.py + harbor run` 流程；[通用运行脚本](scripts/run.sh)用于仓库保留的编码Agent示例，其镜像挂载预检不适用于ESA。
 
+## 交互式对话
+
+除了批量评测，可以直接与车载 Agent 对话，用于人工体验和问题发现：
+
+```bash
+.venv/bin/python -m esa.cli chat
+```
+
+命令与批量评测使用同一 Agent 实现、工具集和环境数据。首次运行时自动启动开发服务：Docker 拉起 `esa-react-runtime:1.0.0` 与 `esa-local-environment:1.0.0` 两个镜像加 Redis，端口 8003 与 8080 绑定本机。退出时服务保持运行，下次启动更快；`--ephemeral` 在退出时销毁。
+
+对话中的车辆状态跨轮保留，模型对话历史跨轮保留，Agent 能引用前文。等待模型期间按 `Ctrl+C` 取消当前轮，会话保留。
+
+### 交互命令
+
+| 输入 | 作用 |
+|---|---|
+| 普通文字 | 作为用户消息发送给 Agent |
+| `/state` | 显示当前车辆状态快照 |
+| `/events` | 显示工具调用记录与状态变化 |
+| `/tools` | 显示当前会话启用的工具 |
+| `/reset` | 重置车辆状态并清空对话历史 |
+| `/resume` | 列出已保存的交互会话并续聊 |
+| `/quit` | 写出证据并退出 |
+
+### 常用参数
+
+```bash
+# 加载某个任务的初态，并以该任务的首条指令开始对话
+.venv/bin/python -m esa.cli chat --task tasks/esa-sc-a1
+
+# 使用宿主进程（宿主 Redis、环境服务、go run）而非 Docker 镜像
+.venv/bin/python -m esa.cli chat --local
+
+# 续聊已保存的会话
+.venv/bin/python -m esa.cli chat --resume <会话标识>
+
+# 连接已在运行的服务，不自动启动
+.venv/bin/python -m esa.cli chat --no-stack
+```
+
+`--model` 覆盖模型标识，`--turn-timeout` 与 `--max-iterations` 调整单轮限制，`--session-dir` 更换证据目录，`--verbose` 显示模型思考内容。
+
+模型端点使用本机地址时，命令提示改用 `host.docker.internal`，否则 runtime 容器内无法访问。
+
+### 证据
+
+默认写入 `~/.esa/sessions/<会话标识>/`，文件名与批量评测证据一致：
+
+- `transcript.json`：完整对话历史
+- `snapshot-initial.json`、`snapshot-final.json`：初态与结束状态
+- `state-events.json`：工具调用与状态变化过程
+- `meta.json`：模型、任务、起止时间、轮数
+
+`/reset` 时此前的证据归档到 `reset-<序号>/` 子目录。`--local` 模式的进程日志在 `logs/` 子目录。
+
 ## 无模型凭据的集成验证
 
 公共镜像构建完成后，可以使用本地确定性模型接口验证Harbor、runtime、工具服务和评分链路。
@@ -275,7 +330,8 @@ uv pip install --python .venv/bin/python -r environment/requirements.txt
 .venv/bin/python -m unittest environment.test_environment -v
 .venv/bin/python -m unittest esa.test_state_score esa.test_trajectory esa.test_verifier -v
 node --test esa/test-driver.mjs
+ESA_INTEGRATION=1 node --test esa/test-local-integration.mjs
 (cd runtime && go test -race -cover ./... && go vet ./...)
 ```
 
-默认环境测试使用显式内存测试存储，Redis集成测试会跳过。验证Redis事务与隔离时，设置 `ESA_TEST_REDIS_URL` 指向专用测试Redis；测试会创建、过期和删除会话，请勿指向业务数据库。[验证记录](docs/esa-validation.md)说明已执行的测试和容器验收范围。真实模型表现需使用实际模型配置独立评测。
+默认环境测试使用显式内存测试存储，Redis集成测试会跳过。端到端集成测试需要本地工具服务与 runtime 已启动（默认 `http://127.0.0.1:18003` 与 `http://127.0.0.1:8080`，可用 `ESA_MOCK_URL`、`ESA_RUNTIME_URL` 覆盖）；未设置 `ESA_INTEGRATION` 时该测试跳过。验证Redis事务与隔离时，设置 `ESA_TEST_REDIS_URL` 指向专用测试Redis；测试会创建、过期和删除会话，请勿指向业务数据库。[验证记录](docs/esa-validation.md)说明已执行的测试和容器验收范围。真实模型表现需使用实际模型配置独立评测。

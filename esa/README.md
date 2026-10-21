@@ -8,7 +8,30 @@
 - [环境服务](../environment/README.md)：本地数据、Redis 状态和工具执行。
 - [驱动](driver.mjs)：创建 session、运行脚本对话、收集状态证据。
 - [Harbor agent](esa_agent.py)：生成 ATIF 与 verifier 素材。
+- [评分脚本](score.py)：verifier入口，读取rubric与工具调用、回复、模型评审三路证据，写出reward与明细。
 - [状态评分](state_score.py)：终态谓词、禁止变更和有序过程约束。
+- [冻结脚本](freeze_agent.py)：从生产TOML配置生成agent.json，去掉工具声明并固定上下文续接为replay。
+- [交互式命令行](cli.py)：esa chat，人工对话入口，复用同一 runtime 与环境。
+
+
+## 交互式对话
+
+```bash
+.venv/bin/python -m esa.cli chat
+```
+
+入口为 `esa/cli.py`，仅使用 Python 标准库。命令行不执行 ReAct 循环，不直接调用模型，全部经过 runtime，与批量评测走同一实现。多轮对话通过在 `/v1/run` 请求中传递 `transcript` 续接，runtime 无服务端状态。
+
+首次运行自动启动开发服务（Docker 镜像或 `--local` 宿主进程），支持 `/state`、`/events`、`/tools`、`/reset`、`/resume`、`/quit` 命令，证据写入 `~/.esa/sessions/<会话标识>/`。参数与行为见 [命令行规范](../docs/esa-agent-cli-spec.md)。
+
+测试：
+
+```bash
+.venv/bin/python -m unittest esa.test_cli -v
+ESA_CLI_INTEGRATION=1 .venv/bin/python -m unittest esa.test_cli_integration esa.test_cli_stacks -v
+```
+
+集成冒烟自行启动假模型接口、Redis、环境服务和 runtime，不消耗模型额度。
 
 ## 构建与运行
 在仓库根目录执行：
@@ -44,5 +67,8 @@ Harbor日志包含 driver-result.json、trajectory.json、tool-calls.json、repl
 ```bash
 (cd runtime && go test -race -cover ./...)
 node --test esa/test-driver.mjs
-.venv/bin/python -m unittest esa.test_state_score -v
+.venv/bin/python -m unittest esa.test_state_score esa.test_trajectory esa.test_verifier -v
+ESA_INTEGRATION=1 node --test esa/test-local-integration.mjs
 ```
+
+端到端集成测试需要本地工具服务与runtime已启动（默认`http://127.0.0.1:18003`与`http://127.0.0.1:8080`，可用`ESA_MOCK_URL`、`ESA_RUNTIME_URL`覆盖）；未设置`ESA_INTEGRATION`时该测试跳过。

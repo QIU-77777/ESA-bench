@@ -363,3 +363,100 @@ func TestMalformedArgumentsAndDuplicateCallIDs(t *testing.T) {
 		}
 	}
 }
+
+func TestTranscriptContinuation(t *testing.T) {
+	var toolCalls atomic.Int32
+	mcp := fakeMCP(t, func(p map[string]any) map[string]any {
+		toolCalls.Add(1)
+		return map[string]any{"content": []any{map[string]any{"type": "text", "text": "42"}}}
+	})
+	var inputs [][]any
+	model := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var b map[string]any
+		json.NewDecoder(r.Body).Decode(&b)
+		input, _ := b["input"].([]any)
+		inputs = append(inputs, input)
+		if len(inputs) == 1 {
+			json.NewEncoder(w).Encode(response(function("call-1")))
+			return
+		}
+		json.NewEncoder(w).Encode(response(message("reply")))
+	}))
+	defer model.Close()
+	agent := testAgent(model.URL + "/v1")
+	first := (&Runtime{}).Run(context.Background(), RunRequest{Agent: agent, MockSystemURL: mcp.URL, SessionID: "session", UserMessages: []string{"第一轮"}})
+	if first.Status != "completed" || first.Reply != "reply" || len(first.Transcript) != 4 {
+		t.Fatal(marshal(first))
+	}
+	if text(object(first.Transcript[1])["call_id"]) != "call-1" || text(object(first.Transcript[2])["call_id"]) != "call-1" || text(object(first.Transcript[3])["role"]) != "assistant" {
+		t.Fatalf("transcript item order wrong: %s", marshal(first.Transcript))
+	}
+	if strings.Contains(marshal(first.Transcript), "item-secret-id") || strings.Contains(marshal(first.Transcript), "resp-logged-only") {
+		t.Error("internal IDs leaked into transcript")
+	}
+	second := (&Runtime{}).Run(context.Background(), RunRequest{Agent: agent, MockSystemURL: mcp.URL, SessionID: "session", UserMessages: []string{"第二轮"}, Transcript: first.Transcript})
+	if second.Status != "completed" || second.Reply != "reply" || len(second.Transcript) != 6 {
+		t.Fatal(marshal(second))
+	}
+	var continued []any
+	for _, input := range inputs {
+		if strings.Contains(marshal(input), "第二轮") {
+			continued = input
+		}
+	}
+	if continued == nil {
+		t.Fatal("continuation request not captured")
+	}
+	serialized := marshal(continued)
+	for _, fragment := range []string{"第一轮", "call-1", "42", "reply", "第二轮"} {
+		if !strings.Contains(serialized, fragment) {
+			t.Errorf("continuation history missing %s: %s", fragment, serialized)
+		}
+	}
+	if toolCalls.Load() != 1 {
+		t.Errorf("tool re-executed during continuation: %d", toolCalls.Load())
+	}
+}
+
+func TestTranscriptDuplicateCallIDRejected(t *testing.T) {
+	mcp := fakeMCP(t, func(p map[string]any) map[string]any { return map[string]any{} })
+	model := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(response(function("dup")))
+	}))
+	defer model.Close()
+	history := []any{
+		map[string]any{"role": "user", "content": "earlier"},
+		map[string]any{"type": "function_call", "call_id": "dup", "name": "echo", "arguments": "{}"},
+		map[string]any{"type": "function_call_output", "call_id": "dup", "output": "done"},
+		map[string]any{"type": "message", "role": "assistant", "content": []any{map[string]any{"type": "output_text", "text": "ok"}}},
+	}
+	result := (&Runtime{}).Run(context.Background(), RunRequest{Agent: testAgent(model.URL), MockSystemURL: mcp.URL, SessionID: "session", UserMessages: []string{"next"}, Transcript: history})
+	if result.Status != "failed" || !strings.Contains(result.Error, "duplicate") {
+		t.Fatal(marshal(result))
+	}
+}
+
+func TestInvalidTranscriptRejected(t *testing.T) {
+	handler := (&Runtime{}).Handler()
+	cases := map[string][]any{
+		"not an object":            {"bad"},
+		"user without content":     {map[string]any{"role": "user"}},
+		"message wrong role":       {map[string]any{"type": "message", "role": "system", "content": []any{map[string]any{"type": "output_text", "text": "x"}}}},
+		"message empty content":    {map[string]any{"type": "message", "role": "assistant", "content": []any{}}},
+		"unsupported content type": {map[string]any{"type": "message", "role": "assistant", "content": []any{map[string]any{"type": "image"}}}},
+		"call without name":        {map[string]any{"type": "function_call", "call_id": "c", "arguments": "{}"}},
+		"output without output":    {map[string]any{"type": "function_call_output", "call_id": "c"}},
+		"unsupported item type":    {map[string]any{"type": "reasoning"}},
+	}
+	for name, transcript := range cases {
+		t.Run(name, func(t *testing.T) {
+			body := map[string]any{"agent": map[string]any{}, "sessionId": "session", "mockSystemUrl": "http://mock.invalid", "user_messages": []string{"hi"}, "transcript": transcript}
+			request := httptest.NewRequest("POST", "/v1/run", strings.NewReader(marshal(body)))
+			recorder := httptest.NewRecorder()
+			handler.ServeHTTP(recorder, request)
+			if recorder.Code != 400 {
+				t.Fatalf("expected 400, got %d: %s", recorder.Code, recorder.Body.String())
+			}
+		})
+	}
+}

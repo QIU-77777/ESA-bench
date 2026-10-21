@@ -1,0 +1,36 @@
+# ESA 交互式开发服务组合：esa chat 默认使用。
+# 端口绑定 127.0.0.1，不对外暴露。模型端点与密钥由宿主环境变量传入。
+name: esa-dev
+
+services:
+  mock-system:
+    image: ${MOCK_SYSTEM_IMAGE:-esa-local-environment:1.0.0}
+    environment:
+      REDIS_URL: redis://redis:6379/0
+    ports:
+      - "127.0.0.1:8003:8003"
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8003/health')"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+  agent-api:
+    image: ${AGENT_API_IMAGE:-esa-react-runtime:1.0.0}
+    environment:
+      RESPONSES_API_BASE_URL: ${STEPFUN_OPENAI_BASE_URL:-}
+      RESPONSES_API_KEY: ${STEPFUN_API_KEY:-}
+    ports:
+      - "127.0.0.1:8080:8080"
+    depends_on:
+      mock-system:
+        condition: service_healthy
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 20

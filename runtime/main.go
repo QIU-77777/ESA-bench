@@ -24,6 +24,7 @@ type RunRequest struct {
 	Model          any            `json:"model,omitempty"`
 	Instruction    string         `json:"instruction"`
 	UserMessages   []string       `json:"user_messages,omitempty"`
+	Transcript     []any          `json:"transcript,omitempty"`
 	MockSystemURL  string         `json:"mockSystemUrl"`
 	SessionID      string         `json:"sessionId"`
 	ToolProfile    []string       `json:"toolProfile,omitempty"`
@@ -66,6 +67,7 @@ type RunResult struct {
 	Status         string      `json:"status"`
 	Error          string      `json:"error,omitempty"`
 	Turns          []Turn      `json:"turns"`
+	Transcript     []any       `json:"transcript,omitempty"`
 	RuntimeVersion string      `json:"runtimeVersion"`
 }
 type Runtime struct {
@@ -123,6 +125,66 @@ func redactValue(v any, key string) any {
 	}
 }
 
+func validTranscript(items []any) error {
+	for _, raw := range items {
+		item, ok := raw.(map[string]any)
+		if !ok {
+			return errors.New("transcript item must be an object")
+		}
+		if text(item["role"]) == "user" {
+			if _, ok := item["content"].(string); !ok {
+				return errors.New("user transcript item requires string content")
+			}
+			continue
+		}
+		switch text(item["type"]) {
+		case "message":
+			if text(item["role"]) != "assistant" {
+				return errors.New("assistant transcript item requires assistant role")
+			}
+			contents, ok := item["content"].([]any)
+			if !ok || len(contents) == 0 {
+				return errors.New("assistant transcript item requires content array")
+			}
+			for _, rawContent := range contents {
+				content, ok := rawContent.(map[string]any)
+				if !ok {
+					return errors.New("assistant transcript content must be objects")
+				}
+				switch text(content["type"]) {
+				case "output_text":
+					if _, ok := content["text"].(string); !ok {
+						return errors.New("output_text requires string text")
+					}
+				case "refusal":
+					if _, ok := content["refusal"].(string); !ok {
+						return errors.New("refusal requires string refusal")
+					}
+				default:
+					return errors.New("unsupported assistant transcript content type")
+				}
+			}
+		case "function_call":
+			if text(item["call_id"]) == "" || text(item["name"]) == "" {
+				return errors.New("function_call requires call_id and name")
+			}
+			if _, ok := item["arguments"].(string); !ok {
+				return errors.New("function_call requires string arguments")
+			}
+		case "function_call_output":
+			if text(item["call_id"]) == "" {
+				return errors.New("function_call_output requires call_id")
+			}
+			if _, ok := item["output"].(string); !ok {
+				return errors.New("function_call_output requires string output")
+			}
+		default:
+			return errors.New("unsupported transcript item type")
+		}
+	}
+	return nil
+}
+
 func (rt *Runtime) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/health", func(w http.ResponseWriter, r *http.Request) {
@@ -152,6 +214,10 @@ func (rt *Runtime) Handler() http.Handler {
 		}
 		if req.SessionID == "" || req.MockSystemURL == "" || (len(req.UserMessages) == 0 && req.Instruction == "") || req.MaxIterations < 0 || req.MaxIterations > 100 || req.TurnTimeoutSec < 0 || req.TurnTimeoutSec > 3600 {
 			http.Error(w, "invalid run limits, messages or session", 400)
+			return
+		}
+		if err := validTranscript(req.Transcript); err != nil {
+			http.Error(w, "invalid transcript: "+err.Error(), 400)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -184,6 +250,18 @@ func (rt *Runtime) Run(parent context.Context, req RunRequest) RunResult {
 	}
 	transcript := []any{}
 	callIDs := map[string]bool{}
+	for _, raw := range req.Transcript {
+		item, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		transcript = append(transcript, item)
+		if text(item["type"]) == "function_call" {
+			if id := text(item["call_id"]); id != "" {
+				callIDs[id] = true
+			}
+		}
+	}
 	for ti, msg := range messages {
 		ctx, cancel := context.WithTimeout(parent, time.Duration(req.TurnTimeoutSec*float64(time.Second)))
 		turn := Turn{Instruction: msg, Iterations: []Iteration{}, Status: "completed"}
@@ -331,6 +409,7 @@ func (rt *Runtime) Run(parent context.Context, req RunRequest) RunResult {
 			break
 		}
 	}
+	result.Transcript = transcript
 	// Credential redaction applies to every returned field, including model/tool echo.
 	if cfg.key != "" {
 		var value any
