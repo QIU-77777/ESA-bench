@@ -248,23 +248,43 @@ def compact_arguments(raw):
     return text if len(text) <= 300 else text[:297] + "..."
 
 
-def summarize_output(raw):
+def format_output(raw):
+    """把工具结果格式化为完整文本，不截断。
+
+    终端显示与模型收到的内容一致：MCP 信封内的文本块全部输出，
+    解析失败时输出原始字符串。
+    """
     text = str(raw or "")
     try:
         parsed = json.loads(text)
     except (TypeError, ValueError):
-        summary = text
-    else:
-        contents = parsed.get("content") if isinstance(parsed, dict) else None
-        if isinstance(contents, list) and contents:
-            first = contents[0]
-            summary = first.get("text", "") if isinstance(first, dict) else str(first)
-        else:
-            summary = text
-        if isinstance(parsed, dict) and parsed.get("isError"):
-            summary = "错误: " + summary
-    summary = " ".join(summary.split())
-    return summary if len(summary) <= 200 else summary[:197] + "..."
+        return text
+    if not isinstance(parsed, dict):
+        return text
+    contents = parsed.get("content")
+    parts = []
+    if isinstance(contents, list):
+        for item in contents:
+            if isinstance(item, dict) and isinstance(item.get("text"), str):
+                parts.append(item["text"])
+            elif isinstance(item, str):
+                parts.append(item)
+    if not parts:
+        return text
+    body = "\n".join(parts)
+    if parsed.get("isError"):
+        body = "错误: " + body
+    return body
+
+
+def print_output(raw, latency, verbose=False):
+    """打印完整工具结果，多行内容逐行输出。"""
+    body = format_output(raw)
+    lines = body.split("\n") or [""]
+    print(styled("    → " + lines[0], DIM), end="")
+    print(styled(" (" + str(latency) + "ms)", DIM))
+    for line in lines[1:]:
+        print(styled("      " + line, DIM))
 
 
 def styled(text, code):
@@ -339,8 +359,7 @@ class TurnRenderer:
             status = str(payload.get("status"))
             latency = str(payload.get("latency_ms"))
             if status == "completed":
-                summary = str(payload.get("output") or "") if self.verbose else summarize_output(payload.get("output"))
-                print(styled("    → " + summary + " (" + latency + "ms)", DIM))
+                print_output(payload.get("output"), latency, verbose=self.verbose)
             else:
                 print(styled("    → 失败 (" + latency + "ms)", RED))
         elif name == "turn_end":

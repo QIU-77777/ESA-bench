@@ -61,14 +61,17 @@ class RenderHelperTests(unittest.TestCase):
         long_value = "x" * 400
         self.assertTrue(cli.compact_arguments(json.dumps({"v": long_value})).endswith("..."))
 
-    def test_summarize_output(self):
+    def test_format_output(self):
         envelope = json.dumps({"content": [{"text": "多行\n结果"}], "isError": False})
-        self.assertEqual(cli.summarize_output(envelope), "多行 结果")
+        self.assertEqual(cli.format_output(envelope), "多行\n结果")
         error_envelope = json.dumps({"content": [{"text": "拒绝"}], "isError": True})
-        self.assertEqual(cli.summarize_output(error_envelope), "错误: 拒绝")
-        self.assertEqual(cli.summarize_output(""), "")
-        long_text = "y" * 400
-        self.assertTrue(cli.summarize_output(json.dumps({"content": [{"text": long_text}]})).endswith("..."))
+        self.assertEqual(cli.format_output(error_envelope), "错误: 拒绝")
+        self.assertEqual(cli.format_output(""), "")
+        self.assertEqual(cli.format_output("原始文本"), "原始文本")
+        long_text = "y" * 5000
+        self.assertEqual(cli.format_output(json.dumps({"content": [{"text": long_text}]})), long_text)
+        multi = json.dumps({"content": [{"text": "第一块"}, {"text": "第二块"}]})
+        self.assertEqual(cli.format_output(multi), "第一块\n第二块")
 
 
 class SettingsTests(unittest.TestCase):
