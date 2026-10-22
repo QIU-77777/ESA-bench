@@ -22,7 +22,7 @@
 
 入口为 `esa/cli.py`，仅使用 Python 标准库。命令行不执行 ReAct 循环，不直接调用模型，全部经过 runtime，与批量评测走同一实现。多轮对话通过在 `/v1/run` 请求中传递 `transcript` 续接，runtime 无服务端状态。
 
-首次运行自动启动开发服务（Docker 镜像或 `--local` 宿主进程），支持 `/state`、`/events`、`/tools`、`/reset`、`/resume`、`/quit` 命令，证据写入 `~/.esa/sessions/<会话标识>/`。参数与行为见 [命令行规范](../docs/esa-agent-cli-spec.md)。
+首次运行自动启动开发服务（Docker 镜像或 `--local` 宿主进程），支持 `/state`、`/events`、`/tools`、`/reset`、`/resume`、`/quit`、`/help` 命令，证据写入 `~/.esa/sessions/<会话标识>/`。思考、工具调用、工具结果、答复四类输出各有符号、颜色与文字属性，答复后打印耗时与 token 用量。参数与行为见 [命令行规范](../docs/esa-agent-cli-spec.md)。
 
 测试：
 

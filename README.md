@@ -190,6 +190,7 @@ total: 4.7s | tokens: ↑1240  ↓320  ↺960(77.4%)
 | `/reset` | 重置车辆状态并清空对话历史 |
 | `/resume` | 列出已保存的交互会话并续聊 |
 | `/quit` | 写出证据并退出 |
+| `/help` | 显示命令列表 |
 
 输入 `/` 显示命令列表；输入前缀（例如 `/st`）按前缀过滤显示匹配命令。
 
@@ -209,7 +210,7 @@ total: 4.7s | tokens: ↑1240  ↓320  ↺960(77.4%)
 .venv/bin/python -m esa.cli chat --no-stack
 ```
 
-`--model` 覆盖模型标识，`--turn-timeout` 与 `--max-iterations` 调整单轮限制，`--session-dir` 更换证据目录，`--verbose` 显示模型思考内容。
+`--model` 覆盖模型标识，`--turn-timeout` 与 `--max-iterations` 调整单轮限制，`--session-dir` 更换证据目录，`--verbose` 显示模型收到的原始 MCP 信封。
 
 模型端点使用本机地址时，命令提示改用 `host.docker.internal`，否则 runtime 容器内无法访问。
 
