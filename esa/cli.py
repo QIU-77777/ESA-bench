@@ -248,7 +248,7 @@ def compact_arguments(raw):
 
 
 # 终端色值：思考灰、调用橙、结果蓝、失败红。
-GRAY = (160, 160, 160)
+GRAY = (220, 220, 220)
 ORANGE = (255, 147, 0)
 BLUE = (0, 123, 167)
 RED = (234, 0, 29)
@@ -272,19 +272,27 @@ def _truecolor():
     return "truecolor" in value or "24bit" in value
 
 
-def paint(text, rgb):
-    """按 Geist 色板上色。非终端或无颜色能力时返回原文。"""
+def _escape(rgb, bold=False):
+    """生成颜色转义序列。真彩色用精确色值，否则用最接近的 256 色。"""
+    if _truecolor():
+        body = "38;2;%d;%d;%d" % (rgb[0], rgb[1], rgb[2])
+    else:
+        body = "38;5;%d" % _approx256(rgb)
+    lead = "1;" if bold else ""
+    return "\x1b[" + lead + body + "m"
+
+
+def paint(text, rgb, bold=False):
+    """按色板上色，可选加粗。非终端时返回原文。"""
     if not text or not sys.stdout.isatty():
         return text
-    if _truecolor():
-        return "\x1b[38;2;%d;%d;%dm%s\x1b[0m" % (rgb[0], rgb[1], rgb[2], text)
-    return "\x1b[38;5;%dm%s\x1b[0m" % (_approx256(rgb), text)
+    return _escape(rgb, bold) + text + "\x1b[0m"
 
 
 def prefix_line(label, content, rgb, label_rgb=None):
-    """输出一行：对齐的前缀加内容。label 为空时只输出缩进。"""
+    """输出一行：加粗的对齐前缀加内容。label 为空时只输出缩进。"""
     if label:
-        head = paint(label.ljust(PREFIX_WIDTH), label_rgb or rgb)
+        head = paint(label.ljust(PREFIX_WIDTH), label_rgb or rgb, bold=True)
     else:
         head = " " * PREFIX_WIDTH
     return head + paint(content, rgb)
@@ -414,7 +422,7 @@ class TurnRenderer:
         if not text:
             return
         if not self.thinking_started:
-            print(paint("thinking".ljust(PREFIX_WIDTH), GRAY), end="", flush=True)
+            print(paint("thinking".ljust(PREFIX_WIDTH), GRAY, bold=True), end="", flush=True)
             self.thinking_started = True
         print(paint(text, GRAY), end="", flush=True)
 

@@ -2,6 +2,7 @@ import contextlib
 import io
 import json
 import os
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -71,13 +72,29 @@ class RenderHelperTests(unittest.TestCase):
         self.assertNotIn("tool_result", blank)
 
     def test_palette_values(self):
-        self.assertEqual(cli.GRAY, (160, 160, 160))
+        self.assertEqual(cli.GRAY, (220, 220, 220))
         self.assertEqual(cli.ORANGE, (255, 147, 0))
         self.assertEqual(cli.BLUE, (0, 123, 167))
         self.assertEqual(cli.RED, (234, 0, 29))
 
+    def test_escape_sequences(self):
+        with patch.dict(os.environ, {"COLORTERM": "truecolor"}):
+            self.assertEqual(cli._escape(cli.GRAY), "\x1b[38;2;220;220;220m")
+            self.assertEqual(cli._escape(cli.GRAY, bold=True), "\x1b[1;38;2;220;220;220m")
+            self.assertEqual(cli._escape(cli.BLUE), "\x1b[38;2;0;123;167m")
+        with patch.dict(os.environ, {"COLORTERM": ""}):
+            self.assertTrue(cli._escape(cli.GRAY).startswith("\x1b[38;5;"))
+            self.assertTrue(cli._escape(cli.GRAY, bold=True).startswith("\x1b[1;38;5;"))
+
+    def test_prefix_is_bold_in_terminal(self):
+        with patch.object(sys.stdout, "isatty", return_value=True), patch.dict(os.environ, {"COLORTERM": "truecolor"}):
+            line = cli.prefix_line("tool_result", "内容", cli.BLUE)
+        self.assertIn("\x1b[1;38;2;0;123;167mtool_result ", line)
+        self.assertIn("\x1b[38;2;0;123;167m内容", line)
+
     def test_paint_plain_without_tty(self):
         self.assertEqual(cli.paint("文本", cli.GRAY), "文本")
+        self.assertEqual(cli.paint("文本", cli.GRAY, bold=True), "文本")
 
     def test_format_output(self):
         envelope = json.dumps({"content": [{"text": "多行\n结果"}], "isError": False})
