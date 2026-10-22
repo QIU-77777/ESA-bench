@@ -517,10 +517,13 @@ class TurnRenderer:
         if not self.thinking_started:
             print(module_prefix("thinking"), end="", flush=True)
             self.thinking_started = True
+            self.thinking_started_at = time.monotonic()
         print(module_paint("thinking", text), end="", flush=True)
 
     def end_thinking(self):
         if self.thinking_started:
+            elapsed = int(round((time.monotonic() - self.thinking_started_at) * 1000))
+            print(module_paint("thinking", " (" + str(elapsed) + "ms)"), end="", flush=True)
             print()
             self.thinking_started = False
 

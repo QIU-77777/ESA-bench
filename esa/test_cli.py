@@ -244,7 +244,8 @@ class ChatTurnTests(unittest.TestCase):
             self.assertIn("第一行内容", lines[0])
             self.assertEqual("", lines[1])
             self.assertEqual("第二段", lines[2])
-            self.assertEqual("继续", lines[3])
+            self.assertTrue(lines[3].startswith("继续"))
+            self.assertTrue(lines[3].endswith("ms)"))
             self.assertTrue(lines[4].startswith("→ tool_call"))
 
     def test_failed_tool_result_uses_red_prefix(self):
@@ -317,6 +318,52 @@ class ChatTurnTests(unittest.TestCase):
             self.assertIn("↑10", lines[usage_index])
             self.assertIn("↓2", lines[usage_index])
             self.assertIn("↺3", lines[usage_index])
+    def test_thinking_shows_duration(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = make_settings(Path(tmp))
+            chat = self.build_chat(settings)
+            events = [
+                ("reasoning_delta", {"text": "计划"}),
+                ("tool_call", {"name": "echo", "arguments": "{}"}),
+                ("run_end", {"result": {"status": "completed", "reply": "", "transcript": []}}),
+            ]
+
+            def fake_sse(url, body, on_event, timeout=60):
+                for name, payload in events:
+                    on_event(name, payload)
+                return None
+
+            stream = io.StringIO()
+            with patch.object(cli, "http_sse", side_effect=fake_sse), contextlib.redirect_stdout(stream):
+                chat.turn("消息")
+            lines = stream.getvalue().split("\n")
+            self.assertRegex(lines[0], r"^◌ thinking    计划 \([0-9]+ms\)$")
+
+    def test_thinking_duration_measured_per_episode(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = make_settings(Path(tmp))
+            chat = self.build_chat(settings)
+            events = [
+                ("reasoning_delta", {"text": "第一段"}),
+                ("tool_call", {"name": "echo", "arguments": "{}"}),
+                ("tool_result", {"status": "completed", "output": "完成", "latency_ms": 5}),
+                ("reasoning_delta", {"text": "第二段"}),
+                ("run_end", {"result": {"status": "completed", "reply": "", "transcript": []}}),
+            ]
+
+            def fake_sse(url, body, on_event, timeout=60):
+                for name, payload in events:
+                    on_event(name, payload)
+                return None
+
+            stream = io.StringIO()
+            with patch.object(cli, "http_sse", side_effect=fake_sse), contextlib.redirect_stdout(stream):
+                chat.turn("消息")
+            lines = stream.getvalue().split("\n")
+            episodes = [line for line in lines if line.startswith("◌ thinking")]
+            self.assertEqual(2, len(episodes))
+            for episode in episodes:
+                self.assertRegex(episode, r"\([0-9]+ms\)$")
     def test_turn_falls_back_to_json_response(self):
         with tempfile.TemporaryDirectory() as tmp:
             settings = make_settings(Path(tmp))
