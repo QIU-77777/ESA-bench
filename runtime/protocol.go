@@ -126,14 +126,14 @@ func decodeBounded(r io.Reader, v any) error {
 	}
 	return json.Unmarshal(data, v)
 }
-func (rt *Runtime) respond(ctx context.Context, c modelSettings, body any) (map[string]any, error) {
+func (rt *Runtime) respond(ctx context.Context, c modelSettings, body any, emit func(map[string]any)) (map[string]any, error) {
 	resp, err := rt.post(ctx, c.endpoint, c.key, body)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
 	if strings.Contains(resp.Header.Get("Content-Type"), "text/event-stream") {
-		return readSSE(resp.Body)
+		return readSSE(resp.Body, emit)
 	}
 	out := map[string]any{}
 	if err := decodeBounded(resp.Body, &out); err != nil {
@@ -143,7 +143,7 @@ func (rt *Runtime) respond(ctx context.Context, c modelSettings, body any) (map[
 }
 
 // SSE output-item completion is authoritative; deltas are retained on a disconnected stream.
-func readSSE(r io.Reader) (map[string]any, error) {
+func readSSE(r io.Reader, emit func(map[string]any)) (map[string]any, error) {
 	out := map[string]any{}
 	items := map[int]map[string]any{}
 	scanner := bufio.NewScanner(io.LimitReader(r, maxHTTPBytes+1))
@@ -197,6 +197,13 @@ func readSSE(r io.Reader) (map[string]any, error) {
 			}
 			item["arguments"] = text(item["arguments"]) + text(event["delta"])
 		case "response.output_text.delta", "response.reasoning_summary_text.delta", "response.reasoning_text.delta":
+			if emit != nil {
+				name := "text_delta"
+				if strings.Contains(typ, "reasoning") {
+					name = "reasoning_delta"
+				}
+				emit(map[string]any{"type": name, "text": text(event["delta"])})
+			}
 			item := items[index]
 			if item == nil {
 				item = map[string]any{}

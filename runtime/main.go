@@ -24,6 +24,7 @@ type RunRequest struct {
 	Model          any            `json:"model,omitempty"`
 	Instruction    string         `json:"instruction"`
 	UserMessages   []string       `json:"user_messages,omitempty"`
+	Transcript     []any          `json:"transcript,omitempty"`
 	MockSystemURL  string         `json:"mockSystemUrl"`
 	SessionID      string         `json:"sessionId"`
 	ToolProfile    []string       `json:"toolProfile,omitempty"`
@@ -66,6 +67,7 @@ type RunResult struct {
 	Status         string      `json:"status"`
 	Error          string      `json:"error,omitempty"`
 	Turns          []Turn      `json:"turns"`
+	Transcript     []any       `json:"transcript,omitempty"`
 	RuntimeVersion string      `json:"runtimeVersion"`
 }
 type Runtime struct {
@@ -123,6 +125,66 @@ func redactValue(v any, key string) any {
 	}
 }
 
+func validTranscript(items []any) error {
+	for _, raw := range items {
+		item, ok := raw.(map[string]any)
+		if !ok {
+			return errors.New("transcript item must be an object")
+		}
+		if text(item["role"]) == "user" {
+			if _, ok := item["content"].(string); !ok {
+				return errors.New("user transcript item requires string content")
+			}
+			continue
+		}
+		switch text(item["type"]) {
+		case "message":
+			if text(item["role"]) != "assistant" {
+				return errors.New("assistant transcript item requires assistant role")
+			}
+			contents, ok := item["content"].([]any)
+			if !ok || len(contents) == 0 {
+				return errors.New("assistant transcript item requires content array")
+			}
+			for _, rawContent := range contents {
+				content, ok := rawContent.(map[string]any)
+				if !ok {
+					return errors.New("assistant transcript content must be objects")
+				}
+				switch text(content["type"]) {
+				case "output_text":
+					if _, ok := content["text"].(string); !ok {
+						return errors.New("output_text requires string text")
+					}
+				case "refusal":
+					if _, ok := content["refusal"].(string); !ok {
+						return errors.New("refusal requires string refusal")
+					}
+				default:
+					return errors.New("unsupported assistant transcript content type")
+				}
+			}
+		case "function_call":
+			if text(item["call_id"]) == "" || text(item["name"]) == "" {
+				return errors.New("function_call requires call_id and name")
+			}
+			if _, ok := item["arguments"].(string); !ok {
+				return errors.New("function_call requires string arguments")
+			}
+		case "function_call_output":
+			if text(item["call_id"]) == "" {
+				return errors.New("function_call_output requires call_id")
+			}
+			if _, ok := item["output"].(string); !ok {
+				return errors.New("function_call_output requires string output")
+			}
+		default:
+			return errors.New("unsupported transcript item type")
+		}
+	}
+	return nil
+}
+
 func (rt *Runtime) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/health", func(w http.ResponseWriter, r *http.Request) {
@@ -154,13 +216,42 @@ func (rt *Runtime) Handler() http.Handler {
 			http.Error(w, "invalid run limits, messages or session", 400)
 			return
 		}
+		if err := validTranscript(req.Transcript); err != nil {
+			http.Error(w, "invalid transcript: "+err.Error(), 400)
+			return
+		}
+		if strings.Contains(r.Header.Get("Accept"), "text/event-stream") {
+			flusher, ok := w.(http.Flusher)
+			if !ok {
+				http.Error(w, "streaming unsupported", 500)
+				return
+			}
+			w.Header().Set("Content-Type", "text/event-stream")
+			w.Header().Set("Cache-Control", "no-cache")
+			emit := func(event map[string]any) {
+				data, err := json.Marshal(event)
+				if err != nil {
+					return
+				}
+				fmt.Fprintf(w, "event: %s\ndata: %s\n\n", text(event["type"]), data)
+				flusher.Flush()
+			}
+			result := rt.Run(r.Context(), req, emit)
+			emit(map[string]any{"type": "run_end", "result": result})
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(rt.Run(r.Context(), req))
+		json.NewEncoder(w).Encode(rt.Run(r.Context(), req, nil))
 	})
 	return mux
 }
-func (rt *Runtime) Run(parent context.Context, req RunRequest) RunResult {
+func (rt *Runtime) Run(parent context.Context, req RunRequest, emit func(map[string]any)) RunResult {
 	result := RunResult{Iterations: []Iteration{}, ToolCalls: []ToolCall{}, Turns: []Turn{}, Status: "completed", RuntimeVersion: runtimeVersion}
+	send := func(event map[string]any) {
+		if emit != nil {
+			emit(event)
+		}
+	}
 	if engine := text(req.Agent["engine"]); engine != "" && engine != "react" {
 		result.Status = "failed"
 		result.Error = "agent engine must be react"
@@ -184,6 +275,18 @@ func (rt *Runtime) Run(parent context.Context, req RunRequest) RunResult {
 	}
 	transcript := []any{}
 	callIDs := map[string]bool{}
+	for _, raw := range req.Transcript {
+		item, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		transcript = append(transcript, item)
+		if text(item["type"]) == "function_call" {
+			if id := text(item["call_id"]); id != "" {
+				callIDs[id] = true
+			}
+		}
+	}
 	for ti, msg := range messages {
 		ctx, cancel := context.WithTimeout(parent, time.Duration(req.TurnTimeoutSec*float64(time.Second)))
 		turn := Turn{Instruction: msg, Iterations: []Iteration{}, Status: "completed"}
@@ -196,8 +299,10 @@ func (rt *Runtime) Run(parent context.Context, req RunRequest) RunResult {
 			turn.Status = failureStatus(ctx)
 			turn.Error = listErr.Error()
 		} else {
+			send(map[string]any{"type": "turn_start", "turn_index": ti, "instruction": msg})
 			transcript = append(transcript, map[string]any{"role": "user", "content": msg})
 			for n := 1; n <= req.MaxIterations; n++ {
+				send(map[string]any{"type": "iteration_start", "turn_index": ti, "iteration": n})
 				it := Iteration{Iteration: n, TurnIndex: ti, ToolCalls: []ToolCall{}, Status: "completed", ReceivedAt: time.Now().UTC().Format(time.RFC3339Nano)}
 				start := time.Now()
 				body := cfg.body(transcript, tools)
@@ -207,10 +312,18 @@ func (rt *Runtime) Run(parent context.Context, req RunRequest) RunResult {
 				}
 				var output map[string]any
 				var modelErr error
+				streamed := false
 				if len(marshal(body)) > budget {
 					modelErr = errors.New("context budget exceeded; transcript was not truncated")
 				} else {
-					output, modelErr = rt.respond(ctx, cfg, body)
+					output, modelErr = rt.respond(ctx, cfg, body, func(event map[string]any) {
+						if kind := text(event["type"]); kind == "text_delta" || kind == "reasoning_delta" {
+							streamed = true
+						}
+						event["turn_index"] = ti
+						event["iteration"] = n
+						send(event)
+					})
 				}
 				it.LatencyMS = time.Since(start).Milliseconds()
 				it.ReceivedAt = time.Now().UTC().Format(time.RFC3339Nano)
@@ -273,10 +386,19 @@ func (rt *Runtime) Run(parent context.Context, req RunRequest) RunResult {
 						it.ToolCalls[j].Status = "cancelled"
 					}
 				} else {
+					if !streamed {
+						if it.Reasoning != "" {
+							send(map[string]any{"type": "reasoning_delta", "turn_index": ti, "iteration": n, "text": it.Reasoning})
+						}
+						if it.Message != "" {
+							send(map[string]any{"type": "text_delta", "turn_index": ti, "iteration": n, "text": it.Message})
+						}
+					}
 					transcript = append(transcript, replay...)
 					for j := range it.ToolCalls {
 						callStart := time.Now()
 						call := &it.ToolCalls[j]
+						send(map[string]any{"type": "tool_call", "turn_index": ti, "iteration": n, "call_id": call.CallID, "name": call.Name, "arguments": call.Arguments})
 						output, callErr := rt.callTool(ctx, req, *call)
 						call.LatencyMS = time.Since(callStart).Milliseconds()
 						call.Status = "completed"
@@ -301,6 +423,7 @@ func (rt *Runtime) Run(parent context.Context, req RunRequest) RunResult {
 							}
 							break
 						}
+						send(map[string]any{"type": "tool_result", "turn_index": ti, "iteration": n, "call_id": call.CallID, "status": call.Status, "output": call.Output, "latency_ms": call.LatencyMS, "output_chars": call.OutputChars})
 						transcript = append(transcript, map[string]any{"type": "function_call_output", "call_id": call.CallID, "output": output})
 					}
 				}
@@ -323,6 +446,7 @@ func (rt *Runtime) Run(parent context.Context, req RunRequest) RunResult {
 			}
 		}
 		cancel()
+		send(map[string]any{"type": "turn_end", "turn_index": ti, "status": turn.Status, "reply": turn.Reply, "error": turn.Error})
 		result.Turns = append(result.Turns, turn)
 		result.Reply = turn.Reply
 		if turn.Status != "completed" {
@@ -331,6 +455,7 @@ func (rt *Runtime) Run(parent context.Context, req RunRequest) RunResult {
 			break
 		}
 	}
+	result.Transcript = transcript
 	// Credential redaction applies to every returned field, including model/tool echo.
 	if cfg.key != "" {
 		var value any

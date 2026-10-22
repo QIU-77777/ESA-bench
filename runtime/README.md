@@ -40,6 +40,20 @@ docker build -t esa-local-runtime .
 返回 `{iterations,toolCalls,reply,status,error?,turns,runtimeVersion}`。`reply` 是最后执行轮次的回复。`turns` 是 `{instruction,iterations,reply,status,error?}` 数组。`iterations` 包含 `iteration`（每轮从1开始）、`turnIndex`（从0开始）、`message`、`reasoning`、`toolCalls`、`usage?`、`latencyMs`、`status`、`responseId?`、`receivedAt`、`error?`。工具调用包含 `callId`、`name`、`arguments`（JSON字符串）、`output`（MCP结果JSON字符串）、`status`、`latencyMs`、`outputChars`。缺失 usage 时省略字段，不补充零值。失败的模型尝试保留 iteration。
 
 终止状态：`completed`、`failed`、`limit_exceeded`、`timeout`、`cancelled`。HTTP 请求格式错误返回400。已开始运行的失败返回200和结果中的失败状态，保留轨迹。
+请求带 `Accept: text/event-stream` 时返回 `text/event-stream`，逐事件推送，最后一帧 `run_end` 携带完整结果，内容与 JSON 响应一致。事件类型与字段：
+
+| 事件 | 字段 |
+|---|---|
+| `turn_start` | `turn_index`、`instruction` |
+| `iteration_start` | `turn_index`、`iteration` |
+| `reasoning_delta` | `turn_index`、`iteration`、`text` |
+| `text_delta` | `turn_index`、`iteration`、`text` |
+| `tool_call` | `turn_index`、`iteration`、`call_id`、`name`、`arguments` |
+| `tool_result` | `turn_index`、`iteration`、`call_id`、`status`、`output`、`latencyMs` |
+| `turn_end` | `turn_index`、`status`、`reply`、`error?` |
+| `run_end` | `result`（完整结果对象） |
+
+每帧为 `event:` 加 `data:` 两行。响应不是事件流时返回 JSON，内容与 `run_end` 的 `result` 相同。
 
 ## 协议行为
 
