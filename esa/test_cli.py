@@ -59,7 +59,25 @@ class RenderHelperTests(unittest.TestCase):
         self.assertEqual(cli.compact_arguments(json.dumps({"a": 1})), '{"a":1}')
         self.assertEqual(cli.compact_arguments("not json"), "not json")
         long_value = "x" * 400
-        self.assertTrue(cli.compact_arguments(json.dumps({"v": long_value})).endswith("..."))
+        self.assertEqual(cli.compact_arguments(json.dumps({"v": long_value})), '{"v":"' + long_value + '"}')
+
+    def test_prefix_alignment(self):
+        self.assertEqual(cli.PREFIX_WIDTH, 12)
+        line = cli.prefix_line("tool_result", "内容", cli.BLUE)
+        self.assertTrue(line.endswith("内容"))
+        self.assertTrue(line.startswith("tool_result "))
+        blank = cli.prefix_line("", "续行", cli.BLUE)
+        self.assertTrue(blank.startswith(" " * cli.PREFIX_WIDTH))
+        self.assertNotIn("tool_result", blank)
+
+    def test_geist_palette_values(self):
+        self.assertEqual(cli.GRAY, (143, 143, 143))
+        self.assertEqual(cli.ORANGE, (255, 147, 0))
+        self.assertEqual(cli.BLUE, (0, 107, 255))
+        self.assertEqual(cli.RED, (234, 0, 29))
+
+    def test_paint_plain_without_tty(self):
+        self.assertEqual(cli.paint("文本", cli.GRAY), "文本")
 
     def test_format_output(self):
         envelope = json.dumps({"content": [{"text": "多行\n结果"}], "isError": False})
@@ -146,10 +164,60 @@ class ChatTurnTests(unittest.TestCase):
             with patch.object(cli, "http_sse", side_effect=fake_sse), contextlib.redirect_stdout(stream):
                 result = chat.turn("消息")
             output = stream.getvalue()
-            self.assertIn("思考 计划", output)
-            self.assertIn("echo", output)
+            self.assertIn("thinking" + " " * 4 + "计划", output)
+            self.assertIn("tool_call" + " " * 3 + "echo {}", output)
+            self.assertIn("tool_result 完成 (5ms)", output)
             self.assertIn("ESA > 回复内容", output)
             self.assertEqual(result["reply"], "回复内容")
+
+    def test_streamed_thinking_multi_line(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = make_settings(Path(tmp))
+            chat = self.build_chat(settings)
+            events = [
+                ("reasoning_delta", {"text": "第一行"}),
+                ("reasoning_delta", {"text": "\n第二行"}),
+                ("tool_call", {"name": "echo", "arguments": "{}"}),
+                ("run_end", {"result": {"status": "completed", "reply": "", "transcript": []}}),
+            ]
+
+            def fake_sse(url, body, on_event, timeout=60):
+                for name, payload in events:
+                    on_event(name, payload)
+                return None
+
+            stream = io.StringIO()
+            with patch.object(cli, "http_sse", side_effect=fake_sse), contextlib.redirect_stdout(stream):
+                chat.turn("消息")
+            output = stream.getvalue()
+            lines = output.split("\n")
+            self.assertTrue(lines[0].startswith("thinking"))
+            self.assertIn("第一行", lines[0])
+            self.assertTrue(lines[1].startswith(" " * cli.PREFIX_WIDTH))
+            self.assertIn("第二行", lines[1])
+            self.assertIn("tool_call", lines[2])
+
+    def test_failed_tool_result_uses_red_prefix(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = make_settings(Path(tmp))
+            chat = self.build_chat(settings)
+            events = [
+                ("tool_call", {"name": "echo", "arguments": "{}"}),
+                ("tool_result", {"status": "failed", "output": "拒绝", "latency_ms": 5}),
+                ("run_end", {"result": {"status": "completed", "reply": "", "transcript": []}}),
+            ]
+
+            def fake_sse(url, body, on_event, timeout=60):
+                for name, payload in events:
+                    on_event(name, payload)
+                return None
+
+            stream = io.StringIO()
+            with patch.object(cli, "http_sse", side_effect=fake_sse), contextlib.redirect_stdout(stream):
+                chat.turn("消息")
+            output = stream.getvalue()
+            self.assertIn("tool_result 失败 (5ms)", output)
+            self.assertIn("拒绝", output)
 
     def test_turn_falls_back_to_json_response(self):
         with tempfile.TemporaryDirectory() as tmp:

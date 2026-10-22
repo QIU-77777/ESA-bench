@@ -239,13 +239,55 @@ def _terminate(process, sig):
 
 
 def compact_arguments(raw):
+    """把参数压缩为单行 JSON，不截断。"""
     try:
         parsed = json.loads(raw)
     except (TypeError, ValueError):
-        text = str(raw)
+        return str(raw)
+    return json.dumps(parsed, ensure_ascii=False, separators=(",", ":"))
+
+
+# Vercel Geist 色板：gray-700、amber-800、blue-700、red-800。
+GRAY = (143, 143, 143)
+ORANGE = (255, 147, 0)
+BLUE = (0, 107, 255)
+RED = (234, 0, 29)
+
+# 前缀对齐宽度：tool_result 加一个空格。
+PREFIX_WIDTH = len("tool_result") + 1
+
+_CUBE = (0, 95, 135, 175, 215, 255)
+
+
+def _channel256(value):
+    return min(range(6), key=lambda index: abs(_CUBE[index] - value))
+
+
+def _approx256(rgb):
+    return 16 + 36 * _channel256(rgb[0]) + 6 * _channel256(rgb[1]) + _channel256(rgb[2])
+
+
+def _truecolor():
+    value = os.environ.get("COLORTERM", "").lower()
+    return "truecolor" in value or "24bit" in value
+
+
+def paint(text, rgb):
+    """按 Geist 色板上色。非终端或无颜色能力时返回原文。"""
+    if not text or not sys.stdout.isatty():
+        return text
+    if _truecolor():
+        return "\x1b[38;2;%d;%d;%dm%s\x1b[0m" % (rgb[0], rgb[1], rgb[2], text)
+    return "\x1b[38;5;%dm%s\x1b[0m" % (_approx256(rgb), text)
+
+
+def prefix_line(label, content, rgb, label_rgb=None):
+    """输出一行：对齐的前缀加内容。label 为空时只输出缩进。"""
+    if label:
+        head = paint(label.ljust(PREFIX_WIDTH), label_rgb or rgb)
     else:
-        text = json.dumps(parsed, ensure_ascii=False, separators=(",", ":"))
-    return text if len(text) <= 300 else text[:297] + "..."
+        head = " " * PREFIX_WIDTH
+    return head + paint(content, rgb)
 
 
 def format_output(raw):
@@ -278,25 +320,21 @@ def format_output(raw):
 
 
 def print_output(raw, latency, verbose=False):
-    """打印完整工具结果，多行内容逐行输出。"""
-    body = format_output(raw)
+    """打印完整工具结果：前缀对齐，多行续行缩进，不截断。"""
+    body = str(raw or "") if verbose else format_output(raw)
     lines = body.split("\n") or [""]
-    print(styled("    → " + lines[0], DIM), end="")
-    print(styled(" (" + str(latency) + "ms)", DIM))
+    print(prefix_line("tool_result", lines[0] + " (" + str(latency) + "ms)", BLUE))
     for line in lines[1:]:
-        print(styled("      " + line, DIM))
+        print(prefix_line("", line, BLUE))
 
 
-def styled(text, code):
-    if sys.stdout.isatty():
-        return "\x1b[" + code + "m" + text + "\x1b[0m"
-    return text
-
-
-DIM = "2"
-CYAN = "36"
-RED = "31"
-
+def print_failure(raw, latency):
+    """打印失败的工具结果：前缀与失败原因红色，内容蓝色。"""
+    print(prefix_line("tool_result", "失败 (" + str(latency) + "ms)", RED, label_rgb=RED))
+    body = format_output(raw)
+    if body:
+        for line in body.split("\n"):
+            print(prefix_line("", line, BLUE))
 
 def http_sse(url, body, on_event, timeout=60):
     """发起请求。响应为 SSE 时逐事件回调并返回 None；否则返回解析后的 JSON。"""
@@ -340,46 +378,57 @@ class TurnRenderer:
 
     def __init__(self, verbose=False):
         self.verbose = verbose
-        self.reasoning = ""
+        self.thinking_started = False
         self.text_started = False
 
     def event(self, name, payload):
         if name == "reasoning_delta":
-            self.reasoning += str(payload.get("text") or "")
+            self.thinking(str(payload.get("text") or ""))
         elif name == "text_delta":
-            self.flush_reasoning()
+            self.end_thinking()
             if not self.text_started:
                 print("ESA > ", end="", flush=True)
                 self.text_started = True
             print(str(payload.get("text") or ""), end="", flush=True)
         elif name == "tool_call":
-            self.flush_reasoning()
-            print(styled("  " + str(payload.get("name")) + " " + compact_arguments(payload.get("arguments")), CYAN))
+            self.end_thinking()
+            arguments = compact_arguments(payload.get("arguments"))
+            print(prefix_line("tool_call", str(payload.get("name")) + " " + arguments, ORANGE))
         elif name == "tool_result":
-            status = str(payload.get("status"))
+            self.end_thinking()
             latency = str(payload.get("latency_ms"))
-            if status == "completed":
+            if str(payload.get("status")) == "completed":
                 print_output(payload.get("output"), latency, verbose=self.verbose)
             else:
-                print(styled("    → 失败 (" + latency + "ms)", RED))
+                print_failure(payload.get("output"), latency)
         elif name == "turn_end":
+            self.end_thinking()
             self.finish()
             if str(payload.get("status")) != "completed":
                 label = STATUS_LABELS.get(str(payload.get("status")), str(payload.get("status")))
                 error = str(payload.get("error") or "")
-                print(styled("[" + label + (": " + error if error else "") + "]", RED))
+                print(paint("[" + label + (": " + error if error else "") + "]", RED))
 
-    def flush_reasoning(self):
-        if not self.reasoning:
+    def thinking(self, text):
+        """流式输出思考内容：首行带前缀，续行缩进对齐。"""
+        if not text:
             return
-        content = " ".join(self.reasoning.split())
-        if not self.verbose and len(content) > 300:
-            content = content[:300] + "..."
-        print(styled("  思考 " + content, DIM))
-        self.reasoning = ""
+        if not self.thinking_started:
+            print(paint("thinking".ljust(PREFIX_WIDTH), GRAY), end="", flush=True)
+            self.thinking_started = True
+        parts = text.split("\n")
+        print(paint(parts[0], GRAY), end="", flush=True)
+        for part in parts[1:]:
+            print()
+            print(paint(" " * PREFIX_WIDTH + part, GRAY), end="", flush=True)
+
+    def end_thinking(self):
+        if self.thinking_started:
+            print()
+            self.thinking_started = False
 
     def finish(self):
-        self.flush_reasoning()
+        self.end_thinking()
         if self.text_started:
             print()
             self.text_started = False
