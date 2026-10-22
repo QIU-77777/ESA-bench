@@ -502,19 +502,18 @@ class TurnRenderer:
                 self.text_started = True
             print(module_paint("answer", str(payload.get("text") or "")), end="", flush=True)
         elif name == "tool_call":
-            self.end_thinking()
+            self.end_block()
             arguments = compact_arguments(payload.get("arguments"))
             print(module_line("tool_call", str(payload.get("name")) + " " + arguments))
         elif name == "tool_result":
-            self.end_thinking()
+            self.end_block()
             latency = str(payload.get("latency_ms"))
             if str(payload.get("status")) == "completed":
                 print_output(payload.get("output"), latency, verbose=self.verbose)
             else:
                 print_failure(payload.get("output"), latency)
         elif name == "turn_end":
-            self.end_thinking()
-            self.finish()
+            self.end_block()
             if str(payload.get("status")) != "completed":
                 label = STATUS_LABELS.get(str(payload.get("status")), str(payload.get("status")))
                 error = str(payload.get("error") or "")
@@ -537,11 +536,19 @@ class TurnRenderer:
             print()
             self.thinking_started = False
 
-    def finish(self):
-        self.end_thinking()
+    def end_text(self):
+        """结束当前答复文本，换行并复位，便于下一段答复重新带前缀。"""
         if self.text_started:
             print()
             self.text_started = False
+
+    def end_block(self):
+        """结束正在输出的块：思考或答复。"""
+        self.end_thinking()
+        self.end_text()
+
+    def finish(self):
+        self.end_block()
 
 
 def render_result(result, renderer):

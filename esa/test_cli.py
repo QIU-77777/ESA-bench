@@ -192,6 +192,36 @@ class ChatTurnTests(unittest.TestCase):
             self.assertEqual(body["sessionId"], "session-1")
             self.assertNotIn("model", body)
 
+    def test_interleaved_answer_and_tool_calls(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = make_settings(Path(tmp))
+            chat = self.build_chat(settings)
+            events = [
+                ("text_delta", {"text": "先搜索目的地。"}),
+                ("tool_call", {"name": "search_poi_by_keyword", "arguments": "{}"}),
+                ("tool_result", {"status": "completed", "output": "完成", "latency_ms": 5}),
+                ("text_delta", {"text": "最终答复。"}),
+                ("run_end", {"result": {"status": "completed", "reply": "最终答复。", "transcript": []}}),
+            ]
+
+            def fake_sse(url, body, on_event, timeout=60):
+                for name, payload in events:
+                    on_event(name, payload)
+                return None
+
+            stream = io.StringIO()
+            with patch.object(cli, "http_sse", side_effect=fake_sse), contextlib.redirect_stdout(stream):
+                chat.turn("消息")
+            lines = stream.getvalue().split("\n")
+            answers = [line for line in lines if line.startswith("▸ answer")]
+            self.assertEqual(2, len(answers))
+            self.assertIn("先搜索目的地。", answers[0])
+            self.assertIn("最终答复。", answers[1])
+            call_index = next(index for index, line in enumerate(lines) if line.startswith("→ tool_call"))
+            first_answer = next(index for index, line in enumerate(lines) if line.startswith("▸ answer"))
+            self.assertLess(first_answer, call_index)
+            self.assertNotIn("→ tool_call", answers[0])
+
     def test_turn_renders_streamed_events(self):
         with tempfile.TemporaryDirectory() as tmp:
             settings = make_settings(Path(tmp))
