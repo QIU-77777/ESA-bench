@@ -397,8 +397,8 @@ def dim_text(text):
 
 def collect_usage(result):
     """汇总一次请求全部迭代的 token 用量。"""
-    totals = {"input_tokens": 0, "output_tokens": 0, "reasoning_tokens": 0}
-    has_reasoning = False
+    totals = {"input_tokens": 0, "output_tokens": 0, "cached_tokens": 0}
+    has_cached = False
     for item in result.get("iterations") or []:
         usage = item.get("usage") or {}
         if not isinstance(usage, dict):
@@ -407,22 +407,32 @@ def collect_usage(result):
             value = usage.get(key)
             if isinstance(value, (int, float)):
                 totals[key] += int(value)
-        details = usage.get("output_tokens_details") or {}
-        value = details.get("reasoning_tokens") if isinstance(details, dict) else None
-        if isinstance(value, (int, float)):
-            totals["reasoning_tokens"] += int(value)
-            has_reasoning = True
-    return totals, has_reasoning
+        cached = usage.get("cached_tokens")
+        if cached is None:
+            details = usage.get("input_tokens_details") or {}
+            cached = details.get("cached_tokens") if isinstance(details, dict) else None
+        if isinstance(cached, (int, float)):
+            totals["cached_tokens"] += int(cached)
+            has_cached = True
+    return totals, has_cached
+
+
+def cache_rate(cached, total):
+    """计算缓存率：缓存 token 数占输入 token 数的百分比。"""
+    if not total:
+        return 0.0
+    return cached / total * 100
 
 
 def usage_line(result, seconds):
     """生成消耗信息：耗时与 token 用量。"""
-    totals, has_reasoning = collect_usage(result)
+    totals, has_cached = collect_usage(result)
     parts = ["total: %.1fs" % seconds]
-    if totals["input_tokens"] or totals["output_tokens"] or has_reasoning:
+    if totals["input_tokens"] or totals["output_tokens"] or has_cached:
         tokens = ["↑" + str(totals["input_tokens"]), "↓" + str(totals["output_tokens"])]
-        if has_reasoning:
-            tokens.append("↺" + str(totals["reasoning_tokens"]))
+        if has_cached:
+            rate = cache_rate(totals["cached_tokens"], totals["input_tokens"])
+            tokens.append("↺" + str(totals["cached_tokens"]) + "(%.1f%%)" % rate)
         parts.append("tokens: " + "  ".join(tokens))
     return " | ".join(parts)
 

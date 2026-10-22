@@ -273,20 +273,27 @@ class ChatTurnTests(unittest.TestCase):
     def test_usage_line(self):
         result = {
             "iterations": [
-                {"usage": {"input_tokens": 100, "output_tokens": 20, "output_tokens_details": {"reasoning_tokens": 40}}},
-                {"usage": {"input_tokens": 1140, "output_tokens": 300, "output_tokens_details": {"reasoning_tokens": 920}}},
+                {"usage": {"input_tokens": 100, "output_tokens": 20, "cached_tokens": 40}},
+                {"usage": {"input_tokens": 1140, "output_tokens": 300, "cached_tokens": 920}},
             ]
         }
-        line = cli.usage_line(result, 4.7)
-        self.assertEqual(line, "total: 4.7s | tokens: ↑1240  ↓320  ↺960")
+        self.assertEqual(cli.usage_line(result, 4.7), "total: 4.7s | tokens: ↑1240  ↓320  ↺960(77.4%)")
 
     def test_usage_line_without_tokens(self):
         self.assertEqual(cli.usage_line({"iterations": []}, 1.2), "total: 1.2s")
         self.assertEqual(cli.usage_line({"iterations": [{"usage": {"input_tokens": 5, "output_tokens": 1}}]}, 0.4), "total: 0.4s | tokens: ↑5  ↓1")
 
-    def test_usage_line_ignores_missing_details(self):
-        result = {"iterations": [{"usage": {"input_tokens": 5, "output_tokens": 1, "output_tokens_details": {}}}]}
-        self.assertEqual(cli.usage_line(result, 2.0), "total: 2.0s | tokens: ↑5  ↓1")
+    def test_usage_line_zero_cache(self):
+        result = {"iterations": [{"usage": {"input_tokens": 5, "output_tokens": 1, "cached_tokens": 0}}]}
+        self.assertEqual(cli.usage_line(result, 2.0), "total: 2.0s | tokens: ↑5  ↓1  ↺0(0.0%)")
+
+    def test_usage_line_zero_input(self):
+        result = {"iterations": [{"usage": {"input_tokens": 0, "output_tokens": 1, "cached_tokens": 8}}]}
+        self.assertEqual(cli.usage_line(result, 1.0), "total: 1.0s | tokens: ↑0  ↓1  ↺8(0.0%)")
+
+    def test_usage_line_reads_nested_cached(self):
+        result = {"iterations": [{"usage": {"input_tokens": 10, "output_tokens": 1, "input_tokens_details": {"cached_tokens": 8}}}]}
+        self.assertEqual(cli.usage_line(result, 1.0), "total: 1.0s | tokens: ↑10  ↓1  ↺8(80.0%)")
 
     def test_dim_text_plain_without_tty(self):
         self.assertEqual(cli.dim_text("total: 1.0s"), "total: 1.0s")
@@ -299,7 +306,7 @@ class ChatTurnTests(unittest.TestCase):
             chat = self.build_chat(settings)
             events = [
                 ("text_delta", {"text": "回复内容"}),
-                ("run_end", {"result": {"status": "completed", "reply": "回复内容", "transcript": [], "iterations": [{"usage": {"input_tokens": 10, "output_tokens": 2, "output_tokens_details": {"reasoning_tokens": 3}}}]}}),
+                ("run_end", {"result": {"status": "completed", "reply": "回复内容", "transcript": [], "iterations": [{"usage": {"input_tokens": 10, "output_tokens": 2, "cached_tokens": 8}}]}}),
             ]
 
             def fake_sse(url, body, on_event, timeout=60):
@@ -317,7 +324,7 @@ class ChatTurnTests(unittest.TestCase):
             self.assertGreater(usage_index, answer_index)
             self.assertIn("↑10", lines[usage_index])
             self.assertIn("↓2", lines[usage_index])
-            self.assertIn("↺3", lines[usage_index])
+            self.assertIn("↺8(80.0%)", lines[usage_index])
     def test_thinking_shows_duration(self):
         with tempfile.TemporaryDirectory() as tmp:
             settings = make_settings(Path(tmp))
