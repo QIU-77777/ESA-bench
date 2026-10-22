@@ -379,7 +379,6 @@ class TurnRenderer:
     def __init__(self, verbose=False):
         self.verbose = verbose
         self.thinking_started = False
-        self.thinking_printed = False
         self.text_started = False
 
     def event(self, name, payload):
@@ -411,21 +410,13 @@ class TurnRenderer:
                 print(paint("[" + label + (": " + error if error else "") + "]", RED))
 
     def thinking(self, text):
-        """流式输出思考内容。
-
-        模型思考里的换行和空行折叠成单个空格，思考保持为连续段落，
-        不在行间插入空行或缩进。
-        """
+        """流式输出思考内容，按模型原文换行，不做额外处理。"""
         if not text:
             return
         if not self.thinking_started:
             print(paint("thinking".ljust(PREFIX_WIDTH), GRAY), end="", flush=True)
             self.thinking_started = True
-        for index, part in enumerate(text.split()):
-            if index or self.thinking_printed:
-                print(paint(" ", GRAY), end="", flush=True)
-            print(paint(part, GRAY), end="", flush=True)
-            self.thinking_printed = True
+        print(paint(text, GRAY), end="", flush=True)
 
     def end_thinking(self):
         if self.thinking_started:

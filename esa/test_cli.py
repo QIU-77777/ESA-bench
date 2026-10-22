@@ -170,7 +170,7 @@ class ChatTurnTests(unittest.TestCase):
             self.assertIn("ESA > 回复内容", output)
             self.assertEqual(result["reply"], "回复内容")
 
-    def test_streamed_thinking_stays_continuous(self):
+    def test_streamed_thinking_keeps_model_line_breaks(self):
         with tempfile.TemporaryDirectory() as tmp:
             settings = make_settings(Path(tmp))
             chat = self.build_chat(settings)
@@ -190,13 +190,13 @@ class ChatTurnTests(unittest.TestCase):
             stream = io.StringIO()
             with patch.object(cli, "http_sse", side_effect=fake_sse), contextlib.redirect_stdout(stream):
                 chat.turn("消息")
-            output = stream.getvalue()
-            lines = output.split("\n")
-            self.assertEqual(1, len([line for line in lines if line.strip()]) - 1)
-            self.assertIn("第一行内容 第二段 继续", lines[0])
+            lines = stream.getvalue().split("\n")
             self.assertTrue(lines[0].startswith("thinking"))
-            self.assertNotIn(" " * cli.PREFIX_WIDTH, lines[0])
-            self.assertIn("tool_call", lines[1])
+            self.assertIn("第一行内容", lines[0])
+            self.assertEqual("", lines[1])
+            self.assertEqual("第二段", lines[2])
+            self.assertEqual("继续", lines[3])
+            self.assertTrue(lines[4].startswith("tool_call"))
 
     def test_failed_tool_result_uses_red_prefix(self):
         with tempfile.TemporaryDirectory() as tmp:
