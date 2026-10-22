@@ -388,6 +388,50 @@ def print_failure(raw, latency):
         for line in body.split("\n"):
             print(module_indent("tool_result", line))
 
+def dim_text(text):
+    """暗淡效果，不加颜色。非终端时返回原文。"""
+    if not text or not sys.stdout.isatty():
+        return text
+    return "\x1b[2m" + text + "\x1b[0m"
+
+
+def collect_usage(result):
+    """汇总一次请求全部迭代的 token 用量。"""
+    totals = {"input_tokens": 0, "output_tokens": 0, "reasoning_tokens": 0}
+    has_reasoning = False
+    for item in result.get("iterations") or []:
+        usage = item.get("usage") or {}
+        if not isinstance(usage, dict):
+            continue
+        for key in ("input_tokens", "output_tokens"):
+            value = usage.get(key)
+            if isinstance(value, (int, float)):
+                totals[key] += int(value)
+        details = usage.get("output_tokens_details") or {}
+        value = details.get("reasoning_tokens") if isinstance(details, dict) else None
+        if isinstance(value, (int, float)):
+            totals["reasoning_tokens"] += int(value)
+            has_reasoning = True
+    return totals, has_reasoning
+
+
+def usage_line(result, seconds):
+    """生成消耗信息：耗时与 token 用量。"""
+    totals, has_reasoning = collect_usage(result)
+    parts = ["total: %.1fs" % seconds]
+    if totals["input_tokens"] or totals["output_tokens"] or has_reasoning:
+        tokens = ["↑" + str(totals["input_tokens"]), "↓" + str(totals["output_tokens"])]
+        if has_reasoning:
+            tokens.append("↺" + str(totals["reasoning_tokens"]))
+        parts.append("tokens: " + "  ".join(tokens))
+    return " | ".join(parts)
+
+
+def print_usage(result, seconds):
+    """打印本次请求的消耗信息，默认颜色加暗淡。"""
+    print(dim_text(usage_line(result, seconds)))
+
+
 def http_sse(url, body, on_event, timeout=60):
     """发起请求。响应为 SSE 时逐事件回调并返回 None；否则返回解析后的 JSON。"""
     data = json.dumps(body, ensure_ascii=False).encode("utf-8")
@@ -432,6 +476,11 @@ class TurnRenderer:
         self.verbose = verbose
         self.thinking_started = False
         self.text_started = False
+        self.started = time.monotonic()
+
+    def elapsed(self):
+        """返回自渲染器创建以来的秒数，即本次请求耗时。"""
+        return time.monotonic() - self.started
 
     def event(self, name, payload):
         if name == "reasoning_delta":
@@ -566,6 +615,7 @@ class VehicleChat:
         else:
             renderer.finish()
         result = collected.get("result") or {}
+        print_usage(result, renderer.elapsed())
         if isinstance(result.get("transcript"), list):
             self.transcript = result["transcript"]
         self.turn_count += 1

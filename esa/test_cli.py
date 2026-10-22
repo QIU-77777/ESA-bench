@@ -269,6 +269,54 @@ class ChatTurnTests(unittest.TestCase):
             self.assertIn("✗ error       失败 (5ms)", output)
             self.assertIn(" " * cli.PREFIX_WIDTH + "拒绝", output)
 
+    def test_usage_line(self):
+        result = {
+            "iterations": [
+                {"usage": {"input_tokens": 100, "output_tokens": 20, "output_tokens_details": {"reasoning_tokens": 40}}},
+                {"usage": {"input_tokens": 1140, "output_tokens": 300, "output_tokens_details": {"reasoning_tokens": 920}}},
+            ]
+        }
+        line = cli.usage_line(result, 4.7)
+        self.assertEqual(line, "total: 4.7s | tokens: ↑1240  ↓320  ↺960")
+
+    def test_usage_line_without_tokens(self):
+        self.assertEqual(cli.usage_line({"iterations": []}, 1.2), "total: 1.2s")
+        self.assertEqual(cli.usage_line({"iterations": [{"usage": {"input_tokens": 5, "output_tokens": 1}}]}, 0.4), "total: 0.4s | tokens: ↑5  ↓1")
+
+    def test_usage_line_ignores_missing_details(self):
+        result = {"iterations": [{"usage": {"input_tokens": 5, "output_tokens": 1, "output_tokens_details": {}}}]}
+        self.assertEqual(cli.usage_line(result, 2.0), "total: 2.0s | tokens: ↑5  ↓1")
+
+    def test_dim_text_plain_without_tty(self):
+        self.assertEqual(cli.dim_text("total: 1.0s"), "total: 1.0s")
+        with patch.object(sys.stdout, "isatty", return_value=True), patch.dict(os.environ, {"COLORTERM": "truecolor"}):
+            self.assertEqual(cli.dim_text("total: 1.0s"), "\x1b[2mtotal: 1.0s\x1b[0m")
+
+    def test_turn_prints_usage_after_answer(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = make_settings(Path(tmp))
+            chat = self.build_chat(settings)
+            events = [
+                ("text_delta", {"text": "回复内容"}),
+                ("run_end", {"result": {"status": "completed", "reply": "回复内容", "transcript": [], "iterations": [{"usage": {"input_tokens": 10, "output_tokens": 2, "output_tokens_details": {"reasoning_tokens": 3}}}]}}),
+            ]
+
+            def fake_sse(url, body, on_event, timeout=60):
+                for name, payload in events:
+                    on_event(name, payload)
+                return None
+
+            stream = io.StringIO()
+            with patch.object(cli, "http_sse", side_effect=fake_sse), contextlib.redirect_stdout(stream):
+                chat.turn("消息")
+            output = stream.getvalue()
+            lines = output.split("\n")
+            answer_index = next(index for index, line in enumerate(lines) if line.startswith("▸ answer"))
+            usage_index = next(index for index, line in enumerate(lines) if line.startswith("total:"))
+            self.assertGreater(usage_index, answer_index)
+            self.assertIn("↑10", lines[usage_index])
+            self.assertIn("↓2", lines[usage_index])
+            self.assertIn("↺3", lines[usage_index])
     def test_turn_falls_back_to_json_response(self):
         with tempfile.TemporaryDirectory() as tmp:
             settings = make_settings(Path(tmp))
