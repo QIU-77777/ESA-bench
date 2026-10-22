@@ -63,38 +63,61 @@ class RenderHelperTests(unittest.TestCase):
         self.assertEqual(cli.compact_arguments(json.dumps({"v": long_value})), '{"v":"' + long_value + '"}')
 
     def test_prefix_alignment(self):
-        self.assertEqual(cli.PREFIX_WIDTH, 12)
-        line = cli.prefix_line("tool_result", "内容", cli.BLUE)
+        self.assertEqual(cli.PREFIX_WIDTH, 14)
+        line = cli.module_line("tool_result", "内容")
         self.assertTrue(line.endswith("内容"))
-        self.assertTrue(line.startswith("tool_result "))
-        blank = cli.prefix_line("", "续行", cli.BLUE)
-        self.assertTrue(blank.startswith(" " * cli.PREFIX_WIDTH))
-        self.assertNotIn("tool_result", blank)
+        self.assertTrue(line.startswith("✓ tool_result "))
+        indent = cli.module_indent("tool_result", "续行")
+        self.assertTrue(indent.startswith(" " * cli.PREFIX_WIDTH))
+        self.assertNotIn("tool_result", indent)
 
-    def test_palette_values(self):
-        self.assertEqual(cli.GRAY, (220, 220, 220))
-        self.assertEqual(cli.ORANGE, (255, 147, 0))
-        self.assertEqual(cli.BLUE, (0, 123, 167))
-        self.assertEqual(cli.RED, (234, 0, 29))
+    def test_module_symbols_and_colors(self):
+        self.assertEqual(cli.MODULES["thinking"]["symbol"], "…")
+        self.assertEqual(cli.MODULES["tool_call"]["symbol"], "→")
+        self.assertEqual(cli.MODULES["tool_result"]["symbol"], "✓")
+        self.assertEqual(cli.MODULES["answer"]["symbol"], "▸")
+        self.assertEqual(cli.MODULES["error"]["symbol"], "✗")
+        self.assertEqual(cli.THINKING, (161, 161, 170))
+        self.assertEqual(cli.TOOL_CALL, (230, 126, 34))
+        self.assertEqual(cli.TOOL_RESULT, (30, 132, 73))
+        self.assertEqual(cli.ANSWER, (244, 244, 245))
+        self.assertEqual(cli.ERROR, (175, 0, 32))
+        self.assertTrue(cli.MODULES["thinking"]["italic"])
+        self.assertTrue(cli.MODULES["thinking"]["dim"])
+        self.assertTrue(cli.MODULES["tool_call"]["bold"])
+        self.assertTrue(cli.MODULES["tool_result"]["bold"])
+        self.assertTrue(cli.MODULES["error"]["bold"])
 
     def test_escape_sequences(self):
         with patch.dict(os.environ, {"COLORTERM": "truecolor"}):
-            self.assertEqual(cli._escape(cli.GRAY), "\x1b[38;2;220;220;220m")
-            self.assertEqual(cli._escape(cli.GRAY, bold=True), "\x1b[1;38;2;220;220;220m")
-            self.assertEqual(cli._escape(cli.BLUE), "\x1b[38;2;0;123;167m")
+            self.assertEqual(cli._escape(cli.THINKING), "\x1b[38;2;161;161;170m")
+            self.assertEqual(cli._escape(cli.THINKING, italic=True, dim=True), "\x1b[2;3;38;2;161;161;170m")
+            self.assertEqual(cli._escape(cli.TOOL_CALL, bold=True), "\x1b[1;38;2;230;126;34m")
+            self.assertEqual(cli._escape(cli.TOOL_RESULT, bold=True), "\x1b[1;38;2;30;132;73m")
         with patch.dict(os.environ, {"COLORTERM": ""}):
-            self.assertTrue(cli._escape(cli.GRAY).startswith("\x1b[38;5;"))
-            self.assertTrue(cli._escape(cli.GRAY, bold=True).startswith("\x1b[1;38;5;"))
+            self.assertTrue(cli._escape(cli.THINKING).startswith("\x1b[38;5;"))
+            self.assertTrue(cli._escape(cli.THINKING, italic=True, dim=True).startswith("\x1b[2;3;38;5;"))
 
-    def test_prefix_is_bold_in_terminal(self):
+    def test_module_prefix_styles_in_terminal(self):
         with patch.object(sys.stdout, "isatty", return_value=True), patch.dict(os.environ, {"COLORTERM": "truecolor"}):
-            line = cli.prefix_line("tool_result", "内容", cli.BLUE)
-        self.assertIn("\x1b[1;38;2;0;123;167mtool_result ", line)
-        self.assertIn("\x1b[38;2;0;123;167m内容", line)
+            thinking = cli.module_prefix("thinking")
+            call = cli.module_prefix("tool_call")
+            result = cli.module_prefix("tool_result")
+            answer = cli.module_prefix("answer")
+            error = cli.module_prefix("error")
+        self.assertIn("\x1b[2;3;38;2;161;161;170m… thinking", thinking)
+        self.assertIn("\x1b[1;38;2;230;126;34m→ tool_call", call)
+        self.assertIn("\x1b[1;38;2;30;132;73m✓ tool_result", result)
+        self.assertIn("\x1b[38;2;244;244;245m▸ answer", answer)
+        self.assertIn("\x1b[1;38;2;175;0;32m✗ error", error)
+        for prefix in (thinking, call, result, answer, error):
+            self.assertEqual(cli.PREFIX_WIDTH, len(prefix.split("\x1b[0m")[0].split("m", 1)[1]))
 
     def test_paint_plain_without_tty(self):
-        self.assertEqual(cli.paint("文本", cli.GRAY), "文本")
-        self.assertEqual(cli.paint("文本", cli.GRAY, bold=True), "文本")
+        self.assertEqual(cli.paint("文本", cli.THINKING), "文本")
+        self.assertEqual(cli.paint("文本", cli.THINKING, italic=True), "文本")
+        self.assertEqual(cli.module_line("tool_result", "内容"), "✓ tool_result 内容")
+        self.assertEqual(cli.module_indent("answer", "续行"), " " * cli.PREFIX_WIDTH + "续行")
 
     def test_format_output(self):
         envelope = json.dumps({"content": [{"text": "多行\n结果"}], "isError": False})
@@ -181,10 +204,10 @@ class ChatTurnTests(unittest.TestCase):
             with patch.object(cli, "http_sse", side_effect=fake_sse), contextlib.redirect_stdout(stream):
                 result = chat.turn("消息")
             output = stream.getvalue()
-            self.assertIn("thinking" + " " * 4 + "计划", output)
-            self.assertIn("tool_call" + " " * 3 + "echo {}", output)
-            self.assertIn("tool_result 完成 (5ms)", output)
-            self.assertIn("ESA > 回复内容", output)
+            self.assertIn("… thinking    计划", output)
+            self.assertIn("→ tool_call   echo {}", output)
+            self.assertIn("✓ tool_result 完成 (5ms)", output)
+            self.assertIn("▸ answer      回复内容", output)
             self.assertEqual(result["reply"], "回复内容")
 
     def test_streamed_thinking_keeps_model_line_breaks(self):
@@ -208,12 +231,12 @@ class ChatTurnTests(unittest.TestCase):
             with patch.object(cli, "http_sse", side_effect=fake_sse), contextlib.redirect_stdout(stream):
                 chat.turn("消息")
             lines = stream.getvalue().split("\n")
-            self.assertTrue(lines[0].startswith("thinking"))
+            self.assertTrue(lines[0].startswith("… thinking"))
             self.assertIn("第一行内容", lines[0])
             self.assertEqual("", lines[1])
             self.assertEqual("第二段", lines[2])
             self.assertEqual("继续", lines[3])
-            self.assertTrue(lines[4].startswith("tool_call"))
+            self.assertTrue(lines[4].startswith("→ tool_call"))
 
     def test_failed_tool_result_uses_red_prefix(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -234,8 +257,8 @@ class ChatTurnTests(unittest.TestCase):
             with patch.object(cli, "http_sse", side_effect=fake_sse), contextlib.redirect_stdout(stream):
                 chat.turn("消息")
             output = stream.getvalue()
-            self.assertIn("tool_result 失败 (5ms)", output)
-            self.assertIn("拒绝", output)
+            self.assertIn("✗ error       失败 (5ms)", output)
+            self.assertIn(" " * cli.PREFIX_WIDTH + "拒绝", output)
 
     def test_turn_falls_back_to_json_response(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -247,14 +247,24 @@ def compact_arguments(raw):
     return json.dumps(parsed, ensure_ascii=False, separators=(",", ":"))
 
 
-# 终端色值：思考灰、调用橙、结果蓝、失败红。
-GRAY = (220, 220, 220)
-ORANGE = (255, 147, 0)
-BLUE = (0, 123, 167)
-RED = (234, 0, 29)
+# 模块色值：思考冷浅灰、调用工装橘、结果墨绿、答复浅灰白、错误红。
+THINKING = (161, 161, 170)
+TOOL_CALL = (230, 126, 34)
+TOOL_RESULT = (30, 132, 73)
+ANSWER = (244, 244, 245)
+ERROR = (175, 0, 32)
 
-# 前缀对齐宽度：tool_result 加一个空格。
-PREFIX_WIDTH = len("tool_result") + 1
+# 每个输出模块的符号、颜色与文字属性。
+MODULES = {
+    "thinking": {"symbol": "…", "rgb": THINKING, "italic": True, "dim": True},
+    "tool_call": {"symbol": "→", "rgb": TOOL_CALL, "bold": True},
+    "tool_result": {"symbol": "✓", "rgb": TOOL_RESULT, "bold": True},
+    "answer": {"symbol": "▸", "rgb": ANSWER},
+    "error": {"symbol": "✗", "rgb": ERROR, "bold": True},
+}
+
+# 前缀宽度：符号加空格，再加最长模块名，末尾一个空格。
+PREFIX_WIDTH = 2 + max(len(name) for name in MODULES) + 1
 
 _CUBE = (0, 95, 135, 175, 215, 255)
 
@@ -272,30 +282,53 @@ def _truecolor():
     return "truecolor" in value or "24bit" in value
 
 
-def _escape(rgb, bold=False):
+def _escape(rgb, bold=False, italic=False, dim=False):
     """生成颜色转义序列。真彩色用精确色值，否则用最接近的 256 色。"""
     if _truecolor():
         body = "38;2;%d;%d;%d" % (rgb[0], rgb[1], rgb[2])
     else:
         body = "38;5;%d" % _approx256(rgb)
-    lead = "1;" if bold else ""
-    return "\x1b[" + lead + body + "m"
+    codes = []
+    if bold:
+        codes.append("1")
+    if dim:
+        codes.append("2")
+    if italic:
+        codes.append("3")
+    codes.append(body)
+    return "\x1b[" + ";".join(codes) + "m"
 
 
-def paint(text, rgb, bold=False):
-    """按色板上色，可选加粗。非终端时返回原文。"""
+def paint(text, rgb, bold=False, italic=False, dim=False):
+    """按色值上色并设置文字属性。非终端时返回原文。"""
     if not text or not sys.stdout.isatty():
         return text
-    return _escape(rgb, bold) + text + "\x1b[0m"
+    return _escape(rgb, bold=bold, italic=italic, dim=dim) + text + "\x1b[0m"
 
 
-def prefix_line(label, content, rgb, label_rgb=None):
-    """输出一行：加粗的对齐前缀加内容。label 为空时只输出缩进。"""
-    if label:
-        head = paint(label.ljust(PREFIX_WIDTH), label_rgb or rgb, bold=True)
-    else:
-        head = " " * PREFIX_WIDTH
-    return head + paint(content, rgb)
+def module_paint(module, text):
+    """按模块样式上色。"""
+    spec = MODULES[module]
+    return paint(text, spec["rgb"], bold=spec.get("bold", False), italic=spec.get("italic", False), dim=spec.get("dim", False))
+
+
+def module_prefix(module):
+    """返回该模块的对齐前缀，含符号。"""
+    spec = MODULES[module]
+    return module_paint(module, (spec["symbol"] + " " + module).ljust(PREFIX_WIDTH))
+
+
+def module_line(module, content, prefix_module=None):
+    """输出一行：模块前缀加内容。前缀可用另一个模块的样式。"""
+    head = prefix_module or module
+    spec = MODULES[head]
+    label = paint((spec["symbol"] + " " + head).ljust(PREFIX_WIDTH), spec["rgb"], bold=spec.get("bold", False), italic=spec.get("italic", False), dim=spec.get("dim", False))
+    return label + module_paint(module, content)
+
+
+def module_indent(module, line):
+    """输出续行：缩进到内容列，使用模块样式。"""
+    return module_paint(module, " " * PREFIX_WIDTH + line)
 
 
 def format_output(raw):
@@ -328,21 +361,21 @@ def format_output(raw):
 
 
 def print_output(raw, latency, verbose=False):
-    """打印完整工具结果：前缀对齐，多行续行缩进，不截断。"""
+    """打印完整工具结果：模块前缀，多行续行缩进，不截断。"""
     body = str(raw or "") if verbose else format_output(raw)
     lines = body.split("\n") or [""]
-    print(prefix_line("tool_result", lines[0] + " (" + str(latency) + "ms)", BLUE))
+    print(module_line("tool_result", lines[0] + " (" + str(latency) + "ms)"))
     for line in lines[1:]:
-        print(prefix_line("", line, BLUE))
+        print(module_indent("tool_result", line))
 
 
 def print_failure(raw, latency):
-    """打印失败的工具结果：前缀与失败原因红色，内容蓝色。"""
-    print(prefix_line("tool_result", "失败 (" + str(latency) + "ms)", RED, label_rgb=RED))
+    """打印失败的工具结果：失败行用错误样式，工具输出用结果样式。"""
+    print(module_line("error", "失败 (" + str(latency) + "ms)"))
     body = format_output(raw)
     if body:
         for line in body.split("\n"):
-            print(prefix_line("", line, BLUE))
+            print(module_indent("tool_result", line))
 
 def http_sse(url, body, on_event, timeout=60):
     """发起请求。响应为 SSE 时逐事件回调并返回 None；否则返回解析后的 JSON。"""
@@ -395,13 +428,13 @@ class TurnRenderer:
         elif name == "text_delta":
             self.end_thinking()
             if not self.text_started:
-                print("ESA > ", end="", flush=True)
+                print(module_prefix("answer"), end="", flush=True)
                 self.text_started = True
-            print(str(payload.get("text") or ""), end="", flush=True)
+            print(module_paint("answer", str(payload.get("text") or "")), end="", flush=True)
         elif name == "tool_call":
             self.end_thinking()
             arguments = compact_arguments(payload.get("arguments"))
-            print(prefix_line("tool_call", str(payload.get("name")) + " " + arguments, ORANGE))
+            print(module_line("tool_call", str(payload.get("name")) + " " + arguments))
         elif name == "tool_result":
             self.end_thinking()
             latency = str(payload.get("latency_ms"))
@@ -415,16 +448,16 @@ class TurnRenderer:
             if str(payload.get("status")) != "completed":
                 label = STATUS_LABELS.get(str(payload.get("status")), str(payload.get("status")))
                 error = str(payload.get("error") or "")
-                print(paint("[" + label + (": " + error if error else "") + "]", RED))
+                print(module_line("error", "[" + label + (": " + error if error else "") + "]"))
 
     def thinking(self, text):
         """流式输出思考内容，按模型原文换行，不做额外处理。"""
         if not text:
             return
         if not self.thinking_started:
-            print(paint("thinking".ljust(PREFIX_WIDTH), GRAY, bold=True), end="", flush=True)
+            print(module_prefix("thinking"), end="", flush=True)
             self.thinking_started = True
-        print(paint(text, GRAY), end="", flush=True)
+        print(module_paint("thinking", text), end="", flush=True)
 
     def end_thinking(self):
         if self.thinking_started:
