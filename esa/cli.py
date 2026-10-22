@@ -247,10 +247,10 @@ def compact_arguments(raw):
     return json.dumps(parsed, ensure_ascii=False, separators=(",", ":"))
 
 
-# Vercel Geist 色板：gray-700、amber-800、blue-700、red-800。
-GRAY = (143, 143, 143)
+# 终端色值：思考灰、调用橙、结果蓝、失败红。
+GRAY = (160, 160, 160)
 ORANGE = (255, 147, 0)
-BLUE = (0, 107, 255)
+BLUE = (0, 123, 167)
 RED = (234, 0, 29)
 
 # 前缀对齐宽度：tool_result 加一个空格。
@@ -379,6 +379,7 @@ class TurnRenderer:
     def __init__(self, verbose=False):
         self.verbose = verbose
         self.thinking_started = False
+        self.thinking_printed = False
         self.text_started = False
 
     def event(self, name, payload):
@@ -410,17 +411,21 @@ class TurnRenderer:
                 print(paint("[" + label + (": " + error if error else "") + "]", RED))
 
     def thinking(self, text):
-        """流式输出思考内容：首行带前缀，续行缩进对齐。"""
+        """流式输出思考内容。
+
+        模型思考里的换行和空行折叠成单个空格，思考保持为连续段落，
+        不在行间插入空行或缩进。
+        """
         if not text:
             return
         if not self.thinking_started:
             print(paint("thinking".ljust(PREFIX_WIDTH), GRAY), end="", flush=True)
             self.thinking_started = True
-        parts = text.split("\n")
-        print(paint(parts[0], GRAY), end="", flush=True)
-        for part in parts[1:]:
-            print()
-            print(paint(" " * PREFIX_WIDTH + part, GRAY), end="", flush=True)
+        for index, part in enumerate(text.split()):
+            if index or self.thinking_printed:
+                print(paint(" ", GRAY), end="", flush=True)
+            print(paint(part, GRAY), end="", flush=True)
+            self.thinking_printed = True
 
     def end_thinking(self):
         if self.thinking_started:

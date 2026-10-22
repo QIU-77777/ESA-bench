@@ -70,10 +70,10 @@ class RenderHelperTests(unittest.TestCase):
         self.assertTrue(blank.startswith(" " * cli.PREFIX_WIDTH))
         self.assertNotIn("tool_result", blank)
 
-    def test_geist_palette_values(self):
-        self.assertEqual(cli.GRAY, (143, 143, 143))
+    def test_palette_values(self):
+        self.assertEqual(cli.GRAY, (160, 160, 160))
         self.assertEqual(cli.ORANGE, (255, 147, 0))
-        self.assertEqual(cli.BLUE, (0, 107, 255))
+        self.assertEqual(cli.BLUE, (0, 123, 167))
         self.assertEqual(cli.RED, (234, 0, 29))
 
     def test_paint_plain_without_tty(self):
@@ -170,13 +170,14 @@ class ChatTurnTests(unittest.TestCase):
             self.assertIn("ESA > 回复内容", output)
             self.assertEqual(result["reply"], "回复内容")
 
-    def test_streamed_thinking_multi_line(self):
+    def test_streamed_thinking_stays_continuous(self):
         with tempfile.TemporaryDirectory() as tmp:
             settings = make_settings(Path(tmp))
             chat = self.build_chat(settings)
             events = [
-                ("reasoning_delta", {"text": "第一行"}),
-                ("reasoning_delta", {"text": "\n第二行"}),
+                ("reasoning_delta", {"text": "第一行内容"}),
+                ("reasoning_delta", {"text": "\n\n第二段"}),
+                ("reasoning_delta", {"text": "\n继续"}),
                 ("tool_call", {"name": "echo", "arguments": "{}"}),
                 ("run_end", {"result": {"status": "completed", "reply": "", "transcript": []}}),
             ]
@@ -191,11 +192,11 @@ class ChatTurnTests(unittest.TestCase):
                 chat.turn("消息")
             output = stream.getvalue()
             lines = output.split("\n")
+            self.assertEqual(1, len([line for line in lines if line.strip()]) - 1)
+            self.assertIn("第一行内容 第二段 继续", lines[0])
             self.assertTrue(lines[0].startswith("thinking"))
-            self.assertIn("第一行", lines[0])
-            self.assertTrue(lines[1].startswith(" " * cli.PREFIX_WIDTH))
-            self.assertIn("第二行", lines[1])
-            self.assertIn("tool_call", lines[2])
+            self.assertNotIn(" " * cli.PREFIX_WIDTH, lines[0])
+            self.assertIn("tool_call", lines[1])
 
     def test_failed_tool_result_uses_red_prefix(self):
         with tempfile.TemporaryDirectory() as tmp:
