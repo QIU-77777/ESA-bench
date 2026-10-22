@@ -254,12 +254,12 @@ TOOL_RESULT = (30, 132, 73)
 ANSWER = (244, 244, 245)
 ERROR = (175, 0, 32)
 
-# 每个输出模块的符号、颜色与文字属性。
+# 每个输出模块的符号、颜色与文字属性。content_rgb 为 None 时内容用终端默认颜色。
 MODULES = {
-    "thinking": {"symbol": "…", "rgb": THINKING, "italic": True, "dim": True},
+    "thinking": {"symbol": "◌", "rgb": THINKING, "italic": True, "dim": True},
     "tool_call": {"symbol": "→", "rgb": TOOL_CALL, "bold": True},
     "tool_result": {"symbol": "✓", "rgb": TOOL_RESULT, "bold": True},
-    "answer": {"symbol": "▸", "rgb": ANSWER},
+    "answer": {"symbol": "▸", "rgb": ANSWER, "content_rgb": None},
     "error": {"symbol": "✗", "rgb": ERROR, "bold": True},
 }
 
@@ -307,22 +307,33 @@ def paint(text, rgb, bold=False, italic=False, dim=False):
 
 
 def module_paint(module, text):
-    """按模块样式上色。"""
+    """按模块样式上色。模块指定内容用默认颜色时返回原文。"""
     spec = MODULES[module]
-    return paint(text, spec["rgb"], bold=spec.get("bold", False), italic=spec.get("italic", False), dim=spec.get("dim", False))
+    rgb = spec.get("content_rgb", spec["rgb"])
+    if rgb is None:
+        return text
+    return paint(text, rgb, bold=spec.get("bold", False), italic=spec.get("italic", False), dim=spec.get("dim", False))
+
+
+def module_style(module):
+    """返回模块的前缀样式参数。"""
+    spec = MODULES[module]
+    return spec["rgb"], spec.get("bold", False), spec.get("italic", False), spec.get("dim", False)
 
 
 def module_prefix(module):
     """返回该模块的对齐前缀，含符号。"""
     spec = MODULES[module]
-    return module_paint(module, (spec["symbol"] + " " + module).ljust(PREFIX_WIDTH))
+    rgb, bold, italic, dim = module_style(module)
+    return paint((spec["symbol"] + " " + module).ljust(PREFIX_WIDTH), rgb, bold=bold, italic=italic, dim=dim)
 
 
 def module_line(module, content, prefix_module=None):
     """输出一行：模块前缀加内容。前缀可用另一个模块的样式。"""
     head = prefix_module or module
     spec = MODULES[head]
-    label = paint((spec["symbol"] + " " + head).ljust(PREFIX_WIDTH), spec["rgb"], bold=spec.get("bold", False), italic=spec.get("italic", False), dim=spec.get("dim", False))
+    rgb, bold, italic, dim = module_style(head)
+    label = paint((spec["symbol"] + " " + head).ljust(PREFIX_WIDTH), rgb, bold=bold, italic=italic, dim=dim)
     return label + module_paint(module, content)
 
 

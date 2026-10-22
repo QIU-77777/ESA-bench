@@ -72,7 +72,7 @@ class RenderHelperTests(unittest.TestCase):
         self.assertNotIn("tool_result", indent)
 
     def test_module_symbols_and_colors(self):
-        self.assertEqual(cli.MODULES["thinking"]["symbol"], "…")
+        self.assertEqual(cli.MODULES["thinking"]["symbol"], "◌")
         self.assertEqual(cli.MODULES["tool_call"]["symbol"], "→")
         self.assertEqual(cli.MODULES["tool_result"]["symbol"], "✓")
         self.assertEqual(cli.MODULES["answer"]["symbol"], "▸")
@@ -98,6 +98,15 @@ class RenderHelperTests(unittest.TestCase):
             self.assertTrue(cli._escape(cli.THINKING).startswith("\x1b[38;5;"))
             self.assertTrue(cli._escape(cli.THINKING, italic=True, dim=True).startswith("\x1b[2;3;38;5;"))
 
+    def test_answer_content_uses_default_color(self):
+        with patch.object(sys.stdout, "isatty", return_value=True), patch.dict(os.environ, {"COLORTERM": "truecolor"}):
+            line = cli.module_line("answer", "答复内容")
+            indent = cli.module_indent("answer", "续行")
+        self.assertIn("\x1b[38;2;244;244;245m▸ answer", line)
+        self.assertTrue(line.endswith("答复内容"))
+        self.assertNotIn("244;244;245m答复内容", line)
+        self.assertEqual(indent, " " * cli.PREFIX_WIDTH + "续行")
+
     def test_module_prefix_styles_in_terminal(self):
         with patch.object(sys.stdout, "isatty", return_value=True), patch.dict(os.environ, {"COLORTERM": "truecolor"}):
             thinking = cli.module_prefix("thinking")
@@ -105,7 +114,7 @@ class RenderHelperTests(unittest.TestCase):
             result = cli.module_prefix("tool_result")
             answer = cli.module_prefix("answer")
             error = cli.module_prefix("error")
-        self.assertIn("\x1b[2;3;38;2;161;161;170m… thinking", thinking)
+        self.assertIn("\x1b[2;3;38;2;161;161;170m◌ thinking", thinking)
         self.assertIn("\x1b[1;38;2;230;126;34m→ tool_call", call)
         self.assertIn("\x1b[1;38;2;30;132;73m✓ tool_result", result)
         self.assertIn("\x1b[38;2;244;244;245m▸ answer", answer)
@@ -204,7 +213,7 @@ class ChatTurnTests(unittest.TestCase):
             with patch.object(cli, "http_sse", side_effect=fake_sse), contextlib.redirect_stdout(stream):
                 result = chat.turn("消息")
             output = stream.getvalue()
-            self.assertIn("… thinking    计划", output)
+            self.assertIn("◌ thinking    计划", output)
             self.assertIn("→ tool_call   echo {}", output)
             self.assertIn("✓ tool_result 完成 (5ms)", output)
             self.assertIn("▸ answer      回复内容", output)
@@ -231,7 +240,7 @@ class ChatTurnTests(unittest.TestCase):
             with patch.object(cli, "http_sse", side_effect=fake_sse), contextlib.redirect_stdout(stream):
                 chat.turn("消息")
             lines = stream.getvalue().split("\n")
-            self.assertTrue(lines[0].startswith("… thinking"))
+            self.assertTrue(lines[0].startswith("◌ thinking"))
             self.assertIn("第一行内容", lines[0])
             self.assertEqual("", lines[1])
             self.assertEqual("第二段", lines[2])
