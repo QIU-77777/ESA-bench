@@ -346,12 +346,14 @@ tasks:
   - path: tasks/esa-my-case
 ```
 
-重新执行生成配置与Harbor运行命令。题目输入、评分和任务Dockerfile由Harbor构建；只修改题目时无需重建公共runtime与工具服务镜像。修改公共代码、工具配置或seed后，应重新执行镜像构建脚本。
+重新执行生成配置与Harbor运行命令。题目输入、评分和任务Dockerfile由Harbor构建；只修改题目时无需重建公共runtime与工具服务镜像。修改公共代码、工具定义、工具配置或seed后，应重新执行镜像构建脚本。
 
 ## 开发验证
 
 ```bash
 uv pip install --python .venv/bin/python -r environment/requirements.txt
+.venv/bin/python -m environment.generate_manifest
+git diff --exit-code environment/manifest.json
 .venv/bin/python -m unittest environment.test_environment -v
 .venv/bin/python -m unittest esa.test_state_score esa.test_trajectory esa.test_verifier -v
 node --test esa/test-driver.mjs

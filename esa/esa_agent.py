@@ -1,12 +1,12 @@
-"""ESA 评测 agent：驱动 agent-runtime 跑完一轮对话，产出轨迹与判分素材。
+"""ESA 评测 agent：驱动本地 ReAct runtime 跑完一轮对话，产出轨迹与判分素材。
 
 单次试验的流程：
 
-1. setup 阶段把驱动脚本与冻结的 agent 定义上传到主容器；
+1. setup 阶段把驱动脚本与 agent 定义上传到主容器；
 2. run 阶段执行驱动脚本，建立 mock 会话、发起一轮对话、按迭代收集事件流；
 3. run 阶段把驱动输出转成 ATIF 轨迹与判分素材。
 
-驱动脚本自己负责与 mock-system 和 agent-runtime 通信，Harbor 侧只做文件搬运与结果整理。
+驱动脚本自己负责与 mock-system 和本地 runtime 通信，Harbor 侧只做文件搬运与结果整理。
 """
 
 from __future__ import annotations
@@ -71,7 +71,7 @@ class ESAAgent(BaseAgent):
             raise FileNotFoundError(f"找不到驱动脚本：{driver}")
         if not payload.is_file():
             raise FileNotFoundError(
-                f"找不到 agent 定义：{payload}。先运行 freeze_agent.py 生成。"
+                f"找不到 agent 定义：{payload}。恢复仓库内的 esa/agent.json。"
             )
 
         await self._exec(environment, f"mkdir -p {WORK_DIR}")

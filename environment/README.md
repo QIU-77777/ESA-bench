@@ -30,17 +30,53 @@ SQLite 由 seed-v1.json 创建。业务查询使用 mode=ro 连接。元数据�
 
 snapshot/events/reset/round 也支持 /eval/api/v1/sessions/{id}/...。
 
-## 工具权限与业务能力
+## 工具定义与能力清单
 
-catalog.json 保留 源V2.0的61个名称、描述和 inputSchema。source_sha256 由源文件原始字节计算。manifest.json 为逐个能力记录，包含读取来源、写入字段、约束、结果、限制和 availability。重新生成目录：
+catalog.json 是唯一的工具定义文件，包含 schema_version 与 tools。每一项包含 name、title、description 和 inputSchema。catalog-schema.json 定义该文件的结构，服务启动时按此校验。source_sha256 由 catalog.json 原始字节计算，写入 snapshot 与 manifest。
+
+manifest.json 由脚本从 catalog.json、handler 注册信息和 configs/tools.json 生成，包含读取来源、写入字段、约束、结果、限制和 availability。仓库内文件用于文档与一致性测试，GET /manifest 与 Harbor 证据使用运行时生成结果：
 
 ```sh
-python3 environment/generate_catalog.py /path/to/tools_v2.0.golden
+python3 -m environment.generate_manifest
 ```
 
-configs/tools.json 保留全部 61 项。默认启用 59 项。session tool_profile 是启用名称的唯一子集。tools/list 和 tools/call 使用同一权限记录。未知名称、重复名称、遗漏名称、无法执行的启用配置在启动时失败。
+修改 handler 的 @tool 元数据、catalog.json 或 configs/tools.json 后，都要重新生成 manifest.json。
+
+configs/tools.json 列出 catalog.json 中的全部工具名并控制启用状态。默认启用 59 项。session tool_profile 是启用名称的唯一子集。tools/list 和 tools/call 使用同一权限记录。catalog.json 结构不合法、名称重复、catalog 与 handler 或启用配置名称集合不一致时，启动失败。
+
+新增工具的完整步骤：
+
+1. 在 catalog.json 的 tools 数组增加 name、title、description、inputSchema。
+2. 在 handlers.py 用 @tool(...) 注册同名处理器。
+3. 在 configs/tools.json 增加同名条目和 enabled 值。
+4. 执行 `python3 -m environment.generate_manifest`。
+5. 执行环境测试，并补充该工具的行为用例。
 
 61项工具具有明确处理器。默认关闭两个文件工具。list_directory/read_file 可以显式启用；仅允许会话目录相对路径，拒绝绝对路径、父级路径和符号链接，文件最大 64KiB，目录最大 200 项。
+
+## 工具返回内容
+
+返回结果分为两层：MCP 信封 content、structuredContent、isError 由 service.py 的 execute 生成；业务返回结构与行为由 handlers.py 中各处理器生成；返回内容的数据来自 seed-v1.json。
+
+| 工具 | 数据表 |
+|---|---|
+| web_search、wiki_web_search、get_joke、get_story、search_vehicle_knowledge、financial_information_agent、get_skill_prompt | documents |
+| POI 搜索、路线、导航 | pois、routes |
+| get_weather | weather |
+| music_search、play_playlist | tracks |
+| query_vehicle_exterior_vision | visions |
+| eco_info_search、服务任务 | services、contacts |
+
+documents 的检索规则在 data.py 的 relevance 函数：整行 JSON 转小写，query 按空格切词，子串按长度乘 10 计分，中文按相邻二字组合计分。documents 过滤 0 分记录，按分数降序取前 5 条。
+
+修改返回内容的步骤：
+
+1. 修改 seed-v1.json 对应表的记录。
+2. 提升 dataset_version。
+3. 同步修改 tasks/*/environment/esa/initial_state.json 中的 dataset_version。
+4. 重新执行 scripts/build-esa-local.sh。
+
+单题定制使用任务 initial_state.json 中的 data_overlays，只能覆盖已有 id 的已有字段。
 
 导航使用固定路线资料或确定性地理距离模型。所有路线明确标记 simulated。开始导航需要 D/R 挡位。地图搜索按关键词、距离、价格、评分、充电功率、品牌、路线范围和 limit 筛选。搜索结果写入 display.candidates，供 display_candidate_cards 使用。歌曲检索读取本地曲目，播放验证名称与歌手，未知歌曲明确失败。收藏、记忆、车辆控制、日程和本地服务任务写入实际会话状态。
 
@@ -63,6 +99,6 @@ ESA_TEST_REDIS_URL=redis://127.0.0.1:6379/0 \
 environment/.venv/bin/python -m unittest environment.test_environment -v
 ```
 
-设置 ESA_GOLDEN_SOURCE 可以额外校验外部 canonical 文件与 checked-in catalog 完全相同。测试覆盖全部 61 项目录、全部 59 项默认工具行为、文件隔离、启用配置拒绝、查询筛选、写后读取、失败回滚、权限、幂等、故障、并发、TTL、版本事件、HTTP 协议和旧五个样例初态。
+设置 ESA_TEST_REDIS_URL 指向测试 Redis 时会执行会话事务与隔离测试。测试覆盖工具目录与 schema、handler 覆盖、manifest 一致性、全部默认工具行为、文件隔离、启用配置拒绝、查询筛选、写后读取、失败回滚、权限、幂等、故障、并发、TTL、版本事件、HTTP 协议和旧五个样例初态。
 
 Dockerfile 使用仓库根目录作为构建上下文。服务以 UID 10001 运行。镜像仅复制明确的 Python 与数据文件，不复制本地虚拟环境。独立镜像构建及Python3.12容器测试通过；Harbor离线容器试验异常0且状态评分1.0。

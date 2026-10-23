@@ -3,13 +3,13 @@
 状态：已批准范围，实施依据。版本：1.0。日期：2026-10-20。
 
 ## 目标与写入范围
-本仓库提供独立最小 Go ReAct runtime、Python 本地车机工具服务、只读 SQLite 数据和 Redis 会话状态。生产 agent-runtime、mcp、car-bench 仓库不修改。Harbor 是调度及评分层。五个现有用例是回归样例，不限定环境能力。
+本仓库提供独立最小 Go ReAct runtime、Python 本地车机工具服务、只读 SQLite 数据和 Redis 会话状态。本仓库不依赖其他仓库。Harbor 是调度及评分层。五个现有用例是回归样例，不限定环境能力。
 
 ## 组件与协议
 - runtime/：独立 Go module，HTTP 8080，GET /v1/health，POST /v1/run。无 Voice/ASR/A2A/VIN/前置分类器。仅标准库及确有需要的依赖。
 - environment/：Python HTTP 8003，本地 MCP JSON-RPC tools/list 和 tools/call；GET /health；POST /eval/api/v1/sessions；GET /api/v1/rl/sessions/{id}/snapshot 和 /events；DELETE /eval/api/v1/sessions/{id}。
 - esa/driver.mjs：创建会话，通过 /v1/run 发起脚本化单轮或多轮，收集实际 iterations、状态及事件；不依赖 WebSocket 或生产服务。
-- configs/tools.json：唯一启用配置，61个源V2.0工具。默认启用59个，文件目录/读取默认禁用。unknown/duplicate/unimplemented enabled在启动时失败。
+- configs/tools.json：唯一启用配置，当前配置 61 个工具。默认启用 59 个，文件目录/读取默认禁用。unknown/duplicate/unimplemented enabled在启动时失败。
 - 模型可见 schema 与服务执行许可来自同一 session tools/list。agent.json 中的旧工具白名单不再控制默认工具集合；用例可通过 tool_profile 子集限制且服务执行同样限制。
 
 ## 模型循环
@@ -17,7 +17,7 @@
 每个模型调用输出 iteration、message、reasoning、toolCalls、usage、latencyMs、status、responseId。失败尝试也有记录。runtime不保存API key到产物。请求模型覆盖来自Harbor job。
 
 ## 工具契约
-environment/catalog.json从现有tools_v2.0.golden生成保留61个名称、描述、inputSchema，保存来源hash，不要求构建时依赖其他仓库。实现manifest逐个描述数据读取、状态写入、约束、结果和限制。JSON Schema在执行前验证，工具扩展通过完整schema+实现注册，禁止静默通用成功fallback。
+environment/catalog.json 是本仓库唯一的工具定义文件，包含 schema_version 与 tools，每项包含 name、title、description 和 inputSchema。catalog-schema.json 定义文件结构，服务启动时校验。source_sha256 由该文件原始字节计算。manifest.json 由 environment/generate_manifest.py 从工具定义、handler 注册信息和启用配置生成，逐个描述数据读取、状态写入、约束、结果和限制。JSON Schema在执行前验证，工具扩展通过完整schema+实现注册，禁止静默通用成功fallback。
 导航/车控/音乐/收藏/记忆/日程等在本地计算或提交真实状态。联网/金融/生态/知识读取固定资料。视觉读分发资产的固定描述，明确模拟结果。技能读本地技能资料。a2a/multi-task工具使用明确的本地服务任务状态，不启动额外LLM，不声称真实远端操作。
 文件工具启用时局限独立任务工作目录，不允许绝对路径、父级路径和符号链接逃逸。tools/list与tools/call共同执行会话工具权限。
 

@@ -11,8 +11,8 @@ import unittest
 import urllib.request
 from http.server import ThreadingHTTPServer
 from unittest.mock import patch
+from jsonschema import Draft202012Validator
 from environment.data import Dataset, ROOT
-from environment.generate_catalog import generate
 from environment.handlers import REGISTRY, CAPABILITIES, poi
 from environment.service import Environment, ResponseLost
 from environment.server import make_handler
@@ -40,8 +40,12 @@ class EnvironmentTests(unittest.TestCase):
         self.assertEqual(before['state_version'],after['state_version'])
         return out
 
-    def test_all61_schema_handler_manifest_and_default59(self):
-        self.assertEqual(61,len(self.env.tools));self.assertEqual(set(self.env.tools),set(REGISTRY));self.assertEqual(set(self.env.tools),set(CAPABILITIES));self.assertEqual(59,len(self.env.list_tools(self.sid)['tools']))
+    def test_catalog_handler_manifest_and_enabled_config(self):
+        catalog=json.loads((ROOT/'catalog.json').read_text())
+        self.assertEqual({'schema_version','tools'},set(catalog));self.assertEqual(1,catalog['schema_version'])
+        self.assertEqual(len(catalog['tools']),len(self.env.tools))
+        self.assertEqual(set(self.env.tools),set(REGISTRY));self.assertEqual(set(self.env.tools),set(CAPABILITIES))
+        self.assertEqual(len(self.env.enabled),len(self.env.list_tools(self.sid)['tools']))
         checked=json.loads((ROOT/'manifest.json').read_text())
         self.assertEqual(self.env.manifest(),checked)
         for entry in checked['tools']:
@@ -49,13 +53,20 @@ class EnvironmentTests(unittest.TestCase):
         # Every disabled tool must execute an explicit permission failure and event.
         for n in set(self.env.tools)-set(self.env.enabled): self.bad(n,{'path':'.'})
 
-    def test_canonical_source_hash_and_regeneration(self):
-        source=os.getenv('ESA_GOLDEN_SOURCE')
-        if not source: self.skipTest('set ESA_GOLDEN_SOURCE to verify external canonical source')
-        output=pathlib.Path(self.tmp.name)/'catalog.json';generate(source,output)
-        self.assertEqual(json.loads(output.read_text()),json.loads((ROOT/'catalog.json').read_text()))
+    def test_catalog_schema_unique_names_and_source_hash(self):
+        raw=(ROOT/'catalog.json').read_bytes();catalog=json.loads(raw)
+        Draft202012Validator(json.loads((ROOT/'catalog-schema.json').read_text())).validate(catalog)
+        self.assertEqual(hashlib.sha256(raw).hexdigest(),self.env.source_sha256)
+        names=[t['name'] for t in catalog['tools']]
+        self.assertEqual(len(names),len(set(names)))
+        broken=copy.deepcopy(catalog);broken['tools'].append(copy.deepcopy(broken['tools'][0]))
+        directory=pathlib.Path(self.tmp.name)/'catalog';directory.mkdir()
+        (directory/'catalog.json').write_text(json.dumps(broken))
+        (directory/'catalog-schema.json').write_text((ROOT/'catalog-schema.json').read_text())
+        with patch('environment.service.ROOT',directory):
+            with self.assertRaises(ValueError): Environment(MemoryStore(test_only=True),config_path=ROOT.parent/'configs/tools.json')
 
-    def test_all59_named_behaviors(self):
+    def test_all_enabled_named_behaviors(self):
         args={
             'a2a_invoke':{'agent_identifier':'after_sale_agent','task':'空调保养'},'activate_autopilot':{},'add_memory':{'content':'记住杭州西湖'},'after_sale_agent':{'query':'空调保养'},'control_map_zoom':{'action':'zoom_in'},'digital_service_agent':{'historys':[],'query':'订座外婆家'},'display_candidate_cards':{},'eco_info_search':{'query':'美食','category':'food'},'eco_info_search_1':{'query':'酒店','category':'hotel'},'end_chat':{},'estimate_trip_info':{'to_poi':P},'execute_vehicle_control':{'query':'打开空调，温度22度'},'financial_information_agent':{'query':'股票指数'},'get_favorite_poi':{'address_type':'favorite','limit':10},'get_home_or_company_address':{'poi_type':'home'},'get_joke':{'query':'冷笑话'},'get_skill_prompt':{},'get_story':{'query':'睡前故事'},'get_vehicle_status':{'query_items':['GEAR_STATUS','REMAINING_BATTERY']},'get_weather':{'district':'杭州市'},'list_skills':{},'map_search':{'query':'西湖'},'multi_task_agent':{'query':'外婆家订座'},'music_search':{'query':'周杰伦'},'open_or_close_map':{'action':'open'},'open_special_map':{'map_type':'food','action':'open'},'overview_navi_route':{'action':'enter'},'play_playlist':{'playlist':[{'name':'晴天','artist':'周杰伦'}]},'query_adas_status':{},'query_traffic_ahead':{},'query_vehicle_exterior_vision':{'direction':'front','query':'前面什么车'},'remote_map_search':{'location':'杭州万象城','query':'餐厅'},'scheduled_task':{'title':'开会提醒','task_type':'general','steps':[{'condition':{'duration':'PT5M'},'actions':[{'type':'remind','content':'开会'}]}]},'search_along_way_poi':{'query':'充电'},'search_charging_station':{'query':'充电','sort_type':'distance'},'search_memory':{'query':'杭州'},'search_nearby_poi':{'query':'餐厅','center_poi_pos':'120.212,30.253'},'search_parking_charging_station':{'query':'停车','location':'杭州万象城'},'search_poi_by_keyword':{'query':'西湖'},'search_vehicle_knowledge':{'category':'manual','query':'空调'},'set_display_focus':{'position':'PASSENGER'},'set_favorite_poi':{'address_type':'favorite','poi':W},'set_map_auto_scale':{'enabled':False},'set_map_view':{'view':'3d_head_up'},'set_navi_route_preference':{'route_preference':'no_highway'},'set_navi_voice_mode':{'voice_mode':'simple'},'share_route':{},'web_search':{'query':'杭州'},'wiki_web_search':{'query':'沸点','tag':'natural_science'},'get_navi_info':{},'get_all_waypoint':{},'plan_navi_route':{'poi_list':[P]},'start_navi':{'poi_list':[P]},'exit_navigation':{},'reroute':{},'optimize_navi_plan':{},'add_waypoint':{'via_poi':W},'delete_waypoint':{'via_poi':W},'delete_favorite_poi':{'poi':W}}
         self.assertEqual(set(args),set(self.env.enabled))
