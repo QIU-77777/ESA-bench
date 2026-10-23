@@ -1,6 +1,5 @@
 {
-  "source": "mcp/internal/tools/testdata/tools_v2.0.golden",
-  "source_sha256": "4b9ef211494c1726c35cab196f12270048ec6412217943858383e244c79c4da2",
+  "schema_version": 1,
   "tools": [
     {
       "name": "a2a_invoke",

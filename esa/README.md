@@ -3,14 +3,14 @@
 ## 组件
 - [规范](../docs/esa-local-eval-spec.md)：环境与 runtime 契约。
 - [工具配置](../configs/tools.json)：工具启用状态；模型与环境共用 session 权限。
-- [工具目录](../environment/catalog.json)：V2.0 参数定义。
+- [工具目录](../environment/catalog.json)：工具名称、描述与输入参数定义。
 - [ReAct runtime](../runtime/README.md)：独立 Go 服务。
 - [环境服务](../environment/README.md)：本地数据、Redis 状态和工具执行。
 - [驱动](driver.mjs)：创建 session、运行脚本对话、收集状态证据。
 - [Harbor agent](esa_agent.py)：生成 ATIF 与 verifier 素材。
 - [评分脚本](score.py)：verifier入口，读取rubric与工具调用、回复、模型评审三路证据，写出reward与明细。
 - [状态评分](state_score.py)：终态谓词、禁止变更和有序过程约束。
-- [冻结脚本](freeze_agent.py)：从生产TOML配置生成agent.json，去掉工具声明并固定上下文续接为replay。
+- [Agent 定义](agent.json)：模型指令、模型参数与上下文续接方式。
 - [交互式命令行](cli.py)：esa chat，人工对话入口，复用同一 runtime 与环境。
 
 

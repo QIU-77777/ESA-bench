@@ -43,10 +43,16 @@ class Environment:
         self.workspace_root=pathlib.Path(workspace_root or os.getenv('ESA_WORKSPACE_ROOT','/tmp/esa-workspaces')).resolve()
         self.event_limit=event_limit
         if event_limit < 1: raise ValueError('event_limit must be positive')
-        self.catalog=json.loads((ROOT/'catalog.json').read_text())
-        self.tools={t['name']:t for t in self.catalog['tools']}
-        if len(self.tools)!=61 or len(self.catalog['tools'])!=61 or set(self.tools)!=set(REGISTRY):
-            raise ValueError('catalog/handler coverage must be exactly all61')
+        raw=(ROOT/'catalog.json').read_bytes()
+        self.source_sha256=hashlib.sha256(raw).hexdigest()
+        self.catalog=json.loads(raw)
+        Draft202012Validator(json.loads((ROOT/'catalog-schema.json').read_text())).validate(self.catalog)
+        definitions=self.catalog['tools']
+        if len({t['name'] for t in definitions})!=len(definitions):
+            raise ValueError('catalog contains duplicate tool names')
+        self.tools={t['name']:t for t in definitions}
+        if set(self.tools)!=set(REGISTRY):
+            raise ValueError('catalog and handler coverage must match')
         config=json.loads(pathlib.Path(config_path or ROOT.parent/'configs/tools.json').read_text())
         seen=set();enabled=[]
         for item in config['tools']:
@@ -56,7 +62,7 @@ class Environment:
             if item['enabled']:
                 if name not in REGISTRY: raise ValueError('enabled handler unimplemented')
                 enabled.append(name)
-        if seen!=set(self.tools): raise ValueError('config must preserve every61 name')
+        if seen!=set(self.tools): raise ValueError('config must list every catalog tool name')
         self.enabled=enabled
         self.validators={name:Draft202012Validator(t['inputSchema']) for name,t in self.tools.items()}
         for t in self.tools.values(): Draft202012Validator.check_schema(t['inputSchema'])
@@ -129,7 +135,7 @@ class Environment:
 
     def snapshot(self,sid):
         r=self.store.read(sid)
-        return {**{k:r[k] for k in ('session_id','context','state','initial_state','dataset_version','seed','tool_profile','state_version')},'environment_version':'1.0.0','source_sha256':self.catalog['source_sha256'],'seed_sha256':self.dataset.seed_sha256,'manifest':self.manifest()}
+        return {**{k:r[k] for k in ('session_id','context','state','initial_state','dataset_version','seed','tool_profile','state_version')},'environment_version':'1.0.0','source_sha256':self.source_sha256,'seed_sha256':self.dataset.seed_sha256,'manifest':self.manifest()}
 
     def events(self,sid,after=0,call_id=None):
         r=self.store.read(sid)
@@ -141,7 +147,7 @@ class Environment:
         return {'tools':[{k:self.tools[n][k] for k in ('name','description','inputSchema')} for n in r['tool_profile']]}
 
     def manifest(self):
-        return {'environment_version':'1.0.0','dataset_version':self.dataset.version,'seed_sha256':self.dataset.seed_sha256,'source_sha256':self.catalog['source_sha256'],'tools':[{ 'name':name,'enabled':name in self.enabled, 'availability':'implemented', **CAPABILITIES[name]} for name in self.tools]}
+        return {'environment_version':'1.0.0','dataset_version':self.dataset.version,'seed_sha256':self.dataset.seed_sha256,'source_sha256':self.source_sha256,'tools':[{ 'name':name,'enabled':name in self.enabled, 'availability':'implemented', **CAPABILITIES[name]} for name in self.tools]}
 
     def lifecycle(self,sid,action):
         def transaction(r):
