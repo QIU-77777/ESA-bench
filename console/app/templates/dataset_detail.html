@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}{{ dataset.name }} · Console{% endblock %}
+{% block content %}
+<h1 class="page-title">{{ dataset.name }} <span class="badge">{{ dataset.env_template }}</span></h1>
+<p class="muted">{{ dataset.description }}</p>
+
+<div class="card">
+  <div class="section-title">保存新版本</div>
+  <form class="stack" method="post" action="/datasets/{{ dataset.id }}/versions">
+    <label>CSV 文件（列：id, input, expected, tags, metadata, rubric）
+      <input type="file" name="csv_file" accept=".csv,text/csv" required>
+    </label>
+    <label>变更说明
+      <input name="change_note" placeholder="本次变更内容">
+    </label>
+    <button class="primary" type="submit">校验并保存版本</button>
+  </form>
+</div>
+
+<div class="section-title">版本历史</div>
+<table>
+  <thead>
+    <tr><th>版本</th><th class="num">任务数</th><th>内容哈希</th><th>变更说明</th><th>保存时间</th></tr>
+  </thead>
+  <tbody>
+    {% for v in versions %}
+    <tr>
+      <td class="mono">v{{ v.version_no }}</td>
+      <td class="num">{{ v.row_count }}</td>
+      <td class="mono muted">{{ v.content_hash[:18] }}…</td>
+      <td>{{ v.change_note }}</td>
+      <td class="mono muted">{{ v.created_at }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="5" class="muted">暂无版本，先上传一份 CSV</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+{% if rows %}
+<div class="section-title">当前版本（v{{ versions[0].version_no }}）的任务行</div>
+<table>
+  <thead>
+    <tr><th>id</th><th>input</th><th>expected</th><th>tags</th></tr>
+  </thead>
+  <tbody>
+    {% for r in rows %}
+    <tr>
+      <td class="mono">{{ r.row_id }}</td>
+      <td>{{ r.input[:80] }}{% if r.input|length > 80 %}…{% endif %}</td>
+      <td class="muted">{{ r.expected[:60] }}</td>
+      <td class="mono muted">{{ r.tags }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+{% endblock %}

@@ -41,18 +41,25 @@ def required_env(name: str) -> str:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--bench", required=True)
+    parser.add_argument("--bench")
+    parser.add_argument("--bench-file", type=Path)
     parser.add_argument("--harness", required=True)
     parser.add_argument("--model", required=True)
     parser.add_argument("--job-config")
     parser.add_argument("--output", required=True, type=Path)
     args = parser.parse_args()
 
+    if bool(args.bench) == bool(args.bench_file):
+        raise ValueError("exactly one of --bench and --bench-file is required")
+
     provider, separator, model_id = args.model.partition("/")
     if not separator or not provider or not model_id:
         raise ValueError("model must use provider/model-id format")
 
-    bench_path = ROOT / "configs" / "bench" / f"{args.bench}.yaml"
+    if args.bench_file:
+        bench_path = args.bench_file
+    else:
+        bench_path = ROOT / "configs" / "bench" / f"{args.bench}.yaml"
     harness_path = ROOT / "configs" / "harnesses" / f"{args.harness}.yaml"
     model_path = ROOT / "configs" / "models" / provider / f"{model_id}.yaml"
     for path in (bench_path, harness_path, model_path):

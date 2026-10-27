@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}Experiments · Console{% endblock %}
+{% block content %}
+<h1 class="page-title">Experiments</h1>
+
+<div class="card">
+  <div class="section-title">创建实验</div>
+  <form class="stack" method="post" action="/experiments">
+    <label>名称
+      <input name="name" required placeholder="exp-001">
+    </label>
+    <label>数据集版本
+      <select name="dataset_version_id" required>
+        {% for d in datasets %}
+        <optgroup label="{{ d.name }}">
+          {% for v in dataset_versions[d.id] %}
+          <option value="{{ v.id }}">{{ d.name }} · v{{ v.version_no }}（{{ v.row_count }} 行）</option>
+          {% endfor %}
+        </optgroup>
+        {% endfor %}
+      </select>
+    </label>
+    <label>评测对象
+      <select name="eval_profile_id" required>
+        {% for p in profiles %}
+        <option value="{{ p.id }}">{{ p.name }} v{{ p.version_no }}（{{ p.harness }} · {{ p.model_id }}）</option>
+        {% endfor %}
+      </select>
+    </label>
+    <button class="primary" type="submit">创建</button>
+  </form>
+</div>
+
+<table>
+  <thead>
+    <tr><th>名称</th><th>状态</th><th>数据集</th><th>评测对象</th><th>模型</th><th>创建时间</th></tr>
+  </thead>
+  <tbody>
+    {% for e in experiments %}
+    <tr>
+      <td><a href="/experiments/{{ e.id }}">{{ e.name }}</a></td>
+      <td>
+        <span class="badge {{ 'ok' if e.status == 'completed' else 'fail' if e.status in ('failed', 'aborted') else 'dim' }}">{{ e.status }}</span>
+      </td>
+      <td>{{ e.dataset_name }} <span class="mono muted">v{{ e.version_no }}</span></td>
+      <td>{{ e.profile_name }} <span class="mono muted">v{{ e.profile_version_no }}</span></td>
+      <td class="mono">{{ e.model_id }}</td>
+      <td class="mono muted">{{ e.created_at }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="6" class="muted">暂无实验</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

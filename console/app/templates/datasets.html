@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}Datasets · Console{% endblock %}
+{% block content %}
+<h1 class="page-title">Datasets</h1>
+
+<div class="card">
+  <div class="section-title">创建数据集</div>
+  <form class="stack" method="post" action="/datasets">
+    <label>名称
+      <input name="name" required placeholder="code-tasks">
+    </label>
+    <label>说明
+      <input name="description" placeholder="可留空">
+    </label>
+    <label>任务环境模板
+      <select name="env_template">
+        <option value="standard">standard（单容器任务）</option>
+        <option value="esa">esa（含 mock-system / agent-api / redis）</option>
+      </select>
+    </label>
+    <button class="primary" type="submit">创建</button>
+  </form>
+</div>
+
+<table>
+  <thead>
+    <tr>
+      <th>名称</th>
+      <th>说明</th>
+      <th>环境模板</th>
+      <th class="num">版本数</th>
+      <th>最近变更</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for d in datasets %}
+    <tr>
+      <td><a href="/datasets/{{ d.id }}">{{ d.name }}</a></td>
+      <td class="muted">{{ d.description }}</td>
+      <td><span class="badge">{{ d.env_template }}</span></td>
+      <td class="num">{{ d.version_count }}</td>
+      <td class="mono muted">{{ d.last_changed }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="5" class="muted">暂无数据集</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

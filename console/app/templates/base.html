@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Console{% endblock %}</title>
+  <link rel="stylesheet" href="/static/console.css">
+</head>
+<body>
+  <aside class="sidebar">
+    <div class="brand">Console</div>
+    <nav>
+      <a href="/experiments" class="{{ 'active' if request.url.path.startswith('/experiments') }}">Experiments</a>
+      <a href="/datasets" class="{{ 'active' if request.url.path.startswith('/datasets') }}">Datasets</a>
+      <a href="/eval-profiles" class="{{ 'active' if request.url.path.startswith('/eval-profiles') }}">Evaluation Profiles</a>
+    </nav>
+  </aside>
+  <div class="main">
+    <main class="page">
+      {% if request.query_params.get('error') %}
+      <div class="alert">{{ request.query_params.get('error') }}</div>
+      {% endif %}
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

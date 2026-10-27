@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block title %}{{ experiment.name }} · Console{% endblock %}
+{% block content %}
+<h1 class="page-title">{{ experiment.name }}
+  <span class="badge {{ 'ok' if experiment.status == 'completed' else 'fail' if experiment.status in ('failed', 'aborted') else 'dim' }}">{{ experiment.status }}</span>
+</h1>
+
+<div class="row-actions" style="margin-bottom: 1rem;">
+  {% if experiment.status in ('draft', 'failed') %}
+  <form method="post" action="/experiments/{{ experiment.id }}/run">
+    <button class="primary" type="submit">运行实验</button>
+  </form>
+  {% endif %}
+  {% if experiment.status == 'running' %}
+  <form method="post" action="/experiments/{{ experiment.id }}/abort">
+    <button class="destructive" type="submit">中止</button>
+  </form>
+  {% endif %}
+</div>
+
+{% if experiment.error %}
+<div class="alert">{{ experiment.error }}</div>
+{% endif %}
+
+<div class="card">
+  <div class="section-title">进度</div>
+  <p id="progress-line" class="mono">
+    trials: <span id="p-trials">0</span> / <span id="p-total">?</span>
+    · done: <span id="p-done">0</span>
+    · errors: <span id="p-errors">0</span>
+    · job: <span class="muted">{{ experiment.job_name or '—' }}</span>
+  </p>
+</div>
+
+<div class="section-title">任务</div>
+<table>
+  <thead>
+    <tr><th>row id</th><th>状态</th><th>trial</th><th class="num">耗时(ms)</th><th class="num">input tokens</th><th class="num">output tokens</th></tr>
+  </thead>
+  <tbody>
+    {% for t in tasks %}
+    <tr>
+      <td class="mono">{{ t.row_id }}</td>
+      <td><span class="badge {{ 'ok' if t.status == 'done' else 'fail' if t.status in ('trial_failed', 'judge_failed') else 'dim' }}">{{ t.status }}</span></td>
+      <td class="mono muted">{{ t.harbor_trial_name or '—' }}</td>
+      <td class="num">{{ t.duration_ms or '—' }}</td>
+      <td class="num">{{ t.n_input_tokens or '—' }}</td>
+      <td class="num">{{ t.n_output_tokens or '—' }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="6" class="muted">运行后生成任务明细</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+{% if snapshot %}
+<div class="section-title">快照（不可变）</div>
+<pre class="snapshot">{{ snapshot | tojson(indent=2) }}</pre>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function poll() {
+  try {
+    const r = await fetch("/api/experiments/{{ experiment.id }}/progress");
+    if (r.ok) {
+      const d = await r.json();
+      document.getElementById("p-trials").textContent = d.n_trials ?? 0;
+      document.getElementById("p-total").textContent = d.n_total ?? "?";
+      document.getElementById("p-done").textContent = d.n_done ?? 0;
+      document.getElementById("p-errors").textContent = d.n_errors ?? 0;
+      if (d.status === "running") setTimeout(poll, 3000);
+      else if (d.status !== "{{ experiment.status }}") location.reload();
+    }
+  } catch (e) {}
+}
+poll();
+</script>
+{% endblock %}

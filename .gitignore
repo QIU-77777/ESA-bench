@@ -10,4 +10,5 @@ __pycache__/
 .DS_Store
 *.sqlite
 environment/.workspaces/
+console/workspace/
 .pytest_cache/

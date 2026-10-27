@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}Evaluation Profiles · Console{% endblock %}
+{% block content %}
+<h1 class="page-title">Evaluation Profiles</h1>
+
+<div class="card">
+  <div class="section-title">新建评测对象</div>
+  <form class="stack" method="post" action="/eval-profiles">
+    <label>名称
+      <input name="name" required placeholder="pi-deepseek">
+    </label>
+    <label>Harness
+      <select name="harness">
+        {% for h in harnesses %}<option value="{{ h }}">{{ h }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>模型
+      <select name="model_id">
+        {% for m in models %}<option value="{{ m }}">{{ m }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>运行参数（JSON）
+      <textarea name="params" rows="3">{}</textarea>
+    </label>
+    <button class="primary" type="submit">保存</button>
+  </form>
+</div>
+
+<table>
+  <thead>
+    <tr><th>名称</th><th>版本</th><th>Harness</th><th>模型</th><th>参数</th><th>创建时间</th></tr>
+  </thead>
+  <tbody>
+    {% for p in profiles %}
+    <tr>
+      <td>{{ p.name }}</td>
+      <td class="mono">v{{ p.version_no }}</td>
+      <td><span class="badge">{{ p.harness }}</span></td>
+      <td class="mono">{{ p.model_id }}</td>
+      <td class="mono muted">{{ p.params }}</td>
+      <td class="mono muted">{{ p.created_at }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="6" class="muted">暂无评测对象</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

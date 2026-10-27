@@ -22,6 +22,7 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 DRY_RUN=0
 BENCH_SLUG=""
+BENCH_FILE=""
 HARNESS_SLUG=""
 MODEL_SLUG=""
 JOB_SLUG=""
@@ -32,9 +33,11 @@ usage() {
     cat <<'EOF'
 Usage:
   scripts/run.sh --bench <bench> --harness <harness> --model <provider/model-id> [options]
+  scripts/run.sh --bench-file <path> --harness <harness> --model <provider/model-id> [options]
   scripts/run.sh --job <job-slug> [options]
 
 Options:
+  --bench-file    Rendered bench YAML (tasks point at a generated dataset)
   --dry-run       Validate and print the resolved plan, then exit
   --job-name      Harbor result directory name
   --help          Show this help
@@ -48,6 +51,7 @@ EOF
 while [ "$#" -gt 0 ]; do
     case "$1" in
         --bench) [ "$#" -ge 2 ] || { echo "ERROR: --bench needs a value" >&2; exit 1; }; BENCH_SLUG="$2"; shift 2 ;;
+        --bench-file) [ "$#" -ge 2 ] || { echo "ERROR: --bench-file needs a value" >&2; exit 1; }; BENCH_FILE="$2"; shift 2 ;;
         --harness) [ "$#" -ge 2 ] || { echo "ERROR: --harness needs a value" >&2; exit 1; }; HARNESS_SLUG="$2"; shift 2 ;;
         --model) [ "$#" -ge 2 ] || { echo "ERROR: --model needs a value" >&2; exit 1; }; MODEL_SLUG="$2"; shift 2 ;;
         --job) [ "$#" -ge 2 ] || { echo "ERROR: --job needs a value" >&2; exit 1; }; JOB_SLUG="$2"; shift 2 ;;
@@ -72,6 +76,7 @@ set +a
 
 if [ -n "$JOB_SLUG" ]; then
     [ -z "$JOB_CONFIG" ] || fail "do not combine --job with JOB_CONFIG"
+    [ -z "$BENCH_SLUG$BENCH_FILE$HARNESS_SLUG$MODEL_SLUG" ] || fail "do not combine --job with --bench/--bench-file/--harness/--model"
     JOB_SOURCE_CONFIG="configs/jobs/${JOB_SLUG}.yaml"
     [ -f "$JOB_SOURCE_CONFIG" ] || { echo "ERROR: job config not found: $JOB_SOURCE_CONFIG" >&2; exit 1; }
     _job_select="$($PY - "$JOB_SOURCE_CONFIG" <<'PY'
@@ -84,8 +89,9 @@ for key in ("bench", "harness", "model"):
 PY
 )" || exit $?
     eval "$_job_select"
-elif [ -n "$BENCH_SLUG$HARNESS_SLUG$MODEL_SLUG" ]; then
-    [ -n "$BENCH_SLUG" ] || fail "--bench is required when using manual selection"
+elif [ -n "$BENCH_SLUG$BENCH_FILE$HARNESS_SLUG$MODEL_SLUG" ]; then
+    { [ -n "$BENCH_SLUG" ] || [ -n "$BENCH_FILE" ]; } || fail "--bench or --bench-file is required when using manual selection"
+    [ -z "$BENCH_SLUG" ] || [ -z "$BENCH_FILE" ] || fail "do not combine --bench with --bench-file"
     [ -n "$HARNESS_SLUG" ] || fail "--harness is required when using manual selection"
     [ -n "$MODEL_SLUG" ] || fail "--model is required when using manual selection"
 else
@@ -97,11 +103,15 @@ fi
 JOB_CONFIG="$(mktemp "${TMPDIR:-/tmp}/harbor-test-source.XXXXXX")"
 trap 'rm -f "$JOB_CONFIG"' EXIT
 RENDER_ARGS=(
-    --bench "$BENCH_SLUG"
     --harness "$HARNESS_SLUG"
     --model "$MODEL_SLUG"
     --output "$JOB_CONFIG"
 )
+if [ -n "$BENCH_FILE" ]; then
+    RENDER_ARGS+=(--bench-file "$BENCH_FILE")
+else
+    RENDER_ARGS+=(--bench "$BENCH_SLUG")
+fi
 [ -n "${JOB_SOURCE_CONFIG:-}" ] && RENDER_ARGS+=(--job-config "$JOB_SOURCE_CONFIG")
 "$PY" scripts/render-job.py "${RENDER_ARGS[@]}"
 
@@ -322,6 +332,7 @@ if [ "$DRY_RUN" = "1" ]; then
     echo "Preflight OK. Resolved plan:"
     echo "  job name   : $JOB_NAME"
     echo "  job config : $JOB_CONFIG"
+    echo "  bench      : ${BENCH_SLUG:-$BENCH_FILE}"
     echo "  model      : $MODEL_SLUG  (.env ${_prefix}_* group)"
     echo "  tasks      : $JOB_DATASETS"
     echo "  agent      : $AGENT_IMPORT  (model: $MODEL_NAME)"
