@@ -137,7 +137,7 @@ document.addEventListener("input", (ev) => {
 
 function renderRows() {
   const body = rowsData.map((r, i) => {
-    const tags = Array.isArray(r.tags) ? r.tags.join(", ") : (r.tags ?? "");
+    const tags = normalizeTags(r.tags);
     return `<tr class="row-summary" data-index="${i}">
       <td class="mono">${esc(r.row_id)}</td>
       <td>${esc((r.input ?? "").slice(0, 80))}${(r.input ?? "").length > 80 ? "…" : ""}</td>
@@ -165,7 +165,7 @@ function renderRows() {
 
 function expandRowEditor(index) {
   const r = rowsData[index] || { row_id: "", input: "", expected: "", tags: "", metadata: {}, rubric: "" };
-  const tags = Array.isArray(r.tags) ? r.tags.join(", ") : (r.tags ?? "");
+  const tags = normalizeTags(r.tags);
   const metadata = typeof r.metadata === "string" ? r.metadata : JSON.stringify(r.metadata ?? {});
   const tr = rowsHost.querySelector(`tr.row-summary[data-index="${index}"]`);
   const editor = document.createElement("tr");
@@ -195,7 +195,7 @@ function readRowEditor(editor) {
     row_id: editor.querySelector(".row-id").value.trim(),
     input: editor.querySelector(".row-input").value,
     expected: editor.querySelector(".row-expected").value,
-    tags: editor.querySelector(".row-tags").value,
+    tags: normalizeTags(editor.querySelector(".row-tags").value),
     metadata: editor.querySelector(".row-metadata").value,
     rubric: editor.querySelector(".row-rubric").value,
   };

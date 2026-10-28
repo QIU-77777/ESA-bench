@@ -97,7 +97,10 @@ def list_runs(experiment_id: int) -> list[dict]:
         rows = conn.execute(
             "SELECT * FROM loop_runs WHERE experiment_id=? ORDER BY id DESC", (experiment_id,)
         ).fetchall()
-    return rows_to_dicts(rows)
+    runs = rows_to_dicts(rows)
+    for run in runs:
+        run["report"] = json.loads(run["report"]) if run["report"] else None
+    return runs
 
 
 def get_run(loop_run_id: int) -> dict | None:
@@ -156,6 +159,12 @@ def confirm_draft(loop_draft_id: int, target_dataset_id: int) -> int:
         raise LoopError(f"目标数据集不存在：{target_dataset_id}")
     run = get_run(draft["loop_run_id"])
     note = f"Loop-Assistant 草案，来源实验 exp-{run['experiment_id']}"
+    with connect() as conn:
+        latest = conn.execute(
+            "SELECT id FROM dataset_versions WHERE dataset_id=? ORDER BY version_no DESC LIMIT 1",
+            (target_dataset_id,),
+        ).fetchone()
+    existing = dataset_service.list_rows(latest["id"]) if latest else []
     rows = [
         {
             "row_id": str(row.get("row_id") or row.get("id") or "").strip(),
@@ -165,8 +174,23 @@ def confirm_draft(loop_draft_id: int, target_dataset_id: int) -> int:
             "metadata": row.get("metadata") or "{}",
             "rubric": str(row.get("rubric") or ""),
         }
-        for row in draft["rows"]
+        for row in existing
     ]
+    existing_ids = {row["row_id"] for row in rows}
+    for row in draft["rows"]:
+        row_id = str(row.get("row_id") or row.get("id") or "").strip()
+        if row_id in existing_ids:
+            raise LoopError(f"草案行 id 与目标数据集重复：{row_id}")
+        rows.append(
+            {
+                "row_id": row_id,
+                "input": str(row.get("input") or ""),
+                "expected": str(row.get("expected") or ""),
+                "tags": row.get("tags") or "",
+                "metadata": row.get("metadata") or "{}",
+                "rubric": str(row.get("rubric") or ""),
+            }
+        )
     version_id = dataset_service.add_rows_version(target_dataset_id, rows, note)
     with connect() as conn:
         conn.execute(

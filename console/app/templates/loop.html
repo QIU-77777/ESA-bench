@@ -27,7 +27,7 @@
     <span class="badge {{ 'ok' if run.status == 'done' else 'fail' if run.status == 'failed' else 'dim' }}">{{ run.status }}</span>
   </div>
   <p class="mono muted">{{ run.agent }} · {{ run.model }} · {{ run.created_at }}{% if run.finished_at %} → {{ run.finished_at }}{% endif %}</p>
-  {% if run.id == latest.id and run.report %}
+  {% if run.report %}
   <p>{{ run.report.overall }}</p>
   {% if run.report.categories %}
   <table>
@@ -58,7 +58,7 @@
 
 {% for draft in drafts %}
 <div class="card">
-  <div class="section-title">{{ draft.name }}
+  <div class="section-title">{{ draft.name }}（运行 #{{ draft.loop_run_id }}）
     {% if draft.status == 'merged' %}
     <span class="badge ok">已合并</span>
     {% else %}

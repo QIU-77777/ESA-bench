@@ -630,7 +630,9 @@ def loop_page(request: Request, experiment_id: int) -> HTMLResponse:
     if experiment is None:
         return _redirect("/experiments", f"实验不存在：{experiment_id}")
     runs = loop_service.list_runs(experiment_id)
-    drafts = loop_service.list_drafts(runs[0]["id"]) if runs else []
+    drafts = []
+    for run in runs:
+        drafts.extend(loop_service.list_drafts(run["id"]))
     datasets = dataset_service.list_datasets()
     return templates.TemplateResponse(
         request,

@@ -17,6 +17,15 @@ class AnalysisError(ValueError):
 # ── Baseline ───────────────────────────────────────────────────────────
 
 
+def _dataset_id_of(experiment: dict) -> int:
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT dataset_id FROM dataset_versions WHERE id=?",
+            (experiment["dataset_version_id"],),
+        ).fetchone()
+    return int(row["dataset_id"])
+
+
 def set_baseline(experiment_id: int) -> None:
     experiment = experiment_service.get_experiment(experiment_id)
     if experiment is None:
@@ -26,7 +35,7 @@ def set_baseline(experiment_id: int) -> None:
             "INSERT INTO baselines(dataset_id, experiment_id, set_at) VALUES (?,?,?)"
             " ON CONFLICT(dataset_id) DO UPDATE SET"
             " experiment_id=excluded.experiment_id, set_at=excluded.set_at",
-            (experiment["dataset_version_id"], experiment_id, utc_now()),
+            (_dataset_id_of(experiment), experiment_id, utc_now()),
         )
 
 
@@ -39,7 +48,7 @@ def get_baseline(experiment_id: int) -> dict | None:
         row = conn.execute(
             "SELECT e.*, b.set_at FROM baselines b JOIN experiments e ON e.id = b.experiment_id"
             " WHERE b.dataset_id=?",
-            (experiment["dataset_version_id"],),
+            (_dataset_id_of(experiment),),
         ).fetchone()
     return dict(row) if row else None
 
@@ -60,7 +69,7 @@ def clear_baseline(experiment_id: int) -> None:
     with connect() as conn:
         conn.execute(
             "DELETE FROM baselines WHERE dataset_id=?",
-            (experiment["dataset_version_id"],),
+            (_dataset_id_of(experiment),),
         )
 
 
