@@ -1,14 +1,21 @@
 {% extends "base.html" %}
 {% block title %}{{ experiment.name }} · Console{% endblock %}
 {% block content %}
+<p class="muted"><a href="/experiments">← Experiments</a></p>
 <h1 class="page-title">{{ experiment.name }}
   <span class="badge {{ 'ok' if experiment.status == 'completed' else 'fail' if experiment.status in ('failed', 'aborted') else 'dim' }}">{{ experiment.status }}</span>
 </h1>
 
+<p class="muted">
+  <a href="/experiments/{{ experiment.id }}/logs">Logs</a>
+  · <a href="/experiments/{{ experiment.id }}/dashboard">Dashboards</a>
+  · <a href="/experiments/{{ experiment.id }}/export">导出 CSV</a>
+</p>
+
 <div class="row-actions" style="margin-bottom: 1rem;">
   {% if experiment.status in ('draft', 'failed') %}
   <form method="post" action="/experiments/{{ experiment.id }}/run">
-    <button class="primary" type="submit">运行实验</button>
+    <button type="submit">运行实验</button>
   </form>
   {% endif %}
   {% if experiment.status == 'running' %}
@@ -16,6 +23,69 @@
     <button class="destructive" type="submit">中止</button>
   </form>
   {% endif %}
+  {% if experiment.status == 'draft' %}
+  <button type="button" class="outline" id="open-experiment-edit">编辑</button>
+  {% endif %}
+  <form method="post" action="/experiments/{{ experiment.id }}/duplicate">
+    <input type="hidden" name="name" data-confirm-field>
+    <button type="button" class="outline"
+      data-confirm-title="复制实验"
+      data-confirm-message="复制当前绑定为新的草稿实验。"
+      data-confirm-label="确认复制"
+      data-confirm-input="新实验名称">复制</button>
+  </form>
+  <form method="post" action="/experiments/{{ experiment.id }}/delete">
+    <button type="button" class="destructive"
+      data-confirm-title="删除实验"
+      data-confirm-message="将删除实验「{{ experiment.name }}」及其任务、分数与复核记录。"
+      data-confirm-label="删除">删除</button>
+  </form>
+</div>
+
+<div class="modal-overlay hidden" id="experiment-edit-modal">
+  <div class="modal">
+    <header>
+      <span>编辑实验</span>
+      <a href="javascript:void(0)" class="modal-close" data-close="experiment-edit-modal">×</a>
+    </header>
+    <form class="stack" method="post" action="/experiments/{{ experiment.id }}">
+      <div class="field">
+        <label class="field-label" for="ee-dataset">数据集版本</label>
+        <select id="ee-dataset" name="dataset_version_id" required>
+          {% for d in datasets %}
+          <optgroup label="{{ d.name }}">
+            {% for v in dataset_versions[d.id] %}
+            <option value="{{ v.id }}" {% if v.id == experiment.dataset_version_id %}selected{% endif %}>{{ d.name }} · v{{ v.version_no }}（{{ v.row_count }} 行）</option>
+            {% endfor %}
+          </optgroup>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="field">
+        <label class="field-label" for="ee-profile">评测对象</label>
+        <select id="ee-profile" name="eval_profile_id" required>
+          {% for p in profiles %}
+          <option value="{{ p.id }}" {% if p.id == experiment.eval_profile_id %}selected{% endif %}>{{ p.name }} v{{ p.version_no }}（{{ p.harness }} · {{ p.model_id }}）</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="field">
+        <span class="field-label">评分器</span>
+        <div class="check-list">
+          {% for sv in scorer_versions %}
+          <label>
+            <input type="checkbox" name="scorer_version_id" value="{{ sv.id }}">
+            {{ sv.scorer_name }} v{{ sv.version_no }}（{{ sv.scorer_type }}）
+          </label>
+          {% endfor %}
+        </div>
+      </div>
+      <div class="row-actions">
+        <button type="button" class="outline" data-close="experiment-edit-modal">取消</button>
+        <button type="submit">保存</button>
+      </div>
+    </form>
+  </div>
 </div>
 
 {% if experiment.error %}
@@ -35,32 +105,46 @@
 <div class="section-title">任务</div>
 <table>
   <thead>
-    <tr><th>row id</th><th>状态</th><th>trial</th><th class="num">耗时(ms)</th><th class="num">input tokens</th><th class="num">output tokens</th></tr>
+    <tr><th>row id</th><th>状态</th><th class="num">分数</th><th>判定</th><th>失败类别</th><th>Review</th><th class="num">耗时(ms)</th><th class="num">tokens</th></tr>
   </thead>
   <tbody>
     {% for t in tasks %}
-    <tr>
-      <td class="mono">{{ t.row_id }}</td>
+    <tr data-href="/experiments/{{ experiment.id }}/traces/{{ t.row_id }}">
+      <td class="mono"><a href="/experiments/{{ experiment.id }}/traces/{{ t.row_id }}">{{ t.row_id }}</a></td>
       <td><span class="badge {{ 'ok' if t.status == 'done' else 'fail' if t.status in ('trial_failed', 'judge_failed') else 'dim' }}">{{ t.status }}</span></td>
-      <td class="mono muted">{{ t.harbor_trial_name or '—' }}</td>
+      <td class="num" title="{{ t.score_reason or '' }}">{{ '%.3f' | format(t.score) if t.score is not none else '—' }}</td>
+      <td>{% if t.verdict %}<span class="badge {{ 'ok' if t.verdict == 'pass' else 'fail' }}">{{ t.verdict }}</span>{% else %}—{% endif %}</td>
+      <td class="mono muted">{{ t.failure_category or '—' }}</td>
+      <td class="mono muted">{{ t.review_verdict or '未复核' }}</td>
       <td class="num">{{ t.duration_ms or '—' }}</td>
-      <td class="num">{{ t.n_input_tokens or '—' }}</td>
-      <td class="num">{{ t.n_output_tokens or '—' }}</td>
+      <td class="num">{{ ((t.n_input_tokens or 0) + (t.n_output_tokens or 0)) or '—' }}</td>
     </tr>
     {% else %}
-    <tr><td colspan="6" class="muted">运行后生成任务明细</td></tr>
+    <tr><td colspan="8" class="muted">运行后生成任务明细</td></tr>
     {% endfor %}
   </tbody>
 </table>
 
+<div class="section-title">Harbor view</div>
+<iframe class="harbor-frame tall" id="harbor-frame"
+  {% if experiment.job_name %}
+  src="/harbor-view/jobs/{{ experiment.job_name }}"
+  {% endif %}></iframe>
+{% if not experiment.job_name %}
+<p class="muted">运行后内嵌 Harbor view 面板</p>
+{% endif %}
+
 {% if snapshot %}
 <div class="section-title">快照（不可变）</div>
-<pre class="snapshot">{{ snapshot | tojson(indent=2) }}</pre>
+<pre class="snapshot json">{{ snapshot | pretty_json }}</pre>
 {% endif %}
 {% endblock %}
 
 {% block scripts %}
 <script>
+document.getElementById("open-experiment-edit")?.addEventListener("click", () => {
+  document.getElementById("experiment-edit-modal")?.classList.remove("hidden");
+});
 async function poll() {
   try {
     const r = await fetch("/api/experiments/{{ experiment.id }}/progress");

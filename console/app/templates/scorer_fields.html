@@ -1,0 +1,34 @@
+<div class="field">
+  <span class="field-label">类型</span>
+  <div class="seg" data-type-group>
+    <button type="button" class="seg-btn active" data-type-value="llm">LLM judge</button>
+    <button type="button" class="seg-btn" data-type-value="code">Code 评分器</button>
+    <input type="hidden" name="scorer_type" value="llm">
+  </div>
+</div>
+
+<div data-type-fields="llm">
+  <div class="field">
+    <label class="field-label" for="scorer-model">LLM judge 模型</label>
+    <select id="scorer-model" name="model_id">
+      {% for m in models %}<option value="{{ m }}">{{ m }}</option>{% endfor %}
+    </select>
+  </div>
+  <div class="field">
+    <label class="field-label" for="scorer-prompt">评分提示词</label>
+    <textarea id="scorer-prompt" name="prompt_template" rows="8" placeholder="留空使用默认提示词"></textarea>
+    <p class="field-hint">占位符：<code class="chip">{input}</code> <code class="chip">{expected}</code> <code class="chip">{rubric}</code> <code class="chip">{trace}</code> <code class="chip">{output}</code></p>
+  </div>
+</div>
+
+<div class="hidden" data-type-fields="code">
+  <div class="field">
+    <label class="field-label" for="scorer-script">Code 评分脚本</label>
+    <textarea id="scorer-script" name="script_source" rows="10" placeholder="def score(input, expected, trace, metadata):&#10;    return {'score': 1.0, 'verdict': 'pass', 'reason': 'ok'}"></textarea>
+    <p class="field-hint">定义 score(input, expected, trace, metadata) 返回 JSON 对象。</p>
+  </div>
+  <div class="field">
+    <label class="field-label" for="scorer-timeout">Code 超时秒</label>
+    <input id="scorer-timeout" name="timeout_sec" value="60">
+  </div>
+</div>

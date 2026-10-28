@@ -32,6 +32,16 @@ def available_models() -> list[str]:
     return result
 
 
+def harness_defaults() -> dict[str, dict]:
+    """Default run params (kwargs) per harness, from configs/harnesses/*.yaml."""
+    harness_dir = config.REPO_ROOT / "configs" / "harnesses"
+    result = {}
+    for path in sorted(harness_dir.glob("*.yaml")):
+        data = yaml.safe_load(path.read_text()) or {}
+        result[path.stem] = dict(data.get("kwargs") or {})
+    return result
+
+
 def create_profile(name: str, harness: str, model_id: str, params: dict) -> int:
     if not name.strip():
         raise ProfileError("名称不能为空")
@@ -63,3 +73,20 @@ def get_profile(profile_id: int) -> dict | None:
     with connect() as conn:
         row = conn.execute("SELECT * FROM eval_profiles WHERE id=?", (profile_id,)).fetchone()
         return dict(row) if row else None
+
+
+def delete_profile(profile_id: int) -> None:
+    """Delete a profile and its versions; refuse while experiments use it."""
+    with connect() as conn:
+        profile = conn.execute("SELECT * FROM eval_profiles WHERE id=?", (profile_id,)).fetchone()
+        if profile is None:
+            raise ProfileError(f"评测对象不存在：{profile_id}")
+        referenced = conn.execute(
+            "SELECT COUNT(*) AS n FROM experiments WHERE eval_profile_id=?",
+            (profile_id,),
+        ).fetchone()
+        if referenced["n"]:
+            raise ProfileError(
+                f"评测对象 {profile['name']} 被 {referenced['n']} 个实验引用，先删除相关实验"
+            )
+        conn.execute("DELETE FROM eval_profiles WHERE id=?", (profile_id,))

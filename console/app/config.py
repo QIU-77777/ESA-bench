@@ -18,6 +18,9 @@ RENDER_JOB_PY = REPO_ROOT / "scripts" / "render-job.py"
 PYTHON = REPO_ROOT / ".venv" / "bin" / "python"
 ESA_TASK_ENV_DIR = REPO_ROOT / "tasks" / "esa-sc-a1" / "environment"
 
+# Harbor view base URL for deep links into trial trajectories.
+HARBOUR_VIEW_BASE = os.environ.get("HARBOUR_VIEW_BASE", "http://127.0.0.1:8080").rstrip("/")
+
 
 def ensure_workspace() -> None:
     for path in (WORKSPACE, GENERATED_DIR, SNAPSHOTS_DIR, REPORTS_DIR):

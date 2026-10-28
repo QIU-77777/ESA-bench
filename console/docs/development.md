@@ -107,18 +107,17 @@ console/
 
 ```text
 datasets
-  id, name(唯一), description, created_at
+  id, name(唯一), description, env_template, created_at
 
 dataset_versions
   id, dataset_id, version_no, change_note, content_hash, row_count, created_at
   约束：(dataset_id, version_no) 唯一；行内容只读
+  说明：内部快照机制，界面不提供版本管理。每次保存写入新快照，
+  实验引用快照 id 保证复现；env_template 随快照记录。
 
 dataset_rows
   id, dataset_version_id, row_id, input, expected, tags(json), metadata(json), rubric
   约束：(dataset_version_id, row_id) 唯一
-
-dataset_env_template
-  数据集属性，记录任务环境模板（普通任务 / esa 任务），随版本快照
 ```
 
 ### 评分器
@@ -191,7 +190,7 @@ settings
 ```text
 baselines
   dataset_id(唯一), experiment_id, set_at
-  同一数据集只保留一个当前基线，不绑定数据集版本；跨版本对比按 row_id 匹配共同任务
+  同一数据集只保留一个当前基线，不绑定数据集快照；跨快照对比按 row_id 匹配共同任务
 
 loop_runs
   id, experiment_id, report(json), created_at
@@ -300,8 +299,9 @@ Trace 详情页以 iframe 内嵌 `harbor-view/jobs/<job-name>/<trial>` 的 trial
 ### 6.1 数据集（FR-1）
 
 - 上传解析：Python `csv` 模块逐行读取，校验在内存完成，全量通过后一次性事务写入。
-- 版本号自增，`content_hash` 为全部行规范化后的 SHA-256。
-- 版本差异：两版本行集合按 `row_id` 全外连接，逐字段比对。
+- 保存即写内部快照：版本号自增，`content_hash` 为全部行规范化后的 SHA-256，供实验复现引用。
+- 编辑状态判定：前端以初始快照为基线实时比对内容，有改动才显示保存与另存。
+- 另存：当前编辑内容写入新数据集，含首个快照。
 - 导出：按原字段顺序输出 CSV，`tags` 逗号连接，`metadata` 输出 JSON 字符串。
 
 ### 6.2 评测对象（FR-2）
@@ -373,23 +373,31 @@ draft ──run──> running（rollout + 评分）──> completed
 
 ### 6.7 Loop-Assistant（FR-7）
 
-两阶段管线：
+Loop-Assistant 由独立配置的 coding agent 执行（agent 与模型单独指定，模型选更强的分析模型），与评测对象配置分离。运行通道复用 harness 镜像与容器机制：平台组装一次"分析任务"，agent 在容器内产出约定文件，平台解析入库。
+
+执行流程：
 
 ```text
-阶段一：逐条归类
-  输入失败 Trace（输入、预期、Agent 输出、Scorer 判定与理由、轨迹摘要）
-  输出 {failure_category, confidence, rationale}，批量并行调用，结果校验 schema
+1. 平台组装分析任务简报
+   输入失败 Trace（输入、预期、Agent 输出、Scorer 判定与理由、轨迹摘要）
+   与已有失败类别清单，写成任务说明文件
 
-阶段二：汇总方案
-  输入全部归类结果与类别统计
-  输出改进方案报告（类别、典型案例、建议动作）
-  同时挑选价值案例生成数据集草案行
+2. 启动 Loop-Assistant 的 coding agent 执行
+   agent 配置：独立的 harness + 更强的模型（设置中指定）
+   产出约定文件：
+     findings.json    逐条归类 [{row_id, failure_category, confidence, rationale}]
+     report.md        改进方案报告（类别、典型案例、建议动作）
+     draft.csv        新数据集草案行（字段与 FR-1 一致）
+
+3. 平台解析产出并 schema 校验
+   归类写 loop_findings，报告存库并渲染到 workspace/reports/
+   草案进入待确认列表
 ```
 
-- 提示词模板存 `prompts/loop_classify.md`、`prompts/loop_plan.md`，模板带版本号。
-- 失败类别体系存 `settings`（JSON 列表），归类时传入已有类别供模型选择，允许模型新增。
-- 报告渲染为 Markdown 存 `workspace/reports/loop-<loop_run_id>.md`，内容存库。
-- 草案合并：写入目标数据集产生新版本，`change_note` 自动引用来源实验编号。
+- 任务简报模板存 `prompts/loop_task.md`，带版本号。
+- 失败类别体系存 `settings`（JSON 列表），简报中传入已有类别供 agent 选择，允许新增。
+- 产出解析失败时保留 agent 原始输出供排查，可重新发起分析。
+- 草案合并：用户确认后写入目标数据集生成新快照，`change_note` 自动引用来源实验编号。
 
 ## 7. API 设计
 
@@ -399,11 +407,12 @@ draft ──run──> running（rollout + 评分）──> completed
 | --- | --- | --- |
 | GET | `/` | 实验列表页 |
 | GET | `/datasets` | 数据集列表页 |
-| GET | `/datasets/{id}` | 数据集详情（版本历史、行表格） |
-| POST | `/api/datasets` | 创建数据集 |
-| POST | `/api/datasets/{id}/versions` | 上传 CSV 或编辑产生新版本 |
-| GET | `/api/datasets/{id}/versions/{v}/diff` | 版本对比 |
-| GET | `/api/datasets/{id}/versions/{v}/export` | 导出 CSV |
+| GET | `/datasets/{id}` | 数据集详情（即编辑页，基本信息与任务行） |
+| POST | `/datasets` | 创建数据集（含 CSV 上传） |
+| POST | `/datasets/{id}/versions/rows` | 保存（元数据与任务行，写内部快照） |
+| POST | `/datasets/{id}/save-as` | 另存为新数据集 |
+| POST | `/datasets/{id}/delete` | 删除数据集 |
+| GET | `/datasets/{id}/versions/{v}/export` | 导出 CSV |
 | GET | `/scorers` | Scorer 列表页 |
 | POST | `/api/scorers` | 创建 Scorer |
 | POST | `/api/scorers/{id}/tryout` | 试评（真实日志） |
@@ -525,17 +534,17 @@ draft ──run──> running（rollout + 评分）──> completed
 
 | 里程碑 | 范围 | 验收 |
 | --- | --- | --- |
-| M1 打通链路 | 数据集 CRUD 与版本、评测对象、实验创建、rollout 运行、快照 | 上传 CSV 跑完一次实验，jobs/ 产出 trial，快照落盘 |
+| M1 打通链路 | 数据集 CRUD 与保存、评测对象、实验创建、rollout 运行、快照 | 上传 CSV 跑完一次实验，jobs/ 产出 trial，快照落盘 |
 | M2 评分 | `ConsoleVerifier` 适配壳、LLM judge、Code 评分器、试评、结果表 | 试评通过后保存 Scorer；trial 内评分产出 reward 与 score.json；结果表出分 |
 | M3 分析 | Logs、Trace 详情内嵌、Dashboards、基线对比、导出 | 端到端验收场景第 4、6 步通过 |
 | M4 复核 | Review 队列、结构化打分、变更历史、汇总列 | 端到端验收场景第 5 步通过 |
-| M5 回流 | Loop-Assistant 归类、方案报告、草案合并 | 端到端验收场景第 7 步通过 |
+| M5 回流 | Loop-Assistant（独立 coding agent + 强模型）归类、方案报告、草案合并 | 端到端验收场景第 7 步通过 |
 
 每个里程碑发布前执行端到端验收场景中对应步骤，M5 完成后执行全链路。
 
 ## 11. 测试策略
 
-- 单元测试：CSV 解析校验、版本差异、快照哈希、Scorer 输出 schema 校验、回归排序算法、Loop 草案合并。
+- 单元测试：CSV 解析校验、快照哈希、Scorer 输出 schema 校验、回归排序算法、Loop 草案合并。
 - 接口测试：FastAPI TestClient 覆盖全部 API 的正常与失败路径。
 - 集成测试：用 3 行小数据集 + 便宜模型跑一次完整实验（rollout + judge），断言状态机流转与快照内容。
 - 冒烟脚本：`console/tests/smoke.sh` 一键执行集成测试，作为每次发布前检查。

@@ -6,23 +6,29 @@
 <div class="card">
   <div class="section-title">新建评测对象</div>
   <form class="stack" method="post" action="/eval-profiles">
-    <label>名称
-      <input name="name" required placeholder="pi-deepseek">
-    </label>
-    <label>Harness
-      <select name="harness">
+    <div class="field">
+      <label class="field-label" for="pf-name">名称</label>
+      <input id="pf-name" name="name" required placeholder="pi-deepseek">
+    </div>
+    <div class="field">
+      <label class="field-label" for="pf-harness">Harness</label>
+      <select id="pf-harness" name="harness">
         {% for h in harnesses %}<option value="{{ h }}">{{ h }}</option>{% endfor %}
       </select>
-    </label>
-    <label>模型
-      <select name="model_id">
+    </div>
+    <div class="field">
+      <label class="field-label" for="pf-model">模型</label>
+      <select id="pf-model" name="model_id">
         {% for m in models %}<option value="{{ m }}">{{ m }}</option>{% endfor %}
       </select>
-    </label>
-    <label>运行参数（JSON）
-      <textarea name="params" rows="3">{}</textarea>
-    </label>
-    <button class="primary" type="submit">保存</button>
+    </div>
+    <div class="field">
+      <label class="field-label" for="pf-params">运行参数</label>
+      <textarea id="pf-params" name="params" rows="6">{{ default_params_json }}</textarea>
+    </div>
+    <div class="form-actions">
+      <button type="submit">保存</button>
+    </div>
   </form>
 </div>
 
@@ -32,7 +38,7 @@
   </thead>
   <tbody>
     {% for p in profiles %}
-    <tr>
+    <tr data-profile-name="{{ p.name }}">
       <td>{{ p.name }}</td>
       <td class="mono">v{{ p.version_no }}</td>
       <td><span class="badge">{{ p.harness }}</span></td>
@@ -45,4 +51,91 @@
     {% endfor %}
   </tbody>
 </table>
+
+<div class="modal-overlay hidden" id="profile-detail-modal">
+  <div class="modal">
+    <header>
+      <span id="pd-title">配置详情</span>
+      <a href="javascript:void(0)" class="modal-close" data-close="profile-detail-modal">×</a>
+    </header>
+    <p><span class="badge" id="pd-harness"></span> <span class="mono muted" id="pd-model"></span></p>
+    <div class="field">
+      <label class="field-label" for="pd-version">版本</label>
+      <select id="pd-version"></select>
+    </div>
+    <div class="section-title" style="margin-top:0">运行参数</div>
+    <pre class="snapshot json" id="pd-params">{}</pre>
+    <div class="row-actions">
+      <button type="button" class="outline" id="pd-load">载入表单</button>
+      <form method="post" id="pd-delete-form" action="/eval-profiles/0/delete">
+        <button type="button" class="destructive"
+          data-confirm-title="删除评测对象"
+          data-confirm-message="将删除该评测对象及其全部版本。"
+          data-confirm-label="删除">删除</button>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+const harnessDefaults = {{ harness_defaults_json | safe }};
+const paramsBox = document.getElementById("pf-params");
+const harnessSelect = document.getElementById("pf-harness");
+harnessSelect?.addEventListener("change", (ev) => {
+  const params = harnessDefaults[ev.target.value];
+  if (params && paramsBox) paramsBox.value = JSON.stringify(params, null, 2);
+});
+
+const allProfiles = {{ profiles | tojson }};
+const byName = {};
+for (const p of allProfiles) (byName[p.name] ||= []).push(p);
+const pdModal = document.getElementById("profile-detail-modal");
+const pdSelect = document.getElementById("pd-version");
+let currentProfile = null;
+
+const renderPdVersion = () => {
+  const versions = byName[currentProfile.name] || [];
+  const v = versions[Number(pdSelect.value) || 0];
+  if (!v) return;
+  document.getElementById("pd-params").textContent = v.params;
+  currentProfile = v;
+};
+
+for (const row of document.querySelectorAll("tr[data-profile-name]")) {
+  row.addEventListener("click", (ev) => {
+    if (ev.target.closest("a, button, input, select, textarea")) return;
+    const versions = byName[row.dataset.profileName] || [];
+    if (!versions.length) return;
+    currentProfile = versions[0];
+    document.getElementById("pd-title").textContent = `${currentProfile.name} · 配置详情`;
+    document.getElementById("pd-harness").textContent = currentProfile.harness;
+    document.getElementById("pd-model").textContent = currentProfile.model_id;
+    pdSelect.innerHTML = "";
+    for (const [i, v] of versions.entries()) {
+      const opt = document.createElement("option");
+      opt.value = String(i);
+      opt.textContent = `v${v.version_no} · ${v.created_at}`;
+      pdSelect.appendChild(opt);
+    }
+    document.getElementById("pd-delete-form").action = `/eval-profiles/${currentProfile.id}/delete`;
+    renderPdVersion();
+    pdModal.classList.remove("hidden");
+  });
+}
+pdSelect?.addEventListener("change", renderPdVersion);
+
+document.getElementById("pd-load")?.addEventListener("click", () => {
+  if (!currentProfile) return;
+  document.getElementById("pf-name").value = currentProfile.name;
+  harnessSelect.value = currentProfile.harness;
+  harnessSelect.dispatchEvent(new Event("change", { bubbles: true }));
+  const model = document.getElementById("pf-model");
+  model.value = currentProfile.model_id;
+  model.dispatchEvent(new Event("change", { bubbles: true }));
+  paramsBox.value = currentProfile.params;
+  pdModal.classList.add("hidden");
+  document.getElementById("pf-name").focus();
+});
+</script>
 {% endblock %}

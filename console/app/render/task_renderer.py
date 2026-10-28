@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import shutil
 from pathlib import Path
 
@@ -32,6 +33,10 @@ authors = []
 keywords = ["console", "{dataset_name}"]
 
 [metadata]
+row_id = {row_id}
+expected = {expected}
+rubric = {rubric}
+tags = {tags}
 
 [verifier]
 timeout_sec = 300.0
@@ -76,6 +81,10 @@ def render_tasks(
                 task_name=f"{dataset_name}/{row['row_id']}",
                 dataset_name=dataset_name,
                 version_no=version_no,
+                row_id=json.dumps(row["row_id"]),
+                expected=json.dumps(row["expected"]),
+                rubric=json.dumps(row["rubric"]),
+                tags=json.dumps(row["tags"]),
             )
         )
         tests_dir = task_dir / "tests"

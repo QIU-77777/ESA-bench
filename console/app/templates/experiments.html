@@ -1,43 +1,21 @@
 {% extends "base.html" %}
 {% block title %}Experiments · Console{% endblock %}
 {% block content %}
-<h1 class="page-title">Experiments</h1>
-
-<div class="card">
-  <div class="section-title">创建实验</div>
-  <form class="stack" method="post" action="/experiments">
-    <label>名称
-      <input name="name" required placeholder="exp-001">
-    </label>
-    <label>数据集版本
-      <select name="dataset_version_id" required>
-        {% for d in datasets %}
-        <optgroup label="{{ d.name }}">
-          {% for v in dataset_versions[d.id] %}
-          <option value="{{ v.id }}">{{ d.name }} · v{{ v.version_no }}（{{ v.row_count }} 行）</option>
-          {% endfor %}
-        </optgroup>
-        {% endfor %}
-      </select>
-    </label>
-    <label>评测对象
-      <select name="eval_profile_id" required>
-        {% for p in profiles %}
-        <option value="{{ p.id }}">{{ p.name }} v{{ p.version_no }}（{{ p.harness }} · {{ p.model_id }}）</option>
-        {% endfor %}
-      </select>
-    </label>
-    <button class="primary" type="submit">创建</button>
-  </form>
+<div class="list-header">
+  <a class="btn" href="/experiments/new">+ New experiment</a>
+  <div class="search-box">
+    <span class="search-icon">⌕</span>
+    <input id="exp-search" placeholder="Search for experiments..." autocomplete="off">
+  </div>
 </div>
 
-<table>
+<table id="exp-table">
   <thead>
-    <tr><th>名称</th><th>状态</th><th>数据集</th><th>评测对象</th><th>模型</th><th>创建时间</th></tr>
+    <tr><th>Name</th><th>Status</th><th>Dataset</th><th>Profile</th><th>Model</th><th>Created</th></tr>
   </thead>
   <tbody>
     {% for e in experiments %}
-    <tr>
+    <tr data-href="/experiments/{{ e.id }}" data-search="{{ e.name }} {{ e.dataset_name }} {{ e.profile_name }} {{ e.model_id }} {{ e.status }}">
       <td><a href="/experiments/{{ e.id }}">{{ e.name }}</a></td>
       <td>
         <span class="badge {{ 'ok' if e.status == 'completed' else 'fail' if e.status in ('failed', 'aborted') else 'dim' }}">{{ e.status }}</span>
@@ -48,8 +26,18 @@
       <td class="mono muted">{{ e.created_at }}</td>
     </tr>
     {% else %}
-    <tr><td colspan="6" class="muted">暂无实验</td></tr>
+    <tr><td colspan="6" class="muted">暂无实验，点击 "+ New experiment" 创建</td></tr>
     {% endfor %}
   </tbody>
 </table>
+{% endblock %}
+{% block scripts %}
+<script>
+document.getElementById("exp-search")?.addEventListener("input", (ev) => {
+  const q = ev.target.value.toLowerCase();
+  for (const row of document.querySelectorAll("#exp-table tbody tr[data-search]")) {
+    row.style.display = row.dataset.search.toLowerCase().includes(q) ? "" : "none";
+  }
+});
+</script>
 {% endblock %}

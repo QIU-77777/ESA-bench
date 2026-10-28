@@ -14,14 +14,18 @@ def build_run_command(
     harness: str,
     model_id: str,
     job_name: str,
+    scorer_config: str | None = None,
 ) -> list[str]:
-    return [
+    command = [
         str(config.RUN_SH),
         "--bench-file", str(bench_file),
         "--harness", harness,
         "--model", model_id,
         "--job-name", job_name,
     ]
+    if scorer_config:
+        command += ["--scorer-config", scorer_config]
+    return command
 
 
 def start_run(command: list[str], log_path: Path) -> subprocess.Popen:
@@ -98,6 +102,74 @@ def read_trial_summaries(job_name: str) -> list[dict]:
             }
         )
     return summaries
+
+
+def extract_final_output(trace) -> str:
+    """Return the last assistant message text from a trajectory JSON."""
+    texts: list[str] = []
+    _collect_assistant(trace, texts)
+    return texts[-1] if texts else ""
+
+
+def _collect_assistant(node, out: list[str]) -> None:
+    if isinstance(node, dict):
+        # ATIF step form: {"source": "agent", "message": "..."}
+        if node.get("source") in ("agent", "assistant"):
+            message = node.get("message")
+            if isinstance(message, str) and message.strip():
+                out.append(message)
+        if node.get("role") == "assistant":
+            content = node.get("content")
+            if isinstance(content, str) and content.strip():
+                out.append(content)
+            elif isinstance(content, list):
+                for part in content:
+                    if isinstance(part, str) and part.strip():
+                        out.append(part)
+                    elif isinstance(part, dict) and part.get("type") == "text":
+                        text = str(part.get("text") or "").strip()
+                        if text:
+                            out.append(text)
+        for value in node.values():
+            _collect_assistant(value, out)
+    elif isinstance(node, list):
+        for item in node:
+            _collect_assistant(item, out)
+
+
+def read_trial_trace(trial_path: str) -> tuple[object, str]:
+    """Read trajectory JSON and the agent's final output from a trial directory."""
+    trial_dir = config.REPO_ROOT / trial_path
+    agent_dir = trial_dir / "agent"
+    if not agent_dir.is_dir():
+        agent_dir = trial_dir / "logs" / "agent"
+    trace: object = {}
+    trajectory = agent_dir / "trajectory.json"
+    if trajectory.is_file():
+        try:
+            trace = json.loads(trajectory.read_text())
+        except json.JSONDecodeError:
+            trace = {"raw": trajectory.read_text()[:20000]}
+    output = extract_final_output(trace)
+    if not output:
+        for name in ("opencode.txt", "pi.txt", "claude-code.txt"):
+            candidate = agent_dir / name
+            if candidate.is_file():
+                output = candidate.read_text()[:4000]
+                break
+    return trace, output
+
+
+def read_trial_scores(trial_path: str) -> dict | None:
+    """Read /verifier/score.json produced by ConsoleVerifier."""
+    trial_dir = config.REPO_ROOT / trial_path
+    for candidate in (trial_dir / "verifier" / "score.json", trial_dir / "logs" / "verifier" / "score.json"):
+        if candidate.is_file():
+            try:
+                return json.loads(candidate.read_text())
+            except json.JSONDecodeError:
+                return None
+    return None
 
 
 def _duration_ms(result: dict) -> int | None:

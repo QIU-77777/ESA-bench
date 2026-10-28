@@ -1,0 +1,119 @@
+{% extends "base.html" %}
+{% block title %}Dashboard · {{ experiment.name }} · Console{% endblock %}
+{% block content %}
+<h1 class="page-title">{{ experiment.name }} · Dashboards</h1>
+<p class="muted">
+  <a href="/experiments/{{ experiment.id }}">← 实验详情</a>
+  · <a href="/experiments/{{ experiment.id }}/logs">Logs</a>
+  · <a href="/experiments/{{ experiment.id }}/export">导出 CSV</a>
+</p>
+
+<div class="card">
+  <div class="section-title">基线</div>
+  {% if is_baseline %}
+  <p><span class="badge ok">本实验是当前基线</span></p>
+  {% elif baseline %}
+  <p>当前基线：<a href="/experiments/{{ baseline.id }}">{{ baseline.name }}</a>
+    <span class="mono muted">{{ baseline.set_at }}</span></p>
+  {% else %}
+  <p class="muted">该数据集还没有基线实验</p>
+  {% endif %}
+  <div class="row-actions">
+    <form method="post" action="/experiments/{{ experiment.id }}/baseline">
+      <button type="submit">{{ '更新为基线' if is_baseline else '标记为基线' }}</button>
+    </form>
+    {% if baseline %}
+    <form method="post" action="/experiments/{{ experiment.id }}/baseline/clear">
+      <button type="button" class="outline"
+        data-confirm-title="清除基线"
+        data-confirm-message="将清除该数据集当前的基线标记。"
+        data-confirm-label="清除">清除基线</button>
+    </form>
+    {% endif %}
+  </div>
+</div>
+
+<div class="section-title">分数分布</div>
+<div class="bars">
+  {% set max_count = (dashboard.distribution | map(attribute='count') | max) if dashboard.distribution else 1 %}
+  {% for b in dashboard.distribution %}
+  <div class="bar-row">
+    <span class="mono muted bar-label">{{ b.bucket }}</span>
+    <span class="bar-track"><span class="bar-fill" style="width: {{ (b.count * 100 / (max_count or 1)) | round }}%"></span></span>
+    <span class="mono num">{{ b.count }}</span>
+  </div>
+  {% else %}
+  <p class="muted">暂无评分数据</p>
+  {% endfor %}
+</div>
+
+<div class="section-title">失败类别分布</div>
+<div class="bars">
+  {% set max_cat = (dashboard.failure_categories | map(attribute='count') | max) if dashboard.failure_categories else 1 %}
+  {% for c in dashboard.failure_categories %}
+  <div class="bar-row">
+    <span class="mono muted bar-label">{{ c.category }}</span>
+    <span class="bar-track"><span class="bar-fill" style="width: {{ (c.count * 100 / (max_cat or 1)) | round }}%"></span></span>
+    <span class="mono num">{{ c.count }}</span>
+  </div>
+  {% else %}
+  <p class="muted">没有失败类别记录</p>
+  {% endfor %}
+</div>
+
+<div class="section-title">按维度分组
+  <a href="/experiments/{{ experiment.id }}/dashboard?group_by=tags">tags</a>
+  {% for k in group_keys if k != 'tags' %}
+  · <a href="/experiments/{{ experiment.id }}/dashboard?group_by={{ k }}">{{ k }}</a>
+  {% endfor %}
+</div>
+<table>
+  <thead>
+    <tr><th>分组（{{ dashboard.group_by }}）</th><th class="num">任务数</th><th class="num">通过数</th><th class="num">通过率</th><th class="num">均分</th></tr>
+  </thead>
+  <tbody>
+    {% for g in dashboard.groups %}
+    <tr>
+      <td class="mono">{{ g.group }}</td>
+      <td class="num">{{ g.n }}</td>
+      <td class="num">{{ g.n_pass }}</td>
+      <td class="num">{{ '%.0f%%' | format((g.pass_rate or 0) * 100) }}</td>
+      <td class="num">{{ '%.3f' | format(g.mean) if g.mean is not none else '—' }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="5" class="muted">暂无数据</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<div class="section-title">回归排序{% if regression %}（对基线 {{ regression.baseline.name }}）{% endif %}</div>
+{% if regression %}
+<p class="muted">
+  均分：基线 {{ '%.3f' | format(regression.summary.mean_baseline) if regression.summary.mean_baseline is not none else '—' }}
+  → 当前 {{ '%.3f' | format(regression.summary.mean_current) if regression.summary.mean_current is not none else '—' }}
+  · 新增失败 {{ regression.summary.n_new_fail }}
+  · 修复 {{ regression.summary.n_fixed }}
+  · 恶化 {{ regression.summary.n_regressed }}
+</p>
+<table>
+  <thead>
+    <tr><th>任务</th><th class="num">基线</th><th class="num">当前</th><th class="num">变化</th><th>状态</th></tr>
+  </thead>
+  <tbody>
+    {% for r in regression.rows %}
+    <tr{% if r.status != 'removed' %} data-href="/experiments/{{ experiment.id }}/traces/{{ r.row_id }}"{% endif %}>
+      <td class="mono">{% if r.status != 'removed' %}<a href="/experiments/{{ experiment.id }}/traces/{{ r.row_id }}">{{ r.row_id }}</a>{% else %}{{ r.row_id }}{% endif %}</td>
+      <td class="num">{{ '%.3f' | format(r.baseline) if r.baseline is not none else '—' }}</td>
+      <td class="num">{{ '%.3f' | format(r.current) if r.current is not none else '—' }}</td>
+      <td class="num">{{ '%+.3f' | format(r.delta) if r.delta is not none else '—' }}</td>
+      <td>
+        <span class="badge {{ 'fail' if r.status in ('new_fail', 'regressed') else 'ok' if r.status in ('fixed', 'improved') else 'dim' }}">{{ r.status }}</span>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="muted">标记基线后显示回归对比。</p>
+{% endif %}
+{% endblock %}

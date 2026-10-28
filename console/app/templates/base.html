@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}Console{% endblock %}</title>
-  <link rel="stylesheet" href="/static/console.css">
+  <link rel="stylesheet" href="/static/console.css?v=11">
 </head>
 <body>
   <aside class="sidebar">
@@ -13,6 +13,7 @@
       <a href="/experiments" class="{{ 'active' if request.url.path.startswith('/experiments') }}">Experiments</a>
       <a href="/datasets" class="{{ 'active' if request.url.path.startswith('/datasets') }}">Datasets</a>
       <a href="/eval-profiles" class="{{ 'active' if request.url.path.startswith('/eval-profiles') }}">Evaluation Profiles</a>
+      <a href="/scorers" class="{{ 'active' if request.url.path.startswith('/scorers') }}">Scorers</a>
     </nav>
   </aside>
   <div class="main">
@@ -23,6 +24,24 @@
       {% block content %}{% endblock %}
     </main>
   </div>
+  <div class="modal-overlay hidden" id="confirm-modal">
+    <div class="modal">
+      <header>
+        <span id="confirm-title">确认</span>
+        <a href="javascript:void(0)" class="modal-close" data-close="confirm-modal">×</a>
+      </header>
+      <p id="confirm-message"></p>
+      <div class="field hidden" id="confirm-input-field">
+        <label class="field-label" for="confirm-input">名称</label>
+        <input id="confirm-input">
+      </div>
+      <div class="row-actions">
+        <button type="button" class="outline" data-close="confirm-modal">取消</button>
+        <button type="button" id="confirm-action">确认</button>
+      </div>
+    </div>
+  </div>
   {% block scripts %}{% endblock %}
+  <script src="/static/console.js?v=5"></script>
 </body>
 </html>

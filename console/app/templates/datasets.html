@@ -1,44 +1,22 @@
 {% extends "base.html" %}
 {% block title %}Datasets · Console{% endblock %}
 {% block content %}
-<h1 class="page-title">Datasets</h1>
-
-<div class="card">
-  <div class="section-title">创建数据集</div>
-  <form class="stack" method="post" action="/datasets">
-    <label>名称
-      <input name="name" required placeholder="code-tasks">
-    </label>
-    <label>说明
-      <input name="description" placeholder="可留空">
-    </label>
-    <label>任务环境模板
-      <select name="env_template">
-        <option value="standard">standard（单容器任务）</option>
-        <option value="esa">esa（含 mock-system / agent-api / redis）</option>
-      </select>
-    </label>
-    <button class="primary" type="submit">创建</button>
-  </form>
+<div class="list-header">
+  <h1 class="page-title" style="margin:0">Datasets</h1>
+  <button type="button" class="primary" id="open-dataset-create" style="margin-left:auto">＋ 创建数据集</button>
 </div>
 
 <table>
   <thead>
-    <tr>
-      <th>名称</th>
-      <th>说明</th>
-      <th>环境模板</th>
-      <th class="num">版本数</th>
-      <th>最近变更</th>
-    </tr>
+    <tr><th>名称</th><th>说明</th><th>环境模板</th><th class="num">任务数</th><th>最近变更</th></tr>
   </thead>
   <tbody>
     {% for d in datasets %}
-    <tr>
+    <tr data-href="/datasets/{{ d.id }}">
       <td><a href="/datasets/{{ d.id }}">{{ d.name }}</a></td>
       <td class="muted">{{ d.description }}</td>
       <td><span class="badge">{{ d.env_template }}</span></td>
-      <td class="num">{{ d.version_count }}</td>
+      <td class="num">{{ d.row_count or 0 }}</td>
       <td class="mono muted">{{ d.last_changed }}</td>
     </tr>
     {% else %}
@@ -46,4 +24,53 @@
     {% endfor %}
   </tbody>
 </table>
+
+<div class="modal-overlay hidden" id="dataset-create-modal">
+  <div class="modal">
+    <header>
+      <span>创建数据集</span>
+      <a href="javascript:void(0)" class="modal-close" data-close="dataset-create-modal">×</a>
+    </header>
+    <form class="stack" method="post" action="/datasets" enctype="multipart/form-data">
+      <div class="field">
+        <label class="field-label" for="cs-name">名称</label>
+        <input id="cs-name" name="name" required placeholder="code-tasks">
+      </div>
+      <div class="field">
+        <label class="field-label" for="cs-desc">说明</label>
+        <input id="cs-desc" name="description" placeholder="可留空">
+      </div>
+      <div class="field">
+        <label class="field-label" for="cs-env">任务环境模板</label>
+        <select id="cs-env" name="env_template">
+          <option value="standard">standard（单容器任务）</option>
+          <option value="esa">esa（含 mock-system / agent-api / redis）</option>
+        </select>
+      </div>
+      <div class="field">
+        <label class="field-label" for="cs-csv-name">CSV 文件</label>
+        <div class="input-group">
+          <input id="cs-csv-name" readonly placeholder="留空则从空白数据集开始">
+          <button type="button" class="outline" data-browse="cs-csv">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M1.5 4.5h4l1.5 2h7.5v6.5a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1z"/><path d="M1.5 4.5v-2h4l1.5 2"/></svg>
+            Browse
+          </button>
+          <input type="file" name="csv_file" id="cs-csv" accept=".csv,text/csv" class="hidden">
+        </div>
+        <p class="field-hint">列：id, input, expected, tags, metadata, rubric</p>
+      </div>
+      <div class="row-actions">
+        <button type="button" class="outline" data-close="dataset-create-modal">取消</button>
+        <button type="submit">创建</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+document.getElementById("open-dataset-create")?.addEventListener("click", () => {
+  document.getElementById("dataset-create-modal")?.classList.remove("hidden");
+});
+</script>
 {% endblock %}

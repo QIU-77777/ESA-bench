@@ -1,0 +1,271 @@
+{% extends "base.html" %}
+{% block title %}Scorers · Console{% endblock %}
+{% block content %}
+<h1 class="page-title">Scorers</h1>
+
+<div class="grid-2">
+  <div class="card">
+    <div class="section-title">新建评分器</div>
+    <form class="stack" id="scorer-form" method="post" action="/scorers">
+      <input type="hidden" name="action" value="tryout">
+      <input type="hidden" name="change_note" id="form-change-note">
+      <div class="field">
+        <label class="field-label" for="scorer-name">名称</label>
+        <input id="scorer-name" name="name" required placeholder="例如：回答一致性">
+      </div>
+      <div class="field">
+        <label class="field-label" for="scorer-desc">描述</label>
+        <input id="scorer-desc" name="description" placeholder="该评分器判断什么？">
+      </div>
+      {% include "scorer_fields.html" %}
+      <div class="field">
+        <label class="field-label" for="tryout-experiment">试评实验</label>
+        <select id="tryout-experiment" name="experiment_id" required>
+          {% for e in experiments %}<option value="{{ e.id }}">{{ e.name }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="field">
+        <label class="field-label" for="tryout-row">试评任务行</label>
+        <select id="tryout-row" name="row_id" required></select>
+      </div>
+      <div class="row-actions">
+        <button type="submit" class="outline" name="action" value="tryout">试评</button>
+        <button type="button" id="open-save">保存</button>
+      </div>
+    </form>
+  </div>
+
+  <div class="card">
+    <div class="section-title">评分器与版本</div>
+    <table>
+      <thead>
+        <tr><th>名称</th><th>类型</th><th>描述</th><th class="num">版本数</th></tr>
+      </thead>
+      <tbody>
+        {% for s in scorers %}
+        <tr data-href="/scorers?scorer={{ s.id }}">
+          <td><a href="/scorers?scorer={{ s.id }}">{{ s.name }}</a></td>
+          <td><span class="badge">{{ s.type }}</span></td>
+          <td class="muted">{{ s.description or '—' }}</td>
+          <td class="num">{{ s.version_count }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="4" class="muted">暂无评分器，先在左侧编辑器试评并保存</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="section-title">最近试评</div>
+<table>
+  <thead>
+    <tr><th>时间</th><th>trace</th><th class="num">分数</th><th>判定</th><th>失败类别</th><th class="num">耗时(ms)</th></tr>
+  </thead>
+  <tbody>
+    {% for t in tryouts %}
+    {% set out = t.output | from_json %}
+    <tr data-href="/scorers?tryout={{ t.id }}">
+      <td class="mono muted">{{ t.created_at }}</td>
+      <td class="mono"><a class="truncate-cell" href="/scorers?tryout={{ t.id }}">{{ t.trace_ref }}</a></td>
+      <td class="num">{{ out.score }}</td>
+      <td><span class="badge {{ 'ok' if out.verdict == 'pass' else 'fail' }}">{{ out.verdict }}</span></td>
+      <td class="mono muted">{{ out.failure_category or '—' }}</td>
+      <td class="num">{{ t.duration_ms }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="6" class="muted">暂无试评记录</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<div class="modal-overlay hidden" id="save-modal">
+  <div class="modal">
+    <header>
+      <span>保存评分器</span>
+      <a href="javascript:void(0)" class="modal-close" data-close="save-modal">×</a>
+    </header>
+    <p class="muted" id="save-modal-note"></p>
+    <div>
+      <div class="section-title" style="margin-top:0">输出契约（只读）</div>
+      <pre class="snapshot json">{
+  "score": 数值,
+  "verdict": "pass | fail | suspect",
+  "failure_category": "失败类别或 null",
+  "reason": "判定理由",
+  "evidence": ["依据摘录"]
+}</pre>
+    </div>
+    <div class="field" id="save-change-field">
+      <label class="field-label" for="save-change-note">变更说明</label>
+      <input id="save-change-note" placeholder="本次调整内容">
+    </div>
+    <div class="row-actions">
+      <button type="button" class="outline" data-close="save-modal">取消</button>
+      <button type="button" id="confirm-save">确认保存</button>
+    </div>
+  </div>
+</div>
+
+{% if tryout_detail %}
+<div class="modal-overlay" id="tryout-modal">
+  <div class="modal">
+    <header>
+      <span>试评详情</span>
+      <a href="/scorers" class="modal-close">×</a>
+    </header>
+    <div class="section-title" style="margin-top:0">概要</div>
+    <p class="mono">trace: {{ tryout_detail.trace_ref }} · 耗时 {{ tryout_detail.duration_ms }}ms · {{ tryout_detail.created_at }}</p>
+    <div class="section-title">任务输入</div>
+    <pre class="snapshot">{{ tryout_detail.input }}</pre>
+    <div class="section-title">预期结果</div>
+    <pre class="snapshot">{{ tryout_detail.expected }}</pre>
+    <div class="section-title">Agent 输出（最终回答）
+      <a href="{{ tryout_detail.view_url }}" target="_blank" rel="noopener">在 Harbor view 查看完整轨迹 →</a>
+    </div>
+    <pre class="snapshot">{{ tryout_detail.agent_output or '（无输出）' }}</pre>
+    <div class="section-title">评分结果</div>
+    <pre class="snapshot json">{{ tryout_detail.result | pretty_json }}</pre>
+    <div class="section-title">评分器草稿</div>
+    <pre class="snapshot json">{{ tryout_detail.draft | pretty_json }}</pre>
+    <div class="row-actions">
+      <form method="post" action="/scorers/tryouts/{{ tryout_detail.id }}/delete">
+        <button type="button" class="destructive"
+          data-confirm-title="删除试评记录"
+          data-confirm-message="将删除该条试评记录。"
+          data-confirm-label="删除">删除</button>
+      </form>
+    </div>
+  </div>
+</div>
+{% endif %}
+{% if scorer_detail %}
+<div class="modal-overlay" id="scorer-detail-modal">
+  <div class="modal">
+    <header>
+      <span>{{ scorer_detail.scorer.name }} · 配置详情</span>
+      <a href="/scorers" class="modal-close">×</a>
+    </header>
+    <p>
+      <span class="badge">{{ scorer_detail.scorer.type }}</span>
+      <span class="muted">{{ scorer_detail.scorer.description or '无描述' }}</span>
+    </p>
+    <div class="field">
+      <label class="field-label" for="detail-version">版本</label>
+      <select id="detail-version">
+        {% for v in scorer_detail.versions %}
+        <option value="{{ loop.index0 }}">v{{ v.version_no }} · {{ v.created_at }} · {{ v.change_note or '无变更说明' }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    {% for v in scorer_detail.versions %}
+    <div class="detail-version-panel{% if not loop.first %} hidden{% endif %}" data-version="{{ loop.index0 }}">
+      <p class="mono muted">v{{ v.version_no }} · {{ v.created_at }} · {{ v.change_note or '无变更说明' }}</p>
+      <pre class="snapshot json">{{ v.config | pretty_json }}</pre>
+    </div>
+    {% endfor %}
+    <div class="row-actions">
+      <button type="button" class="outline" id="load-to-editor">载入编辑器</button>
+      <form method="post" action="/scorers/{{ scorer_detail.scorer.id }}/delete">
+        <button type="button" class="destructive"
+          data-confirm-title="删除评分器"
+          data-confirm-message="将删除评分器「{{ scorer_detail.scorer.name }}」及其全部版本。"
+          data-confirm-label="删除">删除</button>
+      </form>
+    </div>
+  </div>
+</div>
+<script>window.__scorerDetail = {{ scorer_detail | tojson }};</script>
+{% endif %}
+{% endblock %}
+{% block scripts %}
+<script>
+for (const group of document.querySelectorAll("[data-type-group]")) {
+  const hidden = group.querySelector("input[type=hidden]");
+  const form = group.closest("form");
+  const set = (type) => {
+    hidden.value = type;
+    for (const btn of group.querySelectorAll(".seg-btn")) {
+      btn.classList.toggle("active", btn.dataset.typeValue === type);
+    }
+    for (const fields of form.querySelectorAll("[data-type-fields]")) {
+      fields.classList.toggle("hidden", fields.dataset.typeFields !== type);
+    }
+  };
+  for (const btn of group.querySelectorAll(".seg-btn")) {
+    btn.addEventListener("click", () => set(btn.dataset.typeValue));
+  }
+  set(hidden.value || "llm");
+}
+
+async function refreshRows() {
+  const exp = document.getElementById("tryout-experiment");
+  const row = document.getElementById("tryout-row");
+  if (!exp || !row) return;
+  row.innerHTML = "";
+  if (!exp.value) return;
+  const r = await fetch(`/api/experiments/${exp.value}/tasks`);
+  if (r.ok) {
+    for (const id of await r.json()) {
+      const opt = document.createElement("option");
+      opt.value = id; opt.textContent = id;
+      row.appendChild(opt);
+    }
+  }
+}
+document.getElementById("tryout-experiment")?.addEventListener("change", refreshRows);
+refreshRows();
+
+const saveModal = document.getElementById("save-modal");
+const scorerNames = {{ scorers | map(attribute='name') | list | tojson }};
+document.getElementById("open-save")?.addEventListener("click", () => {
+  const name = document.getElementById("scorer-name").value.trim();
+  if (!name) { document.getElementById("scorer-name").focus(); return; }
+  const exists = scorerNames.includes(name);
+  document.getElementById("save-modal-note").textContent = exists
+    ? "已有同名评分器，本次将保存为它的新版本。"
+    : "没有同名评分器，将新建评分器。";
+  document.getElementById("save-change-field").classList.toggle("hidden", !exists);
+  document.getElementById("confirm-save").textContent = exists ? "确认更新" : "确认保存";
+  saveModal.classList.remove("hidden");
+});
+document.getElementById("confirm-save")?.addEventListener("click", () => {
+  document.getElementById("form-change-note").value =
+    document.getElementById("save-change-note").value;
+  document.querySelector('#scorer-form input[name="action"]').value = "save";
+  document.getElementById("scorer-form").submit();
+});
+
+const versionSelect = document.getElementById("detail-version");
+versionSelect?.addEventListener("change", (ev) => {
+  for (const panel of document.querySelectorAll(".detail-version-panel")) {
+    panel.classList.toggle("hidden", panel.dataset.version !== ev.target.value);
+  }
+});
+
+document.getElementById("load-to-editor")?.addEventListener("click", () => {
+  const detail = window.__scorerDetail;
+  if (!detail) return;
+  const versionIndex = Number(document.getElementById("detail-version")?.value || 0);
+  const version = detail.versions[versionIndex];
+  const cfg = version ? version.config : {};
+  document.getElementById("scorer-name").value = detail.scorer.name;
+  document.getElementById("scorer-desc").value = detail.scorer.description || "";
+  const type = cfg.type || detail.scorer.type;
+  document.querySelector(`#scorer-form [data-type-value="${type}"]`)?.click();
+  const setVal = (id, value) => {
+    const el = document.getElementById(id);
+    if (el && value != null) {
+      el.value = value;
+      el.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+  };
+  setVal("scorer-model", cfg.model_id);
+  setVal("scorer-prompt", cfg.prompt_template);
+  setVal("scorer-script", cfg.script_source);
+  setVal("scorer-timeout", cfg.timeout_sec);
+  document.getElementById("scorer-detail-modal")?.classList.add("hidden");
+  document.getElementById("scorer-name")?.focus();
+});
+</script>
+{% endblock %}

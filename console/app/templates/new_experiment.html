@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block title %}New experiment · Console{% endblock %}
+{% block content %}
+<h1 class="page-title">New experiment</h1>
+<p class="muted"><a href="/experiments">← Experiments</a></p>
+
+<form class="stack" method="post" action="/experiments">
+  <section class="form-section">
+    <div class="form-section-head">
+      <h2>Identity</h2>
+      <p>实验名称与本次运行的组合。</p>
+    </div>
+    <div class="stack">
+      <div class="field">
+        <label class="field-label" for="exp-name">Name</label>
+        <input id="exp-name" name="name" required placeholder="例如：exp-001">
+      </div>
+    </div>
+  </section>
+
+  <section class="form-section">
+    <div class="form-section-head">
+      <h2>Composition</h2>
+      <p>数据集、评测对象与评分器。</p>
+    </div>
+    <div class="stack">
+      <div class="field">
+        <label class="field-label" for="exp-dataset">Dataset version</label>
+        <select id="exp-dataset" name="dataset_version_id" required>
+          {% for d in datasets %}
+          <optgroup label="{{ d.name }}">
+            {% for v in dataset_versions[d.id] %}
+            <option value="{{ v.id }}">{{ d.name }} · v{{ v.version_no }}（{{ v.row_count }} 行）</option>
+            {% endfor %}
+          </optgroup>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="field">
+        <label class="field-label" for="exp-profile">Evaluation profile</label>
+        <select id="exp-profile" name="eval_profile_id" required>
+          {% for p in profiles %}
+          <option value="{{ p.id }}">{{ p.name }} v{{ p.version_no }}（{{ p.harness }} · {{ p.model_id }}）</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="field">
+        <span class="field-label">Scorers</span>
+        <div class="check-list">
+          {% for sv in scorer_versions %}
+          <label>
+            <input type="checkbox" name="scorer_version_id" value="{{ sv.id }}">
+            {{ sv.scorer_name }} v{{ sv.version_no }}（{{ sv.scorer_type }}）
+          </label>
+          {% else %}
+          <span class="muted">暂无评分器，先在 Scorers 页创建</span>
+          {% endfor %}
+        </div>
+        <p class="field-hint">可多选，实现代码级判定 + 语义级判定组合。</p>
+      </div>
+    </div>
+  </section>
+
+  <div class="form-actions">
+    <a class="btn outline" href="/experiments">取消</a>
+    <button type="submit">创建</button>
+  </div>
+</form>
+{% endblock %}

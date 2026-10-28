@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Logs · {{ experiment.name }} · Console{% endblock %}
+{% block content %}
+<h1 class="page-title">{{ experiment.name }} · Logs
+  <span class="badge dim">{{ experiment.status }}</span>
+</h1>
+<p class="muted">
+  <a href="/experiments/{{ experiment.id }}">← 实验详情</a>
+  · <a href="/experiments/{{ experiment.id }}/dashboard">Dashboards</a>
+</p>
+
+<table>
+  <thead>
+    <tr><th>任务</th><th class="num">分数</th><th>判定</th><th>失败类别</th><th>Review</th><th class="num">耗时(ms)</th><th class="num">tokens</th></tr>
+  </thead>
+  <tbody>
+    {% for t in tasks %}
+    <tr data-href="/experiments/{{ experiment.id }}/traces/{{ t.row_id }}">
+      <td class="mono"><a href="/experiments/{{ experiment.id }}/traces/{{ t.row_id }}">{{ t.row_id }}</a></td>
+      <td class="num">{{ '%.3f' | format(t.score) if t.score is not none else '—' }}</td>
+      <td>{% if t.verdict %}<span class="badge {{ 'ok' if t.verdict == 'pass' else 'fail' }}">{{ t.verdict }}</span>{% else %}—{% endif %}</td>
+      <td class="mono muted">{{ t.failure_category or '—' }}</td>
+      <td class="mono muted">{{ t.review_verdict or '未复核' }}</td>
+      <td class="num">{{ t.duration_ms or '—' }}</td>
+      <td class="num">{{ ((t.n_input_tokens or 0) + (t.n_output_tokens or 0)) or '—' }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="7" class="muted">暂无任务记录</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

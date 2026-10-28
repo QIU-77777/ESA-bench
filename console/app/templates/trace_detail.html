@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}Trace {{ task.row_id }} · Console{% endblock %}
+{% block content %}
+<h1 class="page-title">Trace · {{ task.row_id }}
+  <span class="badge {{ 'ok' if task.verdict == 'pass' else 'fail' }}">{{ task.verdict or task.status }}</span>
+</h1>
+<p class="muted">
+  <a href="/experiments/{{ experiment.id }}/logs">← Logs</a>
+  · <a href="/experiments/{{ experiment.id }}">实验详情</a>
+</p>
+
+<div class="trace-layout">
+  <aside class="trace-side">
+    <div class="section-title">任务输入</div>
+    <pre class="snapshot">{{ detail.input }}</pre>
+    <div class="section-title">预期结果</div>
+    <pre class="snapshot">{{ detail.expected }}</pre>
+    {% if detail.rubric %}
+    <div class="section-title">评分标准</div>
+    <pre class="snapshot">{{ detail.rubric }}</pre>
+    {% endif %}
+    <div class="section-title">标签</div>
+    <p class="mono muted">{{ (detail.tags | join(', ')) or '—' }}</p>
+
+    <div class="section-title">评分结果</div>
+    {% if detail.aggregate %}
+    <pre class="snapshot json">{{ detail.aggregate | pretty_json }}</pre>
+    {% else %}
+    <p class="muted">无评分记录</p>
+    {% endif %}
+
+    {% if detail.per_scorer %}
+    <div class="section-title">各评分器</div>
+    {% for s in detail.per_scorer %}
+    <p class="mono">{{ s.name }} <span class="badge">{{ s.type }}</span> v{{ s.version_no }}</p>
+    <pre class="snapshot json">{{ s.result | pretty_json }}</pre>
+    {% endfor %}
+    {% endif %}
+
+    <div class="section-title">人工复核</div>
+    {% if detail.review %}
+    <p><span class="badge">{{ detail.review.overall_verdict }}</span> <span class="muted">{{ detail.review.updated_at }}</span></p>
+    <pre class="snapshot">{{ detail.review.note or '（无备注）' }}</pre>
+    {% else %}
+    <p class="muted">未复核</p>
+    {% endif %}
+  </aside>
+
+  <div class="trace-view">
+    <div class="section-title">执行过程（Harbor view）</div>
+    {% if detail.view_url %}
+    <iframe class="harbor-frame" src="/harbor-view/jobs/{{ experiment.job_name }}/trials/{{ task.harbor_trial_name }}"></iframe>
+    {% else %}
+    <p class="muted">该任务还没有运行记录</p>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

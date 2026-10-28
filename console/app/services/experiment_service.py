@@ -23,7 +23,12 @@ class ExperimentError(ValueError):
 _RUNNING: dict[int, subprocess.Popen] = {}
 
 
-def create_experiment(name: str, dataset_version_id: int, eval_profile_id: int) -> int:
+def create_experiment(
+    name: str,
+    dataset_version_id: int,
+    eval_profile_id: int,
+    scorer_version_ids: list[int] | None = None,
+) -> int:
     if not name.strip():
         raise ExperimentError("实验名称不能为空")
     if dataset_service.get_version(dataset_version_id) is None:
@@ -36,7 +41,13 @@ def create_experiment(name: str, dataset_version_id: int, eval_profile_id: int) 
             " VALUES (?,?,?,?)",
             (name.strip(), dataset_version_id, eval_profile_id, utc_now()),
         )
-        return int(cur.lastrowid)
+        experiment_id = int(cur.lastrowid)
+        for version_id in scorer_version_ids or []:
+            conn.execute(
+                "INSERT OR IGNORE INTO experiment_scorers(experiment_id, scorer_version_id) VALUES (?,?)",
+                (experiment_id, version_id),
+            )
+        return experiment_id
 
 
 def get_experiment(experiment_id: int) -> dict | None:
@@ -62,10 +73,88 @@ def list_experiments() -> list[dict]:
 def list_tasks(experiment_id: int) -> list[dict]:
     with connect() as conn:
         rows = conn.execute(
-            "SELECT * FROM experiment_tasks WHERE experiment_id=? ORDER BY row_id",
+            "SELECT t.*, sc.value AS score, sc.verdict, sc.failure_category,"
+            " sc.reason AS score_reason, rv.overall_verdict AS review_verdict"
+            " FROM experiment_tasks t"
+            " LEFT JOIN scores sc ON sc.experiment_task_id = t.id AND sc.scorer_version_id = 0"
+            " LEFT JOIN reviews rv ON rv.experiment_task_id = t.id"
+            " WHERE t.experiment_id=? ORDER BY t.row_id",
             (experiment_id,),
         ).fetchall()
         return rows_to_dicts(rows)
+
+
+def delete_experiment(experiment_id: int) -> None:
+    """Delete an experiment and everything attached to it."""
+    with connect() as conn:
+        experiment = conn.execute(
+            "SELECT * FROM experiments WHERE id=?", (experiment_id,)
+        ).fetchone()
+        if experiment is None:
+            raise ExperimentError(f"实验不存在：{experiment_id}")
+        task_ids = [
+            r["id"]
+            for r in conn.execute(
+                "SELECT id FROM experiment_tasks WHERE experiment_id=?", (experiment_id,)
+            ).fetchall()
+        ]
+        for task_id in task_ids:
+            conn.execute("DELETE FROM scores WHERE experiment_task_id=?", (task_id,))
+            conn.execute("DELETE FROM reviews WHERE experiment_task_id=?", (task_id,))
+        conn.execute("DELETE FROM experiment_tasks WHERE experiment_id=?", (experiment_id,))
+        conn.execute("DELETE FROM experiment_scorers WHERE experiment_id=?", (experiment_id,))
+        conn.execute("DELETE FROM baselines WHERE experiment_id=?", (experiment_id,))
+        conn.execute("DELETE FROM experiments WHERE id=?", (experiment_id,))
+
+
+def duplicate_experiment(experiment_id: int, name: str) -> int:
+    """Copy an experiment's bindings into a fresh draft."""
+    source = get_experiment(experiment_id)
+    if source is None:
+        raise ExperimentError(f"实验不存在：{experiment_id}")
+    with connect() as conn:
+        if conn.execute("SELECT 1 FROM experiments WHERE name=?", (name.strip(),)).fetchone():
+            raise ExperimentError(f"实验名称已存在：{name}")
+        cur = conn.execute(
+            "INSERT INTO experiments(name, dataset_version_id, eval_profile_id, created_at)"
+            " VALUES (?,?,?,?)",
+            (name.strip(), source["dataset_version_id"], source["eval_profile_id"], utc_now()),
+        )
+        new_id = int(cur.lastrowid)
+        conn.execute(
+            "INSERT INTO experiment_scorers(experiment_id, scorer_version_id)"
+            " SELECT ?, scorer_version_id FROM experiment_scorers WHERE experiment_id=?",
+            (new_id, experiment_id),
+        )
+        return new_id
+
+
+def update_draft(
+    experiment_id: int,
+    dataset_version_id: int,
+    eval_profile_id: int,
+    scorer_version_ids: list[int],
+) -> None:
+    """Rebind a draft experiment before it runs."""
+    with connect() as conn:
+        experiment = conn.execute(
+            "SELECT * FROM experiments WHERE id=?", (experiment_id,)
+        ).fetchone()
+        if experiment is None:
+            raise ExperimentError(f"实验不存在：{experiment_id}")
+        if experiment["status"] != "draft":
+            raise ExperimentError(f"仅草稿状态可编辑，当前状态：{experiment['status']}")
+        conn.execute(
+            "UPDATE experiments SET dataset_version_id=?, eval_profile_id=? WHERE id=?",
+            (dataset_version_id, eval_profile_id, experiment_id),
+        )
+        conn.execute("DELETE FROM experiment_scorers WHERE experiment_id=?", (experiment_id,))
+        for version_id in scorer_version_ids:
+            conn.execute(
+                "INSERT OR IGNORE INTO experiment_scorers(experiment_id, scorer_version_id)"
+                " VALUES (?,?)",
+                (experiment_id, version_id),
+            )
 
 
 def start(experiment_id: int) -> None:
@@ -153,11 +242,49 @@ def _execute(experiment_id: int) -> None:
         )
     )
 
-    # 3. Immutable snapshot.
+    # 3. Scorer configs consumed by ConsoleVerifier inside each trial.
+    scorer_config_path: Path | None = None
+    scorer_snapshot: list[dict] = []
+    with connect() as conn:
+        scorer_rows = conn.execute(
+            "SELECT sv.id, sv.version_no, sv.config, s.name AS scorer_name, s.type AS scorer_type"
+            " FROM experiment_scorers es"
+            " JOIN scorer_versions sv ON sv.id = es.scorer_version_id"
+            " JOIN scorers s ON s.id = sv.scorer_id"
+            " WHERE es.experiment_id=? ORDER BY sv.id",
+            (experiment_id,),
+        ).fetchall()
+    if scorer_rows:
+        scorer_config_path = config.GENERATED_DIR / "scorers" / f"exp-{experiment_id}.json"
+        scorer_config_path.parent.mkdir(parents=True, exist_ok=True)
+        entries = []
+        for row in scorer_rows:
+            parsed = json.loads(row["config"])
+            entries.append(
+                {"scorer_version_id": row["id"], "name": row["scorer_name"], "scorer": parsed}
+            )
+            scorer_snapshot.append(
+                {
+                    "name": row["scorer_name"],
+                    "type": row["scorer_type"],
+                    "version_no": row["version_no"],
+                    "scorer_version_id": row["id"],
+                    "config": parsed,
+                }
+            )
+        scorer_config_path.write_text(
+            json.dumps({"scorers": entries}, ensure_ascii=False, indent=2)
+        )
+
+    # 4. Immutable snapshot.
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
     job_name = f"exp-{experiment_id}-{timestamp}"
     job_config_archive = config.SNAPSHOTS_DIR / f"{job_name}-job.yaml"
     _archive_job_config(bench_path, profile, job_config_archive)
+    run_command = harbor_adapter.build_run_command(
+        bench_path, profile["harness"], profile["model_id"], job_name,
+        str(scorer_config_path) if scorer_config_path else None,
+    )
     snapshot = {
         "experiment_id": experiment_id,
         "created_at": utc_now(),
@@ -174,11 +301,10 @@ def _execute(experiment_id: int) -> None:
             "model_id": profile["model_id"],
             "params": json.loads(profile["params"]),
         },
+        "scorer": scorer_snapshot,
         "bench_config": str(bench_path.relative_to(config.REPO_ROOT)),
         "rendered_job_config": str(job_config_archive.relative_to(config.REPO_ROOT)),
-        "run_command": " ".join(
-            harbor_adapter.build_run_command(bench_path, profile["harness"], profile["model_id"], job_name)
-        ),
+        "run_command": " ".join(run_command),
         "environment": {"git_commit": _git_commit(), "harbor_version": _harbor_version()},
     }
     snapshot_path = config.SNAPSHOTS_DIR / f"{job_name}-snapshot.json"
@@ -193,21 +319,23 @@ def _execute(experiment_id: int) -> None:
             [(experiment_id, r["row_id"]) for r in rows],
         )
 
-    # 4. Launch run.sh.
-    command = harbor_adapter.build_run_command(
-        bench_path, profile["harness"], profile["model_id"], job_name
-    )
+    # 5. Launch run.sh.
     process = harbor_adapter.start_run(
-        command, config.REPORTS_DIR / f"run-{experiment_id}.log"
+        run_command, config.REPORTS_DIR / f"run-{experiment_id}.log"
     )
     _RUNNING[experiment_id] = process
     return_code = process.wait()
     _RUNNING.pop(experiment_id, None)
 
-    # 5. Finalize per-task results.
+    # 6. Finalize per-task results and scores.
     summaries = harbor_adapter.read_trial_summaries(job_name)
     with connect() as conn:
         for summary in summaries:
+            score_data = harbor_adapter.read_trial_scores(summary["trial_path"])
+            aggregate, per_scorer = _split_score_data(score_data)
+            status = summary["status"]
+            if status == "done" and aggregate and aggregate.get("error"):
+                status = "judge_failed"
             conn.execute(
                 "UPDATE experiment_tasks SET harbor_trial_name=?, harbor_trial_path=?, status=?,"
                 " duration_ms=?, n_input_tokens=?, n_output_tokens=?"
@@ -215,7 +343,7 @@ def _execute(experiment_id: int) -> None:
                 (
                     summary["trial_name"],
                     summary["trial_path"],
-                    summary["status"],
+                    status,
                     summary["duration_ms"],
                     summary["n_input_tokens"],
                     summary["n_output_tokens"],
@@ -223,6 +351,18 @@ def _execute(experiment_id: int) -> None:
                     summary["row_id"],
                 ),
             )
+            task_row = conn.execute(
+                "SELECT id FROM experiment_tasks WHERE experiment_id=? AND row_id=?",
+                (experiment_id, summary["row_id"]),
+            ).fetchone()
+            if not task_row:
+                continue
+            task_id = task_row["id"]
+            if aggregate:
+                _insert_score(conn, task_id, 0, aggregate)
+            for version_id, data in per_scorer.items():
+                _insert_score(conn, task_id, version_id, data)
+
     if return_code != 0:
         raise ExperimentError(f"run.sh 退出码 {return_code}，日志见 workspace/reports/run-{experiment_id}.log")
     with connect() as conn:
@@ -230,6 +370,36 @@ def _execute(experiment_id: int) -> None:
             "UPDATE experiments SET status='completed', finished_at=? WHERE id=?",
             (utc_now(), experiment_id),
         )
+
+
+def _split_score_data(score_data: dict | None) -> tuple[dict | None, dict[int, dict]]:
+    if not score_data:
+        return None, {}
+    if "aggregate" in score_data:
+        per_scorer: dict[int, dict] = {}
+        for key, data in (score_data.get("results") or {}).items():
+            try:
+                per_scorer[int(key)] = data
+            except (TypeError, ValueError):
+                continue
+        return score_data["aggregate"], per_scorer
+    return score_data, {}
+
+
+def _insert_score(conn, task_id: int, scorer_version_id: int, data: dict) -> None:
+    conn.execute(
+        "INSERT OR REPLACE INTO scores(experiment_task_id, scorer_version_id,"
+        " value, verdict, failure_category, reason, created_at) VALUES (?,?,?,?,?,?,?)",
+        (
+            task_id,
+            scorer_version_id,
+            float(data.get("score", 0.0)),
+            str(data.get("verdict", "fail")),
+            data.get("failure_category"),
+            json.dumps(data, ensure_ascii=False),
+            utc_now(),
+        ),
+    )
 
 
 def _archive_job_config(bench_path: Path, profile, out_path: Path) -> None:

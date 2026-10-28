@@ -72,7 +72,65 @@ CREATE TABLE IF NOT EXISTS experiment_tasks (
   n_output_tokens INTEGER,
   UNIQUE(experiment_id, row_id)
 );
+CREATE TABLE IF NOT EXISTS scorers (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  type TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS scorer_versions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  scorer_id INTEGER NOT NULL REFERENCES scorers(id),
+  version_no INTEGER NOT NULL,
+  config TEXT NOT NULL DEFAULT '{}',
+  change_note TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL,
+  UNIQUE(scorer_id, version_no)
+);
+CREATE TABLE IF NOT EXISTS scorer_tryouts (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  scorer_draft TEXT NOT NULL DEFAULT '{}',
+  trace_ref TEXT NOT NULL DEFAULT '',
+  output TEXT NOT NULL DEFAULT '{}',
+  duration_ms INTEGER,
+  created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS scores (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  experiment_task_id INTEGER NOT NULL REFERENCES experiment_tasks(id),
+  scorer_version_id INTEGER NOT NULL DEFAULT 0,
+  value REAL NOT NULL DEFAULT 0,
+  verdict TEXT NOT NULL DEFAULT 'fail',
+  failure_category TEXT,
+  reason TEXT NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL,
+  UNIQUE(experiment_task_id, scorer_version_id)
+);
+CREATE TABLE IF NOT EXISTS experiment_scorers (
+  experiment_id INTEGER NOT NULL REFERENCES experiments(id),
+  scorer_version_id INTEGER NOT NULL REFERENCES scorer_versions(id),
+  PRIMARY KEY(experiment_id, scorer_version_id)
+);
+CREATE TABLE IF NOT EXISTS reviews (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  experiment_task_id INTEGER NOT NULL UNIQUE REFERENCES experiment_tasks(id),
+  dims TEXT NOT NULL DEFAULT '{}',
+  overall_verdict TEXT NOT NULL DEFAULT 'suspect',
+  note TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS baselines (
+  dataset_id INTEGER NOT NULL UNIQUE,
+  experiment_id INTEGER NOT NULL REFERENCES experiments(id),
+  set_at TEXT NOT NULL
+);
 """
+
+_MIGRATIONS = (
+    "ALTER TABLE experiments ADD COLUMN scorer_version_id INTEGER REFERENCES scorer_versions(id)",
+    "ALTER TABLE scorers ADD COLUMN description TEXT NOT NULL DEFAULT ''",
+)
 
 
 def utc_now() -> str:
@@ -89,7 +147,41 @@ def connect() -> sqlite3.Connection:
 
 def init_db() -> None:
     with connect() as conn:
+        row = conn.execute(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='scores'"
+        ).fetchone()
+        if row and "UNIQUE(experiment_task_id)" in row["sql"]:
+            conn.execute("ALTER TABLE scores RENAME TO scores_legacy")
+            conn.execute(
+                "CREATE TABLE scores ("
+                " id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                " experiment_task_id INTEGER NOT NULL REFERENCES experiment_tasks(id),"
+                " scorer_version_id INTEGER NOT NULL DEFAULT 0,"
+                " value REAL NOT NULL DEFAULT 0,"
+                " verdict TEXT NOT NULL DEFAULT 'fail',"
+                " failure_category TEXT,"
+                " reason TEXT NOT NULL DEFAULT '{}',"
+                " created_at TEXT NOT NULL,"
+                " UNIQUE(experiment_task_id, scorer_version_id))"
+            )
+            conn.execute(
+                "INSERT INTO scores(experiment_task_id, scorer_version_id, value, verdict,"
+                " failure_category, reason, created_at)"
+                " SELECT experiment_task_id, COALESCE(scorer_version_id, 0), value, verdict,"
+                " failure_category, reason, created_at FROM scores_legacy"
+            )
+            conn.execute("DROP TABLE scores_legacy")
         conn.executescript(SCHEMA)
+        for statement in _MIGRATIONS:
+            try:
+                conn.execute(statement)
+            except sqlite3.OperationalError:
+                pass  # column already exists
+        conn.execute(
+            "INSERT OR IGNORE INTO experiment_scorers(experiment_id, scorer_version_id)"
+            " SELECT id, scorer_version_id FROM experiments"
+            " WHERE scorer_version_id IS NOT NULL"
+        )
 
 
 def rows_to_dicts(rows: list[sqlite3.Row]) -> list[dict]:

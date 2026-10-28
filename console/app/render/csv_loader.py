@@ -8,6 +8,70 @@ import json
 
 REQUIRED_COLUMNS = ("id", "input")
 OPTIONAL_COLUMNS = ("expected", "tags", "metadata", "rubric")
+ROW_FIELDS = ("row_id", "input", "expected", "tags", "metadata", "rubric")
+
+
+def validate_rows(rows: list[dict]) -> list[str]:
+    """Validate row dicts; return row-level error messages (empty = valid)."""
+    errors: list[str] = []
+    seen_ids: set[str] = set()
+    for index, row in enumerate(rows, start=1):
+        row_id = str(row.get("row_id") or "").strip()
+        input_text = str(row.get("input") or "").strip()
+        if not row_id:
+            errors.append(f"第 {index} 行：id 为空")
+            continue
+        if row_id in seen_ids:
+            errors.append(f"第 {index} 行：id 重复（{row_id}）")
+            continue
+        if not input_text:
+            errors.append(f"第 {index} 行：input 为空")
+            continue
+        metadata = row.get("metadata")
+        if isinstance(metadata, str):
+            metadata_raw = metadata.strip()
+            metadata = {}
+            if metadata_raw:
+                try:
+                    parsed = json.loads(metadata_raw)
+                    if not isinstance(parsed, dict):
+                        raise ValueError("metadata must be a JSON object")
+                    metadata = parsed
+                except (json.JSONDecodeError, ValueError) as exc:
+                    errors.append(f"第 {index} 行：metadata 不是合法 JSON 对象（{exc}）")
+                    continue
+        elif metadata is None:
+            metadata = {}
+        elif not isinstance(metadata, dict):
+            errors.append(f"第 {index} 行：metadata 不是 JSON 对象")
+            continue
+        seen_ids.add(row_id)
+    if not rows and not errors:
+        errors.append("没有数据行")
+    return errors
+
+
+def normalize_rows(rows: list[dict]) -> list[dict]:
+    """Coerce row dicts into the canonical dataset row shape."""
+    result = []
+    for row in rows:
+        metadata = row.get("metadata")
+        if isinstance(metadata, str):
+            metadata = json.loads(metadata) if metadata.strip() else {}
+        tags = row.get("tags")
+        if isinstance(tags, str):
+            tags = [t.strip() for t in tags.split(",") if t.strip()]
+        result.append(
+            {
+                "row_id": str(row.get("row_id") or "").strip(),
+                "input": str(row.get("input") or "").strip(),
+                "expected": str(row.get("expected") or "").strip(),
+                "tags": list(tags or []),
+                "metadata": dict(metadata or {}),
+                "rubric": str(row.get("rubric") or "").strip(),
+            }
+        )
+    return result
 
 
 def parse_csv(text: str) -> tuple[list[dict], list[str]]:

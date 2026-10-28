@@ -26,6 +26,7 @@ BENCH_FILE=""
 HARNESS_SLUG=""
 MODEL_SLUG=""
 JOB_SLUG=""
+SCORER_CONFIG=""
 JOB_CONFIG="${JOB_CONFIG:-}"
 JOB_NAME="${JOB_NAME:-$(date '+%Y-%m-%d__%H-%M-%S')}"
 
@@ -56,6 +57,7 @@ while [ "$#" -gt 0 ]; do
         --model) [ "$#" -ge 2 ] || { echo "ERROR: --model needs a value" >&2; exit 1; }; MODEL_SLUG="$2"; shift 2 ;;
         --job) [ "$#" -ge 2 ] || { echo "ERROR: --job needs a value" >&2; exit 1; }; JOB_SLUG="$2"; shift 2 ;;
         --job-name) [ "$#" -ge 2 ] || { echo "ERROR: --job-name needs a value" >&2; exit 1; }; JOB_NAME="$2"; shift 2 ;;
+        --scorer-config) [ "$#" -ge 2 ] || { echo "ERROR: --scorer-config needs a value" >&2; exit 1; }; SCORER_CONFIG="$2"; shift 2 ;;
         --dry-run) DRY_RUN=1; shift ;;
         --help|-h) usage; exit 0 ;;
         *) echo "ERROR: unknown argument: $1" >&2; usage >&2; exit 1 ;;
@@ -114,6 +116,14 @@ else
 fi
 [ -n "${JOB_SOURCE_CONFIG:-}" ] && RENDER_ARGS+=(--job-config "$JOB_SOURCE_CONFIG")
 "$PY" scripts/render-job.py "${RENDER_ARGS[@]}"
+
+VERIFIER_ARGS=()
+if [ -n "$SCORER_CONFIG" ]; then
+    VERIFIER_ARGS=(
+        --verifier harbor_test_verifier:ConsoleVerifier
+        --verifier-kwarg "scorer_config=$SCORER_CONFIG"
+    )
+fi
 
 # ── 1) Combination declaration + .env group mapping ─────────────────────
 # run.sh reads both keys; harbor's JobConfig drops them (they are not
@@ -339,7 +349,8 @@ if [ "$DRY_RUN" = "1" ]; then
     echo "  harness    : $HARNESS_IMAGE  (v$HARNESS_VERSION, read-only mount at $HARNESS_MOUNT_PATH)"
     echo "  gateway    : $GATEWAY_URL  (${_prefix}_API_KEY ending ${API_KEY: -4})"
     echo "  docker api : $_server_api"
-    PYTHONPATH="$PWD" .venv/bin/harbor run -c "$RUNTIME_JOB_CONFIG" --job-name "$JOB_NAME" --print-config >/dev/null 2>&1 \
+    PYTHONPATH="$PWD" .venv/bin/harbor run -c "$RUNTIME_JOB_CONFIG" --job-name "$JOB_NAME" \
+        ${VERIFIER_ARGS[@]+"${VERIFIER_ARGS[@]}"} --print-config >/dev/null 2>&1 \
         && echo "  harbor     : config accepted (schema + agent import path)" \
         || fail "harbor rejected the job config; run manually:
   PYTHONPATH=\$PWD .venv/bin/harbor run -c $JOB_CONFIG --print-config"
@@ -352,6 +363,7 @@ fi
 # from the exported environment. The key enters under both protocol names;
 # each harness reads the one its protocol expects.
 PYTHONPATH="$PWD" .venv/bin/harbor run -c "$RUNTIME_JOB_CONFIG" --job-name "$JOB_NAME" \
+    ${VERIFIER_ARGS[@]+"${VERIFIER_ARGS[@]}"} \
     --agent-env "${_prefix}_BASE_URL=${GATEWAY_URL}" \
     --agent-env "${_prefix}_API_KEY=${API_KEY}" \
     --agent-env "OPENAI_API_KEY=${API_KEY:-}" \

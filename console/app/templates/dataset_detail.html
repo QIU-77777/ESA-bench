@@ -1,58 +1,287 @@
 {% extends "base.html" %}
 {% block title %}{{ dataset.name }} · Console{% endblock %}
 {% block content %}
-<h1 class="page-title">{{ dataset.name }} <span class="badge">{{ dataset.env_template }}</span></h1>
-<p class="muted">{{ dataset.description }}</p>
+<p class="muted"><a href="/datasets" id="back-link">← Datasets</a></p>
 
-<div class="card">
-  <div class="section-title">保存新版本</div>
-  <form class="stack" method="post" action="/datasets/{{ dataset.id }}/versions">
-    <label>CSV 文件（列：id, input, expected, tags, metadata, rubric）
-      <input type="file" name="csv_file" accept=".csv,text/csv" required>
-    </label>
-    <label>变更说明
-      <input name="change_note" placeholder="本次变更内容">
-    </label>
-    <button class="primary" type="submit">校验并保存版本</button>
+<h1 class="page-title">{{ dataset.name }}</h1>
+
+<div class="row-actions" style="margin: 1rem 0">
+  <button type="button" class="hidden" id="edit-save">保存</button>
+  <button type="button" class="outline hidden" id="open-save-as">另存</button>
+  <a class="btn outline" href="/datasets/{{ dataset.id }}/versions/{{ versions[0].id }}/export" style="margin-left:auto">导出 CSV</a>
+  <form method="post" action="/datasets/{{ dataset.id }}/delete">
+    <button type="button" class="destructive"
+      data-confirm-title="删除数据集"
+      data-confirm-message="将删除数据集「{{ dataset.name }}」及其任务行。"
+      data-confirm-label="删除">删除</button>
   </form>
 </div>
 
-<div class="section-title">版本历史</div>
-<table>
-  <thead>
-    <tr><th>版本</th><th class="num">任务数</th><th>内容哈希</th><th>变更说明</th><th>保存时间</th></tr>
-  </thead>
-  <tbody>
-    {% for v in versions %}
-    <tr>
-      <td class="mono">v{{ v.version_no }}</td>
-      <td class="num">{{ v.row_count }}</td>
-      <td class="mono muted">{{ v.content_hash[:18] }}…</td>
-      <td>{{ v.change_note }}</td>
-      <td class="mono muted">{{ v.created_at }}</td>
-    </tr>
-    {% else %}
-    <tr><td colspan="5" class="muted">暂无版本，先上传一份 CSV</td></tr>
-    {% endfor %}
-  </tbody>
-</table>
+<div class="alert hidden" id="rows-errors"></div>
 
-{% if rows %}
-<div class="section-title">当前版本（v{{ versions[0].version_no }}）的任务行</div>
-<table>
-  <thead>
-    <tr><th>id</th><th>input</th><th>expected</th><th>tags</th></tr>
-  </thead>
-  <tbody>
-    {% for r in rows %}
-    <tr>
-      <td class="mono">{{ r.row_id }}</td>
-      <td>{{ r.input[:80] }}{% if r.input|length > 80 %}…{% endif %}</td>
-      <td class="muted">{{ r.expected[:60] }}</td>
-      <td class="mono muted">{{ r.tags }}</td>
-    </tr>
-    {% endfor %}
-  </tbody>
-</table>
-{% endif %}
+<div class="section-title">基本信息</div>
+<div class="field-grid" style="margin-bottom:1.5rem">
+  <div class="field">
+    <label class="field-label" for="meta-name">名称</label>
+    <input id="meta-name" value="{{ dataset.name }}">
+  </div>
+  <div class="field">
+    <label class="field-label" for="meta-env-select">任务环境模板</label>
+    <select id="meta-env-select">
+      <option value="standard" {% if dataset.env_template == 'standard' %}selected{% endif %}>standard（单容器任务）</option>
+      <option value="esa" {% if dataset.env_template == 'esa' %}selected{% endif %}>esa（含 mock-system / agent-api / redis）</option>
+    </select>
+  </div>
+</div>
+<div class="field" style="margin-bottom:1.5rem">
+  <label class="field-label" for="meta-desc">说明</label>
+  <input id="meta-desc" value="{{ dataset.description }}" placeholder="可留空">
+</div>
+
+<div class="row-actions" style="margin-bottom: 0.75rem">
+  <div class="section-title" style="margin:0">任务行</div>
+  <button type="button" class="outline" id="rows-add" style="margin-left:auto">＋ 新增行</button>
+</div>
+<div id="rows-host"></div>
+
+<div class="modal-overlay hidden" id="unsaved-modal">
+  <div class="modal">
+    <header>
+      <span>未保存的更改</span>
+      <a href="javascript:void(0)" class="modal-close" data-close="unsaved-modal">×</a>
+    </header>
+    <p>数据集有变动，是否要保存？</p>
+    <div class="row-actions">
+      <button type="button" class="outline" data-close="unsaved-modal">取消</button>
+      <button type="button" class="outline" id="leave-without-save">不保存</button>
+      <button type="button" id="save-and-leave">保存</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay hidden" id="save-as-modal">
+  <div class="modal">
+    <header>
+      <span>另存数据集</span>
+      <a href="javascript:void(0)" class="modal-close" data-close="save-as-modal">×</a>
+    </header>
+    <div class="field">
+      <label class="field-label" for="sa-name">名称</label>
+      <input id="sa-name" required placeholder="新数据集名称">
+    </div>
+    <div class="field">
+      <label class="field-label" for="sa-desc">说明</label>
+      <input id="sa-desc" placeholder="可留空">
+    </div>
+    <div class="field">
+      <label class="field-label" for="sa-env">任务环境模板</label>
+      <select id="sa-env">
+        <option value="standard" {% if dataset.env_template == 'standard' %}selected{% endif %}>standard（单容器任务）</option>
+        <option value="esa" {% if dataset.env_template == 'esa' %}selected{% endif %}>esa（含 mock-system / agent-api / redis）</option>
+      </select>
+    </div>
+    <div class="row-actions">
+      <button type="button" class="outline" data-close="save-as-modal">取消</button>
+      <button type="button" id="save-as-confirm">确认另存</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+const datasetId = {{ dataset.id }};
+let rowsData = {{ rows | tojson }};
+const rowsHost = document.getElementById("rows-host");
+
+const esc = (s) => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;");
+
+function normalizeTags(tags) {
+  if (Array.isArray(tags)) return tags.join(", ");
+  const text = String(tags ?? "").trim();
+  if (text.startsWith("[")) {
+    try {
+      const parsed = JSON.parse(text);
+      if (Array.isArray(parsed)) return parsed.join(", ");
+    } catch {}
+  }
+  return text;
+}
+
+function collectState() {
+  return JSON.stringify({
+    name: document.getElementById("meta-name").value.trim(),
+    description: document.getElementById("meta-desc").value,
+    env: document.getElementById("meta-env-select").value,
+    rows: rowsData.map((r) => ({
+      row_id: r.row_id,
+      input: r.input,
+      expected: r.expected,
+      tags: normalizeTags(r.tags),
+      metadata: typeof r.metadata === "string" ? r.metadata : JSON.stringify(r.metadata ?? {}),
+      rubric: r.rubric,
+    })),
+  });
+}
+
+let baseline = "";
+function updateDirty() {
+  const dirty = collectState() !== baseline;
+  document.getElementById("edit-save").classList.toggle("hidden", !dirty);
+  document.getElementById("open-save-as").classList.toggle("hidden", !dirty);
+  return dirty;
+}
+
+document.addEventListener("input", (ev) => {
+  if (ev.target.closest("#rows-host, .field")) updateDirty();
+});
+
+function renderRows() {
+  const body = rowsData.map((r, i) => {
+    const tags = Array.isArray(r.tags) ? r.tags.join(", ") : (r.tags ?? "");
+    return `<tr class="row-summary" data-index="${i}">
+      <td class="mono">${esc(r.row_id)}</td>
+      <td>${esc((r.input ?? "").slice(0, 80))}${(r.input ?? "").length > 80 ? "…" : ""}</td>
+      <td class="muted">${esc((r.expected ?? "").slice(0, 60))}</td>
+      <td class="mono muted">${esc(tags) || "—"}</td>
+      <td><div class="row-actions"><button type="button" class="outline row-edit" data-index="${i}">编辑</button><button type="button" class="outline row-remove" data-index="${i}">删除</button></div></td>
+    </tr>`;
+  }).join("");
+  rowsHost.innerHTML = `
+    <table>
+      <thead><tr><th>id</th><th>input</th><th>expected</th><th>tags</th><th></th></tr></thead>
+      <tbody>${body || '<tr><td colspan="5" class="muted">暂无任务行</td></tr>'}</tbody>
+    </table>`;
+  rowsHost.querySelectorAll(".row-remove").forEach((btn) =>
+    btn.addEventListener("click", () => {
+      rowsData.splice(Number(btn.dataset.index), 1);
+      renderRows();
+      updateDirty();
+    })
+  );
+  rowsHost.querySelectorAll(".row-edit").forEach((btn) =>
+    btn.addEventListener("click", () => expandRowEditor(Number(btn.dataset.index)))
+  );
+}
+
+function expandRowEditor(index) {
+  const r = rowsData[index] || { row_id: "", input: "", expected: "", tags: "", metadata: {}, rubric: "" };
+  const tags = Array.isArray(r.tags) ? r.tags.join(", ") : (r.tags ?? "");
+  const metadata = typeof r.metadata === "string" ? r.metadata : JSON.stringify(r.metadata ?? {});
+  const tr = rowsHost.querySelector(`tr.row-summary[data-index="${index}"]`);
+  const editor = document.createElement("tr");
+  editor.className = "row-editor";
+  editor.innerHTML = `
+    <td colspan="5">
+      <div class="field-grid">
+        <div class="field"><label class="field-label">id</label><input class="row-id mono" value="${esc(r.row_id)}"></div>
+        <div class="field"><label class="field-label">tags</label><input class="row-tags mono" value="${esc(tags)}"></div>
+      </div>
+      <div class="field"><label class="field-label">input</label><textarea class="row-input" rows="3">${esc(r.input)}</textarea></div>
+      <div class="field"><label class="field-label">expected</label><textarea class="row-expected" rows="2">${esc(r.expected)}</textarea></div>
+      <div class="field"><label class="field-label">metadata</label><textarea class="row-metadata mono" rows="2">${esc(metadata)}</textarea></div>
+      <div class="field"><label class="field-label">rubric</label><textarea class="row-rubric" rows="2">${esc(r.rubric)}</textarea></div>
+      <div class="row-actions"><button type="button" class="outline row-collapse">收起</button></div>
+    </td>`;
+  tr.after(editor);
+  editor.querySelector(".row-collapse").addEventListener("click", () => {
+    rowsData[index] = readRowEditor(editor);
+    renderRows();
+    updateDirty();
+  });
+}
+
+function readRowEditor(editor) {
+  return {
+    row_id: editor.querySelector(".row-id").value.trim(),
+    input: editor.querySelector(".row-input").value,
+    expected: editor.querySelector(".row-expected").value,
+    tags: editor.querySelector(".row-tags").value,
+    metadata: editor.querySelector(".row-metadata").value,
+    rubric: editor.querySelector(".row-rubric").value,
+  };
+}
+
+function collectOpenEditors() {
+  rowsHost.querySelectorAll("tr.row-editor").forEach((editor) => {
+    const index = Number(editor.previousElementSibling.dataset.index);
+    rowsData[index] = readRowEditor(editor);
+  });
+}
+
+async function saveChanges() {
+  collectOpenEditors();
+  const payload = {
+    meta: {
+      name: document.getElementById("meta-name").value.trim(),
+      description: document.getElementById("meta-desc").value,
+      env_template: document.getElementById("meta-env-select").value,
+    },
+    rows: rowsData,
+  };
+  const response = await fetch(`/datasets/${datasetId}/versions/rows`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const result = await response.json();
+  if (result.ok) {
+    location.reload();
+    return false;
+  }
+  const errors = document.getElementById("rows-errors");
+  errors.textContent = (result.errors || ["保存失败"]).join("\n");
+  errors.classList.remove("hidden");
+  return true;
+}
+
+document.getElementById("rows-add")?.addEventListener("click", () => {
+  collectOpenEditors();
+  rowsData.push({ row_id: "", input: "", expected: "", tags: "", metadata: {}, rubric: "" });
+  renderRows();
+  expandRowEditor(rowsData.length - 1);
+  updateDirty();
+});
+document.getElementById("edit-save")?.addEventListener("click", saveChanges);
+document.getElementById("open-save-as")?.addEventListener("click", () => {
+  document.getElementById("save-as-modal").classList.remove("hidden");
+});
+document.getElementById("save-as-confirm")?.addEventListener("click", async () => {
+  collectOpenEditors();
+  const response = await fetch(`/datasets/${datasetId}/save-as`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      name: document.getElementById("sa-name").value.trim(),
+      description: document.getElementById("sa-desc").value,
+      env_template: document.getElementById("sa-env").value,
+      rows: rowsData,
+    }),
+  });
+  const result = await response.json();
+  if (result.ok) {
+    window.location.href = `/datasets/${result.dataset_id}`;
+    return;
+  }
+  const errors = document.getElementById("rows-errors");
+  errors.textContent = (result.errors || ["另存失败"]).join("\n");
+  errors.classList.remove("hidden");
+});
+
+document.getElementById("back-link")?.addEventListener("click", (ev) => {
+  collectOpenEditors();
+  if (!updateDirty()) return;
+  ev.preventDefault();
+  document.getElementById("unsaved-modal").classList.remove("hidden");
+});
+document.getElementById("leave-without-save")?.addEventListener("click", () => {
+  window.location.href = "/datasets";
+});
+document.getElementById("save-and-leave")?.addEventListener("click", async () => {
+  const failed = await saveChanges();
+  if (!failed) window.location.href = "/datasets";
+});
+
+renderRows();
+baseline = collectState();
+</script>
 {% endblock %}
