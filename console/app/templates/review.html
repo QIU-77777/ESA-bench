@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block title %}Review · Console{% endblock %}
+{% block content %}
+<div class="list-header">
+  <h1 class="page-title" style="margin:0">Review</h1>
+</div>
+
+<form method="get" action="/review" class="field-grid" style="margin: 1rem 0; align-items:end">
+  <div class="field">
+    <label class="field-label" for="rv-exp">实验</label>
+    <select id="rv-exp" name="experiment">
+      <option value="0">全部实验</option>
+      {% for e in experiments %}
+      <option value="{{ e.id }}" {% if e.id == current_experiment %}selected{% endif %}>{{ e.name }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="field">
+    <label class="field-label" for="rv-state">状态</label>
+    <select id="rv-state" name="state">
+      <option value="" {% if not current_state %}selected{% endif %}>全部</option>
+      <option value="pending" {% if current_state == 'pending' %}selected{% endif %}>待复核</option>
+      <option value="done" {% if current_state == 'done' %}selected{% endif %}>已复核</option>
+    </select>
+  </div>
+  <div class="field">
+    <button type="submit" class="outline">筛选</button>
+  </div>
+</form>
+
+{% if summary %}
+<div class="card">
+  <div class="section-title">本实验人工复核汇总</div>
+  <p class="mono">
+    通过 {{ summary.pass }} · 存疑 {{ summary.suspect }} · 不通过 {{ summary.fail }} · 待复核 {{ summary.pending }}
+  </p>
+</div>
+{% endif %}
+
+<table>
+  <thead>
+    <tr><th>实验</th><th>任务</th><th>数据集</th><th class="num">Scorer 分数</th><th>人工判定</th><th>备注</th><th>标记时间</th><th>更新时间</th></tr>
+  </thead>
+  <tbody>
+    {% for r in reviews %}
+    <tr data-href="/experiments/{{ r.experiment_id }}/traces/{{ r.row_id }}">
+      <td><a href="/experiments/{{ r.experiment_id }}">{{ r.experiment_name }}</a></td>
+      <td class="mono"><a href="/experiments/{{ r.experiment_id }}/traces/{{ r.row_id }}">{{ r.row_id }}</a></td>
+      <td class="muted">{{ r.dataset_name }}</td>
+      <td class="num">{{ '%.3f' | format(r.score) if r.score is not none else '—' }}</td>
+      <td>
+        {% if r.pending %}
+        <span class="badge dim">待复核</span>
+        {% else %}
+        <span class="badge {{ 'ok' if r.overall_verdict == 'pass' else 'fail' if r.overall_verdict == 'fail' else 'dim' }}">{{ verdict_labels.get(r.overall_verdict, r.overall_verdict) }}</span>
+        {% endif %}
+      </td>
+      <td class="truncate-cell">{{ r.note or '—' }}</td>
+      <td class="mono muted">{{ r.created_at }}</td>
+      <td class="mono muted">{{ r.updated_at }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="8" class="muted">复核队列为空。在 Trace 详情页标记存疑后，记录进入队列。</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

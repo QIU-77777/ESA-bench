@@ -13,7 +13,15 @@ from fastapi.templating import Jinja2Templates
 
 from . import config
 from .db import init_db
-from .services import analysis_service, dataset_service, experiment_service, profiles, scorer_service
+from .services import (
+    analysis_service,
+    dataset_service,
+    experiment_service,
+    loop_service,
+    profiles,
+    review_service,
+    scorer_service,
+)
 
 app = FastAPI(title="Console")
 config.load_env()
@@ -433,7 +441,13 @@ def trace_detail(request: Request, experiment_id: int, row_id: str) -> HTMLRespo
     return templates.TemplateResponse(
         request,
         "trace_detail.html",
-        {"experiment": experiment, "task": task, "detail": detail},
+        {
+            "experiment": experiment,
+            "task": task,
+            "detail": detail,
+            "dimensions": review_service.dimensions(),
+            "verdicts": review_service.VERDICTS,
+        },
     )
 
 
@@ -526,6 +540,148 @@ def export_experiment(experiment_id: int) -> Response:
             "Content-Disposition": f'attachment; filename="exp-{experiment_id}.csv"'
         },
     )
+
+
+# ── Review (FR-6) ───────────────────────────────────────────────────────
+
+
+@app.get("/review", response_class=HTMLResponse)
+def review_page(
+    request: Request, experiment: int = 0, state: str = ""
+) -> HTMLResponse:
+    reviews = review_service.list_reviews(
+        experiment_id=experiment or None, state=state
+    )
+    experiments = experiment_service.list_experiments()
+    summary = review_service.experiment_summary(experiment) if experiment else None
+    return templates.TemplateResponse(
+        request,
+        "review.html",
+        {
+            "reviews": reviews,
+            "experiments": experiments,
+            "current_experiment": experiment,
+            "current_state": state,
+            "summary": summary,
+            "verdict_labels": dict(review_service.VERDICTS),
+        },
+    )
+
+
+@app.post("/api/reviews/flag")
+def flag_review(payload: dict = Body(...)) -> dict:
+    try:
+        review_id = review_service.flag_task(int(payload.get("experiment_task_id") or 0))
+    except review_service.ReviewError as exc:
+        return {"ok": False, "errors": str(exc)}
+    return {"ok": True, "review_id": review_id}
+
+
+@app.post("/api/reviews/submit")
+def submit_review(payload: dict = Body(...)) -> dict:
+    try:
+        review_id = review_service.submit_review(
+            int(payload.get("experiment_task_id") or 0),
+            payload.get("dims") or {},
+            str(payload.get("overall_verdict") or ""),
+            str(payload.get("note") or ""),
+        )
+    except review_service.ReviewError as exc:
+        return {"ok": False, "errors": str(exc)}
+    return {"ok": True, "review_id": review_id}
+
+
+# ── Settings ────────────────────────────────────────────────────────────
+
+
+@app.get("/settings", response_class=HTMLResponse)
+def settings_page(request: Request) -> HTMLResponse:
+    return templates.TemplateResponse(
+        request, "settings.html", {"settings": review_service.get_settings()}
+    )
+
+
+@app.post("/settings")
+async def update_settings(request: Request) -> RedirectResponse:
+    form = await request.form()
+    dimensions = [
+        str(form.get(f"dimension-{i}") or "").strip()
+        for i in range(int(form.get("dimension-count") or 0))
+    ]
+    dimensions = [name for name in dimensions if name]
+    if not dimensions:
+        return _redirect("/settings", "至少保留一个复核维度")
+    updates = {
+        "review_dimensions": dimensions,
+        "blind_review": False,
+        "loop_agent": str(form.get("loop_agent") or "opencode"),
+        "loop_model": str(form.get("loop_model") or "stepcode/gpt-5.6-sol").strip(),
+    }
+    review_service.set_settings(updates)
+    return _redirect("/settings")
+
+
+# ── Loop-Assistant (FR-7) ───────────────────────────────────────────────
+
+
+@app.get("/experiments/{experiment_id}/loop", response_class=HTMLResponse)
+def loop_page(request: Request, experiment_id: int) -> HTMLResponse:
+    experiment = experiment_service.get_experiment(experiment_id)
+    if experiment is None:
+        return _redirect("/experiments", f"实验不存在：{experiment_id}")
+    runs = loop_service.list_runs(experiment_id)
+    drafts = loop_service.list_drafts(runs[0]["id"]) if runs else []
+    datasets = dataset_service.list_datasets()
+    return templates.TemplateResponse(
+        request,
+        "loop.html",
+        {
+            "experiment": experiment,
+            "runs": runs,
+            "latest": runs[0] if runs else None,
+            "drafts": drafts,
+            "datasets": datasets,
+            "n_failures": len(loop_service.get_failures(experiment_id)),
+            "settings": review_service.get_settings(),
+        },
+    )
+
+
+@app.post("/experiments/{experiment_id}/loop")
+def start_loop(experiment_id: int) -> RedirectResponse:
+    try:
+        loop_service.start_run(experiment_id)
+    except loop_service.LoopError as exc:
+        return _redirect(f"/experiments/{experiment_id}/loop", str(exc))
+    return _redirect(f"/experiments/{experiment_id}/loop")
+
+
+@app.get("/api/loop/runs/{run_id}")
+def loop_run_status(run_id: int) -> dict:
+    run = loop_service.get_run(run_id)
+    if run is None:
+        return {"ok": False, "errors": "运行不存在"}
+    return {"ok": True, "status": run["status"], "error": run["error"]}
+
+
+@app.post("/api/loop/drafts/{draft_id}/rows")
+def update_draft_rows(draft_id: int, payload: dict = Body(...)) -> dict:
+    try:
+        loop_service.update_draft_rows(draft_id, payload.get("rows") or [])
+    except loop_service.LoopError as exc:
+        return {"ok": False, "errors": str(exc)}
+    return {"ok": True}
+
+
+@app.post("/api/loop/drafts/{draft_id}/merge")
+def merge_draft(draft_id: int, payload: dict = Body(...)) -> dict:
+    try:
+        version_id = loop_service.confirm_draft(
+            draft_id, int(payload.get("target_dataset_id") or 0)
+        )
+    except (loop_service.LoopError, dataset_service.DatasetError) as exc:
+        return {"ok": False, "errors": str(exc)}
+    return {"ok": True, "version_id": version_id}
 
 
 # ── Harbor view reverse proxy (registered last: console routes win) ────

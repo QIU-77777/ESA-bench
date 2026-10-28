@@ -38,11 +38,62 @@
     {% endif %}
 
     <div class="section-title">人工复核</div>
-    {% if detail.review %}
-    <p><span class="badge">{{ detail.review.overall_verdict }}</span> <span class="muted">{{ detail.review.updated_at }}</span></p>
-    <pre class="snapshot">{{ detail.review.note or '（无备注）' }}</pre>
-    {% else %}
-    <p class="muted">未复核</p>
+    {% if not detail.review %}
+    <div class="row-actions">
+      <button type="button" class="outline" id="flag-review">标记存疑</button>
+    </div>
+    {% endif %}
+    <div id="review-form" class="stack {{ 'hidden' if not detail.review }}">
+      {% for dim in dimensions %}
+      <div class="field">
+        <label class="field-label" for="dim-{{ loop.index }}">{{ dim }}</label>
+        <select id="dim-{{ loop.index }}" data-dim="{{ dim }}">
+          <option value="">未评</option>
+          {% for i in range(1, 6) %}
+          <option value="{{ i }}" {% if detail.review and detail.review.dims.get(dim) == i %}selected{% endif %}>{{ i }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      {% endfor %}
+      <div class="field">
+        <span class="field-label">总体判定</span>
+        <div class="check-list">
+          {% for value, label in verdicts %}
+          <label>
+            <input type="radio" name="overall-verdict" value="{{ value }}" {% if detail.review and detail.review.overall_verdict == value %}checked{% endif %}>
+            {{ label }}
+          </label>
+          {% endfor %}
+        </div>
+      </div>
+      <div class="field">
+        <label class="field-label" for="review-note">备注</label>
+        <textarea id="review-note" rows="3" placeholder="复核说明">{{ detail.review.note if detail.review else '' }}</textarea>
+      </div>
+      <div class="row-actions">
+        <button type="button" id="review-submit">提交复核</button>
+      </div>
+    </div>
+    {% if detail.review and not detail.review.dims %}
+    <p class="muted">已进入复核队列，等待结构化打分。</p>
+    {% endif %}
+    {% if detail.review and detail.review.dims %}
+    <div class="section-title">变更历史</div>
+    <table>
+      <thead>
+        <tr><th>时间</th><th>判定</th><th>维度分</th><th>备注</th></tr>
+      </thead>
+      <tbody>
+        {% for h in detail.review.history %}
+        <tr>
+          <td class="mono muted">{{ h.created_at }}</td>
+          <td>{{ dict(verdicts).get(h.overall_verdict, h.overall_verdict) }}</td>
+          <td class="mono">{% for name, value in h.dims.items() %}{{ name }} {{ value }}{% if not loop.last %} · {% endif %}{% endfor %}</td>
+          <td class="truncate-cell">{{ h.note or '—' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
     {% endif %}
   </aside>
 
@@ -55,4 +106,40 @@
     {% endif %}
   </div>
 </div>
+{% endblock %}
+{% block scripts %}
+<script>
+const taskId = {{ task.id if task else 0 }};
+
+document.getElementById("flag-review")?.addEventListener("click", async () => {
+  const response = await fetch("/api/reviews/flag", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ experiment_task_id: taskId }),
+  });
+  const result = await response.json();
+  if (result.ok) location.reload();
+});
+
+document.getElementById("review-submit")?.addEventListener("click", async () => {
+  const dims = {};
+  for (const sel of document.querySelectorAll("#review-form select[data-dim]")) {
+    if (sel.value) dims[sel.dataset.dim] = Number(sel.value);
+  }
+  const verdict = document.querySelector("input[name='overall-verdict']:checked");
+  const response = await fetch("/api/reviews/submit", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      experiment_task_id: taskId,
+      dims,
+      overall_verdict: verdict ? verdict.value : "suspect",
+      note: document.getElementById("review-note").value,
+    }),
+  });
+  const result = await response.json();
+  if (result.ok) location.reload();
+  else alert((result.errors || ["提交失败"]).join("\n"));
+});
+</script>
 {% endblock %}

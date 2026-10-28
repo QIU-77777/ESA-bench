@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block title %}Settings · Console{% endblock %}
+{% block content %}
+<h1 class="page-title">Settings</h1>
+
+<form method="post" action="/settings" class="stack">
+  <div class="section-title">复核维度</div>
+  <div id="dimension-list" class="stack">
+    {% for dim in settings.review_dimensions %}
+    <div class="row-actions" data-dimension-row>
+      <input name="dimension-{{ loop.index0 }}" value="{{ dim }}" style="max-width:320px">
+      <button type="button" class="outline" data-remove-dimension>删除</button>
+    </div>
+    {% endfor %}
+  </div>
+  <div class="row-actions">
+    <button type="button" class="outline" id="add-dimension">＋ 添加维度</button>
+  </div>
+  <input type="hidden" name="dimension-count" id="dimension-count" value="{{ settings.review_dimensions | length }}">
+
+  <div class="section-title">盲审</div>
+  <label class="check-list">
+    <input type="checkbox" disabled {% if settings.blind_review %}checked{% endif %}>
+    对复核人隐藏 Scorer 分数并随机判定顺序
+  </label>
+
+  <div class="section-title">Loop-Assistant</div>
+  <div class="field-grid">
+    <div class="field">
+      <label class="field-label" for="loop-agent">分析代理</label>
+      <select id="loop-agent" name="loop_agent">
+        <option value="opencode" {% if settings.loop_agent == 'opencode' %}selected{% endif %}>opencode</option>
+        <option value="pi" {% if settings.loop_agent == 'pi' %}selected{% endif %}>pi</option>
+      </select>
+    </div>
+    <div class="field">
+      <label class="field-label" for="loop-model">分析模型</label>
+      <input id="loop-model" name="loop_model" value="{{ settings.loop_model }}" placeholder="provider/model-id">
+    </div>
+  </div>
+
+  <div class="form-action">
+    <button type="submit">保存设置</button>
+  </div>
+</form>
+{% endblock %}
+{% block scripts %}
+<script>
+const list = document.getElementById("dimension-list");
+const count = document.getElementById("dimension-count");
+const sync = () => {
+  count.value = list.querySelectorAll("[data-dimension-row]").length;
+  list.querySelectorAll("input").forEach((input, i) => { input.name = `dimension-${i}`; });
+};
+document.getElementById("add-dimension")?.addEventListener("click", () => {
+  const row = document.createElement("div");
+  row.className = "row-actions";
+  row.dataset.dimensionRow = "";
+  row.innerHTML = `<input value="" placeholder="维度名称" style="max-width:320px">
+    <button type="button" class="outline" data-remove-dimension>删除</button>`;
+  list.appendChild(row);
+  sync();
+  row.querySelector("input").focus();
+});
+list.addEventListener("click", (ev) => {
+  if (!ev.target.closest("[data-remove-dimension]")) return;
+  ev.target.closest("[data-dimension-row]")?.remove();
+  sync();
+});
+</script>
+{% endblock %}

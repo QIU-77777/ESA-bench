@@ -125,6 +125,45 @@ CREATE TABLE IF NOT EXISTS baselines (
   experiment_id INTEGER NOT NULL REFERENCES experiments(id),
   set_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS settings (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS review_history (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  review_id INTEGER NOT NULL REFERENCES reviews(id),
+  dims TEXT NOT NULL DEFAULT '{}',
+  overall_verdict TEXT NOT NULL,
+  note TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS loop_runs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  experiment_id INTEGER NOT NULL REFERENCES experiments(id),
+  status TEXT NOT NULL DEFAULT 'running',
+  agent TEXT NOT NULL DEFAULT '',
+  model TEXT NOT NULL DEFAULT '',
+  work_dir TEXT NOT NULL DEFAULT '',
+  report TEXT NOT NULL DEFAULT '',
+  error TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL,
+  finished_at TEXT
+);
+CREATE TABLE IF NOT EXISTS loop_drafts (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  loop_run_id INTEGER NOT NULL REFERENCES loop_runs(id),
+  name TEXT NOT NULL DEFAULT '',
+  rows TEXT NOT NULL DEFAULT '[]',
+  status TEXT NOT NULL DEFAULT 'draft',
+  target_dataset_id INTEGER REFERENCES datasets(id),
+  created_at TEXT NOT NULL,
+  confirmed_at TEXT
+);
+CREATE TABLE IF NOT EXISTS failure_categories (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT UNIQUE NOT NULL,
+  created_at TEXT NOT NULL
+);
 """
 
 _MIGRATIONS = (

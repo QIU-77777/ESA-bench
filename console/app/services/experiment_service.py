@@ -101,6 +101,15 @@ def delete_experiment(experiment_id: int) -> None:
         for task_id in task_ids:
             conn.execute("DELETE FROM scores WHERE experiment_task_id=?", (task_id,))
             conn.execute("DELETE FROM reviews WHERE experiment_task_id=?", (task_id,))
+        run_ids = [
+            r["id"]
+            for r in conn.execute(
+                "SELECT id FROM loop_runs WHERE experiment_id=?", (experiment_id,)
+            ).fetchall()
+        ]
+        for run_id in run_ids:
+            conn.execute("DELETE FROM loop_drafts WHERE loop_run_id=?", (run_id,))
+        conn.execute("DELETE FROM loop_runs WHERE experiment_id=?", (experiment_id,))
         conn.execute("DELETE FROM experiment_tasks WHERE experiment_id=?", (experiment_id,))
         conn.execute("DELETE FROM experiment_scorers WHERE experiment_id=?", (experiment_id,))
         conn.execute("DELETE FROM baselines WHERE experiment_id=?", (experiment_id,))

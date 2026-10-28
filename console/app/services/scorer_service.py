@@ -8,7 +8,7 @@ import time
 from .. import config
 from ..db import connect, rows_to_dicts, utc_now
 from ..scorers.base import run_scorer
-from . import dataset_service, harbor_adapter
+from . import dataset_service, harbor_adapter, review_service
 
 VALID_TYPES = ("llm", "code")
 
@@ -290,6 +290,10 @@ def get_trace_detail(experiment: dict, task: dict) -> dict:
                 }
             )
     trial = task["harbor_trial_name"]
+    if review is not None:
+        review = dict(review)
+        review["dims"] = json.loads(review["dims"] or "{}")
+        review["history"] = review_service.get_history(review["id"])
     return {
         "input": row["input"],
         "expected": row["expected"],
@@ -297,7 +301,7 @@ def get_trace_detail(experiment: dict, task: dict) -> dict:
         "tags": row["tags"],
         "aggregate": aggregate,
         "per_scorer": per_scorer,
-        "review": dict(review) if review else None,
+        "review": review,
         "view_url": (
             f"{config.HARBOUR_VIEW_BASE}/jobs/{experiment['job_name']}/trials/{trial}"
             if trial

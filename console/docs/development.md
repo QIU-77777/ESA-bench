@@ -168,21 +168,20 @@ scores
 ### 人工复核
 
 ```text
-review_dimensions
-  id, name, order, enabled
-  默认四维：正确性、完整性、安全性、格式符合度
-
-reviews
-  id, experiment_task_id, dims(json), overall_verdict(pass|suspect|fail),
-  note(text), created_at, updated_at
-
-review_revisions
-  id, review_id, snapshot(json), created_at
-  每次修改追加一条，保留变更历史
-
 settings
   key, value(json)
-  盲审开关（第一版固定 false）、judge 并发数等
+  review_dimensions：复核维度名列表，默认四维（正确性、完整性、安全性、格式符合度）
+  blind_review：盲审开关，固定 false
+  loop_agent / loop_model：Loop-Assistant 的分析代理命令与模型
+
+reviews
+  id, experiment_task_id(唯一), dims(json), overall_verdict(pass|suspect|fail),
+  note(text), created_at, updated_at
+  dims 为空表示待复核；一个任务一条复核记录
+
+review_history
+  id, review_id, dims(json), overall_verdict, note, created_at
+  每次提交追加一条，保留变更历史
 ```
 
 ### 基线与回流
@@ -193,14 +192,16 @@ baselines
   同一数据集只保留一个当前基线，不绑定数据集快照；跨快照对比按 row_id 匹配共同任务
 
 loop_runs
-  id, experiment_id, report(json), created_at
+  id, experiment_id, status(running|done|failed), agent, model, work_dir,
+  report(json), error, created_at, finished_at
 
-loop_findings
-  id, loop_run_id, experiment_task_id, failure_category, confidence, rationale
+loop_drafts
+  id, loop_run_id, name, rows(json), status(draft|merged),
+  target_dataset_id, created_at, confirmed_at
 
-dataset_drafts
-  id, loop_run_id, target_dataset_id, rows(json), status(open|merged|discarded),
-  merged_version_id
+failure_categories
+  id, name(唯一), created_at
+  失败类别登记表，随 Loop-Assistant 报告累积
 ```
 
 ## 5. 与现有资产的集成
@@ -366,38 +367,40 @@ draft ──run──> running（rollout + 评分）──> completed
 
 ### 6.6 Review（FR-6）
 
-- 标记存疑：Trace 详情按钮写入队列（记录实验任务引用与标记时间）。
-- 复核表单维度从 `review_dimensions` 动态生成。
-- 修改记录：每次保存先写 `review_revisions` 快照再更新主记录。
-- 盲审：`settings` 中 `blind_review` 固定 false。数据结构与界面预留，启用逻辑留待多人版本。
+- 标记存疑：Trace 详情按钮写入队列（`reviews` 行，维度分为空表示待复核）。
+- 复核表单维度从 `settings` 的 `review_dimensions` 动态生成，每项 1 到 5 分，总体判定三档。
+- 每次提交写入 `review_history` 一条记录（维度分、判定、备注、时间），主记录随之更新；待复核与已复核由维度分是否为空区分。
+- 汇总：Review 队列页按实验汇总人工判定；实验结果表的 Review 列与 Dashboards 的「人工判定」分组读取同一数据。
+- 盲审：`settings` 中 `blind_review` 固定 false。界面保留开关（禁用态），启用逻辑留待多人版本。
 
 ### 6.7 Loop-Assistant（FR-7）
 
-Loop-Assistant 由独立配置的 coding agent 执行（agent 与模型单独指定，模型选更强的分析模型），与评测对象配置分离。运行通道复用 harness 镜像与容器机制：平台组装一次"分析任务"，agent 在容器内产出约定文件，平台解析入库。
+Loop-Assistant 由独立配置的 coding agent 在本机执行（agent 命令与模型在设置中单独指定，默认 opencode + 强分析模型），与评测对象配置分离。agent 以非交互模式运行：平台组装分析任务简报，agent 把结果写入约定文件，平台解析入库。
 
 执行流程：
 
 ```text
-1. 平台组装分析任务简报
-   输入失败 Trace（输入、预期、Agent 输出、Scorer 判定与理由、轨迹摘要）
-   与已有失败类别清单，写成任务说明文件
+1. 平台收集失败任务
+   判定非 pass 的任务，附任务输入、预期结果、Agent 输出（截断）、
+   Scorer 判定与理由，连同失败类别清单写成任务简报
 
 2. 启动 Loop-Assistant 的 coding agent 执行
-   agent 配置：独立的 harness + 更强的模型（设置中指定）
-   产出约定文件：
-     findings.json    逐条归类 [{row_id, failure_category, confidence, rationale}]
-     report.md        改进方案报告（类别、典型案例、建议动作）
-     draft.csv        新数据集草案行（字段与 FR-1 一致）
+   agent 配置：设置中的 agent 命令与模型（默认 opencode run --model <model>）
+   运行目录：workspace/generated/loop/run-<id>（子进程同步 cwd 与 PWD）
+   产出约定文件：report.json
+     overall          整体情况概括
+     categories       失败归类 [{name, count, confidence, summary, typical_cases, actions}]
+     draft_rows       新数据集草案行（字段与 FR-1 一致）
 
-3. 平台解析产出并 schema 校验
-   归类写 loop_findings，报告存库并渲染到 workspace/reports/
-   草案进入待确认列表
+3. 平台解析产出
+   报告存 loop_runs.report 并在页面渲染
+   草案行写 loop_drafts，进入待确认列表
+   新类别登记进 failure_categories，随后续简报回传
 ```
 
-- 任务简报模板存 `prompts/loop_task.md`，带版本号。
-- 失败类别体系存 `settings`（JSON 列表），简报中传入已有类别供 agent 选择，允许新增。
-- 产出解析失败时保留 agent 原始输出供排查，可重新发起分析。
-- 草案合并：用户确认后写入目标数据集生成新快照，`change_note` 自动引用来源实验编号。
+- 任务简报模板存 `prompts/loop_task.md`，失败明细由服务追加在模板之后。
+- 产出解析失败时按更严格指令重试一次，仍失败则记录错误可重新发起分析；stdout 文本作为兜底解析来源。
+- 草案编辑：页面可改行、剔除行，保存后合并；合并时字段 `id` 映射为内部 `row_id`，写入目标数据集生成新快照，`change_note` 自动引用来源实验编号。
 
 ## 7. API 设计
 
@@ -413,6 +416,10 @@ Loop-Assistant 由独立配置的 coding agent 执行（agent 与模型单独指
 | POST | `/datasets/{id}/save-as` | 另存为新数据集 |
 | POST | `/datasets/{id}/delete` | 删除数据集 |
 | GET | `/datasets/{id}/versions/{v}/export` | 导出 CSV |
+| GET | `/review` | Review 队列页（按实验、状态筛选） |
+| POST | `/api/reviews/flag` | 标记存疑进队列 |
+| POST | `/api/reviews/submit` | 提交结构化复核（写变更历史） |
+| GET | `/settings` / POST | 复核维度、盲审开关、Loop-Assistant 代理与模型 |
 | GET | `/scorers` | Scorer 列表页 |
 | POST | `/api/scorers` | 创建 Scorer |
 | POST | `/api/scorers/{id}/tryout` | 试评（真实日志） |
@@ -429,11 +436,11 @@ Loop-Assistant 由独立配置的 coding agent 执行（agent 与模型单独指
 | GET | `/experiments/{id}/dashboard` | Dashboards 页 |
 | GET | `/api/experiments/{id}/regression?baseline=` | 回归对比数据 |
 | POST | `/api/experiments/{id}/baseline` | 标记基线 |
-| POST | `/api/reviews` | 标记存疑 / 提交复核 |
-| GET | `/review` | Review 队列页 |
-| POST | `/api/loop/{experiment_id}/analyze` | 触发 Loop-Assistant |
-| GET | `/api/loop/{loop_run_id}` | 分析报告 |
-| POST | `/api/loop/{loop_run_id}/draft/merge` | 草案合并进数据集 |
+| GET | `/experiments/{id}/loop` | Loop-Assistant 页（运行、报告、草案） |
+| POST | `/experiments/{id}/loop` | 发起分析 |
+| GET | `/api/loop/runs/{run_id}` | 运行状态轮询 |
+| POST | `/api/loop/drafts/{draft_id}/rows` | 保存草案行 |
+| POST | `/api/loop/drafts/{draft_id}/merge` | 草案合并进数据集 |
 | GET | `/api/settings` / PUT | 设置（盲审预留、judge 并发） |
 | GET | `/harbor-view/<path>` | Harbor view 反向代理 |
 

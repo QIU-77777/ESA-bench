@@ -7,7 +7,7 @@ import io
 import json
 
 from ..db import connect, rows_to_dicts, utc_now
-from . import dataset_service, experiment_service
+from . import dataset_service, experiment_service, review_service
 
 
 class AnalysisError(ValueError):
@@ -164,13 +164,16 @@ def dashboard(experiment_id: int, group_by: str = "tags") -> dict:
                 entry["n_pass"] += 1
             if task["score"] is not None:
                 entry["scores"].append(float(task["score"]))
-    group_rows = []
-    for entry in groups.values():
-        scores = entry.pop("scores")
-        entry["mean"] = round(sum(scores) / len(scores), 6) if scores else None
-        entry["pass_rate"] = round(entry["n_pass"] / entry["n"], 6) if entry["n"] else None
-        group_rows.append(entry)
-    group_rows.sort(key=lambda r: (r["mean"] if r["mean"] is not None else 2, r["group"]))
+    if group_by == "review":
+        group_rows = review_service.review_group_rows(experiment_id)
+    else:
+        group_rows = []
+        for entry in groups.values():
+            scores = entry.pop("scores")
+            entry["mean"] = round(sum(scores) / len(scores), 6) if scores else None
+            entry["pass_rate"] = round(entry["n_pass"] / entry["n"], 6) if entry["n"] else None
+            group_rows.append(entry)
+        group_rows.sort(key=lambda r: (r["mean"] if r["mean"] is not None else 2, r["group"]))
 
     return {
         "distribution": [{"bucket": k, "count": v} for k, v in sorted(buckets.items())],
@@ -201,8 +204,8 @@ def _group_keys(meta: dict, group_by: str) -> list[str]:
 
 
 def group_keys(experiment_id: int) -> list[str]:
-    """Available grouping keys: tags plus metadata keys of the dataset rows."""
-    keys = ["tags"]
+    """Available grouping keys: tags, review verdict, plus dataset metadata keys."""
+    keys = ["tags", "review"]
     seen = set()
     for meta in _row_meta(experiment_id).values():
         for key in meta.get("metadata", {}):

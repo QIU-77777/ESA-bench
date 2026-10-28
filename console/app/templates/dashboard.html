@@ -64,12 +64,12 @@
 <div class="section-title">按维度分组
   <a href="/experiments/{{ experiment.id }}/dashboard?group_by=tags">tags</a>
   {% for k in group_keys if k != 'tags' %}
-  · <a href="/experiments/{{ experiment.id }}/dashboard?group_by={{ k }}">{{ k }}</a>
+  · <a href="/experiments/{{ experiment.id }}/dashboard?group_by={{ k }}">{% if k == 'review' %}人工判定{% else %}{{ k }}{% endif %}</a>
   {% endfor %}
 </div>
 <table>
   <thead>
-    <tr><th>分组（{{ dashboard.group_by }}）</th><th class="num">任务数</th><th class="num">通过数</th><th class="num">通过率</th><th class="num">均分</th></tr>
+    <tr><th>分组（{% if dashboard.group_by == 'review' %}人工判定{% else %}{{ dashboard.group_by }}{% endif %}）</th><th class="num">任务数</th><th class="num">通过数</th><th class="num">通过率</th><th class="num">均分</th></tr>
   </thead>
   <tbody>
     {% for g in dashboard.groups %}

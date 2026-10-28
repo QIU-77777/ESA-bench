@@ -219,6 +219,7 @@ def delete_dataset(dataset_id: int) -> None:
             conn.execute("DELETE FROM dataset_rows WHERE dataset_version_id=?", (version_id,))
         conn.execute("DELETE FROM dataset_versions WHERE dataset_id=?", (dataset_id,))
         conn.execute("DELETE FROM baselines WHERE dataset_id=?", (dataset_id,))
+        conn.execute("DELETE FROM loop_drafts WHERE target_dataset_id=?", (dataset_id,))
         conn.execute("DELETE FROM datasets WHERE id=?", (dataset_id,))
 
 

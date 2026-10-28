@@ -1,0 +1,166 @@
+{% extends "base.html" %}
+{% block title %}Loop-Assistant · {{ experiment.name }} · Console{% endblock %}
+{% block content %}
+<p class="muted">
+  <a href="/experiments/{{ experiment.id }}">← 实验详情</a>
+  · <a href="/settings">分析代理设置</a>
+</p>
+<h1 class="page-title">Loop-Assistant · {{ experiment.name }}</h1>
+
+<div class="card">
+  <div class="section-title">失败分析</div>
+  <p class="mono">失败任务 {{ n_failures }} 个 · 分析代理 {{ settings.loop_agent }} · 模型 {{ settings.loop_model }}</p>
+  <div class="row-actions">
+    <form method="post" action="/experiments/{{ experiment.id }}/loop">
+      <button type="submit" {{ 'disabled' if n_failures == 0 }}>发起分析</button>
+    </form>
+  </div>
+</div>
+
+{% if latest and latest.error %}
+<div class="alert">{{ latest.error }}</div>
+{% endif %}
+
+{% for run in runs %}
+<div class="card">
+  <div class="section-title">运行 #{{ run.id }}
+    <span class="badge {{ 'ok' if run.status == 'done' else 'fail' if run.status == 'failed' else 'dim' }}">{{ run.status }}</span>
+  </div>
+  <p class="mono muted">{{ run.agent }} · {{ run.model }} · {{ run.created_at }}{% if run.finished_at %} → {{ run.finished_at }}{% endif %}</p>
+  {% if run.id == latest.id and run.report %}
+  <p>{{ run.report.overall }}</p>
+  {% if run.report.categories %}
+  <table>
+    <thead>
+      <tr><th>失败类别</th><th class="num">案例数</th><th class="num">置信度</th><th>根因</th><th>典型任务</th><th>建议动作</th></tr>
+    </thead>
+    <tbody>
+      {% for c in run.report.categories %}
+      <tr>
+        <td class="mono">{{ c.name }}</td>
+        <td class="num">{{ c.count }}</td>
+        <td class="num">{{ c.confidence }}</td>
+        <td>{{ c.summary }}</td>
+        <td class="mono muted">{{ c.typical_cases | join(', ') }}</td>
+        <td>
+          {% for a in c.actions %}
+          <p>{{ a.type }}：{{ a.detail }}</p>
+          {% endfor %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+  {% endif %}
+</div>
+{% endfor %}
+
+{% for draft in drafts %}
+<div class="card">
+  <div class="section-title">{{ draft.name }}
+    {% if draft.status == 'merged' %}
+    <span class="badge ok">已合并</span>
+    {% else %}
+    <span class="badge dim">草案</span>
+    {% endif %}
+  </div>
+  <table>
+    <thead>
+      <tr><th>id</th><th>input</th><th>expected</th><th>tags</th><th>metadata</th><th>rubric</th><th></th></tr>
+    </thead>
+    <tbody>
+      {% for row in draft.rows %}
+      <tr data-draft-row>
+        <td><input class="d-id mono" value="{{ row.id }}" {% if draft.status == 'merged' %}disabled{% endif %}></td>
+        <td><textarea class="d-input" rows="2" {% if draft.status == 'merged' %}disabled{% endif %}>{{ row.input }}</textarea></td>
+        <td><input class="d-expected" value="{{ row.expected }}" {% if draft.status == 'merged' %}disabled{% endif %}></td>
+        <td><input class="d-tags mono" value="{{ row.tags }}" {% if draft.status == 'merged' %}disabled{% endif %}></td>
+        <td><input class="d-metadata mono" value="{{ row.metadata }}" {% if draft.status == 'merged' %}disabled{% endif %}></td>
+        <td><textarea class="d-rubric" rows="2" {% if draft.status == 'merged' %}disabled{% endif %}>{{ row.rubric }}</textarea></td>
+        <td>
+          {% if draft.status != 'merged' %}
+          <button type="button" class="outline" data-drop-row>剔除</button>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% if draft.status != 'merged' %}
+  <div class="row-actions" style="margin-top: 0.75rem">
+    <button type="button" class="outline" id="save-draft-{{ draft.id }}">保存草案</button>
+    <select id="merge-target-{{ draft.id }}" style="margin-left:auto; max-width:280px">
+      {% for d in datasets %}
+      <option value="{{ d.id }}">{{ d.name }}</option>
+      {% endfor %}
+    </select>
+    <button type="button" id="merge-draft-{{ draft.id }}">确认合并</button>
+  </div>
+  {% else %}
+  <p class="muted">已合并进数据集 {{ draft.target_dataset_id }}，时间 {{ draft.confirmed_at }}。</p>
+  {% endif %}
+</div>
+{% endfor %}
+
+{% if latest and latest.status == 'running' %}
+<script>
+async function poll() {
+  try {
+    const r = await fetch("/api/loop/runs/{{ latest.id }}");
+    const d = await r.json();
+    if (d.ok && d.status !== "running") location.reload();
+    else setTimeout(poll, 3000);
+  } catch (e) { setTimeout(poll, 5000); }
+}
+setTimeout(poll, 3000);
+</script>
+{% endif %}
+
+{% for draft in drafts if draft.status != 'merged' %}
+<script>
+const rowsOf = (card) => Array.from(card.querySelectorAll("tr[data-draft-row]")).map((tr) => ({
+  id: tr.querySelector(".d-id").value.trim(),
+  input: tr.querySelector(".d-input").value,
+  expected: tr.querySelector(".d-expected").value,
+  tags: tr.querySelector(".d-tags").value,
+  metadata: tr.querySelector(".d-metadata").value,
+  rubric: tr.querySelector(".d-rubric").value,
+}));
+
+const card = document.getElementById("save-draft-{{ draft.id }}").closest(".card");
+card.querySelectorAll("[data-drop-row]").forEach((btn) =>
+  btn.addEventListener("click", () => {
+    btn.closest("tr[data-draft-row]").remove();
+  })
+);
+document.getElementById("save-draft-{{ draft.id }}").addEventListener("click", async () => {
+  const rows = rowsOf(card).filter((row) => row.id);
+  const response = await fetch("/api/loop/drafts/{{ draft.id }}/rows", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ rows }),
+  });
+  const result = await response.json();
+  if (!result.ok) alert((result.errors || ["保存失败"]).join("\n"));
+});
+document.getElementById("merge-draft-{{ draft.id }}").addEventListener("click", async () => {
+  const rows = rowsOf(card).filter((row) => row.id);
+  await fetch("/api/loop/drafts/{{ draft.id }}/rows", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ rows }),
+  });
+  const target = document.getElementById("merge-target-{{ draft.id }}").value;
+  const response = await fetch("/api/loop/drafts/{{ draft.id }}/merge", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ target_dataset_id: Number(target) }),
+  });
+  const result = await response.json();
+  if (result.ok) location.reload();
+  else alert((result.errors || ["合并失败"]).join("\n"));
+});
+</script>
+{% endfor %}
+{% endblock %}
