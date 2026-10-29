@@ -175,10 +175,12 @@ tbody tr:hover { background: color-mix(in oklch, var(--muted) 50%, transparent);
 tr[data-href] { cursor: pointer; }
 tbody tr:last-child td { border-bottom: 0; }
 td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
-#rows-host th:nth-child(1), #rows-host td:nth-child(1) { width: 15%; }
-#rows-host th:nth-child(2), #rows-host td:nth-child(2) { width: 41%; }
-#rows-host th:nth-child(3), #rows-host td:nth-child(3) { width: 22%; }
-#rows-host th:nth-child(4), #rows-host td:nth-child(4) { width: 13%; }
+#rows-host th:nth-child(1), #rows-host td:nth-child(1) { width: 14%; }
+#rows-host th:nth-child(2), #rows-host td:nth-child(2) { width: 38%; }
+#rows-host th:nth-child(3), #rows-host td:nth-child(3) { width: 20%; }
+#rows-host th:nth-child(4), #rows-host td:nth-child(4) { width: 12%; }
+#rows-host th:nth-child(5), #rows-host td:nth-child(5) { width: 170px; }
+#rows-host .row-actions { flex-wrap: wrap; }
 .truncate-cell {
   display: inline-block;
   max-width: 280px;
