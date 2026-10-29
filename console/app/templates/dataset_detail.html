@@ -169,23 +169,33 @@ function normalizeRow(r) {
 
 function renderRows() {
   const body = rowsData.map((r, i) => {
-    const tags = normalizeTags(r.tags);
     const isOpen = i === openEditorIndex;
+    const tags = normalizeTags(r.tags);
+    const metadata = typeof r.metadata === "string" ? r.metadata : JSON.stringify(r.metadata ?? {});
     const action = isOpen
       ? `<button type="button" class="outline row-toggle" data-index="${i}">取消编辑</button>`
       : `<button type="button" class="outline row-edit" data-index="${i}">编辑</button>`;
-    return `<tr class="row-summary" data-index="${i}">
-      <td class="mono">${esc(r.row_id)}</td>
-      <td>${esc((r.input ?? "").slice(0, 80))}${(r.input ?? "").length > 80 ? "…" : ""}</td>
-      <td class="muted">${esc((r.expected ?? "").slice(0, 60))}</td>
-      <td class="mono muted">${esc(tags) || "—"}</td>
+    const cells = isOpen
+      ? `<td><input class="row-id mono" value="${esc(r.row_id)}"></td>
+         <td><textarea class="row-input" rows="3">${esc(r.input)}</textarea></td>
+         <td><input class="row-expected" value="${esc(r.expected)}"></td>
+         <td><input class="row-tags mono" value="${esc(tags)}"></td>
+         <td><input class="row-metadata mono" value="${esc(metadata)}"></td>
+         <td><textarea class="row-rubric" rows="2">${esc(r.rubric)}</textarea></td>`
+      : `<td class="mono">${esc(r.row_id)}</td>
+         <td>${esc((r.input ?? "").slice(0, 80))}${(r.input ?? "").length > 80 ? "…" : ""}</td>
+         <td class="muted cell-ellipsis" title="${esc(r.expected)}">${esc((r.expected ?? "").slice(0, 60)) || "—"}</td>
+         <td class="mono muted cell-ellipsis" title="${esc(tags)}">${esc(tags) || "—"}</td>
+         <td class="mono muted cell-ellipsis" title="${esc(metadata)}">${esc(metadata)}</td>
+         <td class="muted cell-ellipsis" title="${esc(r.rubric)}">${esc(r.rubric) || "—"}</td>`;
+    return `<tr class="row-summary" data-index="${i}">${cells}
       <td><div class="row-actions">${action}<button type="button" class="outline row-remove" data-index="${i}">删除</button></div></td>
     </tr>`;
   }).join("");
   rowsHost.innerHTML = `
     <table>
-      <thead><tr><th>id</th><th>input</th><th>expected</th><th>tags</th><th></th></tr></thead>
-      <tbody>${body || '<tr><td colspan="5" class="muted">暂无任务行</td></tr>'}</tbody>
+      <thead><tr><th>id</th><th>input</th><th>expected</th><th>tags</th><th>metadata</th><th>rubric</th><th></th></tr></thead>
+      <tbody>${body || '<tr><td colspan="7" class="muted">暂无任务行</td></tr>'}</tbody>
     </table>`;
 }
 
@@ -203,72 +213,51 @@ rowsHost.addEventListener("click", (ev) => {
   }
 });
 
+rowsHost.addEventListener("input", (ev) => {
+  if (openEditorIndex === null) return;
+  const row = ev.target.closest("tr.row-summary");
+  if (!row || Number(row.dataset.index) !== openEditorIndex) return;
+  const toggle = row.querySelector(".row-toggle");
+  if (toggle) toggle.textContent = rowDirty(row) ? "保存编辑" : "取消编辑";
+});
+
 function expandRowEditor(index) {
   if (openEditorIndex === index) return;
   commitOpenEditor();
-  renderRows();
-  const r = rowsData[index] || { row_id: "", input: "", expected: "", tags: "", metadata: {}, rubric: "" };
-  const tags = normalizeTags(r.tags);
-  const metadata = typeof r.metadata === "string" ? r.metadata : JSON.stringify(r.metadata ?? {});
-  const tr = rowsHost.querySelector(`tr.row-summary[data-index="${index}"]`);
-  if (!tr) return;
-  const editor = document.createElement("tr");
-  editor.className = "row-editor";
-  editor.innerHTML = `
-    <td colspan="5">
-      <div class="field-grid">
-        <div class="field"><label class="field-label">id</label><input class="row-id mono" value="${esc(r.row_id)}"></div>
-        <div class="field"><label class="field-label">tags</label><input class="row-tags mono" value="${esc(tags)}"></div>
-      </div>
-      <div class="field"><label class="field-label">input</label><textarea class="row-input" rows="3">${esc(r.input)}</textarea></div>
-      <div class="field"><label class="field-label">expected</label><textarea class="row-expected" rows="2">${esc(r.expected)}</textarea></div>
-      <div class="field"><label class="field-label">metadata</label><textarea class="row-metadata mono" rows="2">${esc(metadata)}</textarea></div>
-      <div class="field"><label class="field-label">rubric</label><textarea class="row-rubric" rows="2">${esc(r.rubric)}</textarea></div>
-    </td>`;
-  tr.after(editor);
   openEditorIndex = index;
-  openEditorSnapshot = JSON.stringify(normalizeRow(rowsData[index]));
-  const btn = tr.querySelector(".row-edit");
-  if (btn) {
-    btn.classList.remove("row-edit");
-    btn.classList.add("row-toggle");
-    btn.textContent = "取消编辑";
-  }
-  editor.addEventListener("input", () => {
-    const toggle = rowsHost.querySelector(`tr.row-summary[data-index="${index}"] .row-toggle`);
-    if (toggle) toggle.textContent = editorDirty(editor) ? "保存编辑" : "取消编辑";
-  });
+  openEditorSnapshot = JSON.stringify(normalizeRow(rowsData[index] || {}));
+  renderRows();
 }
 
 function collapseRowEditor(index) {
-  const editor = rowsHost.querySelector("tr.row-editor");
-  if (editor) rowsData[index] = readRowEditor(editor);
+  const row = rowsHost.querySelector(`tr.row-summary[data-index="${index}"]`);
+  if (row) rowsData[index] = readRowEditor(row);
   openEditorIndex = null;
   openEditorSnapshot = null;
   renderRows();
   updateDirty();
 }
 
-function editorDirty(editor) {
+function rowDirty(row) {
   if (openEditorSnapshot === null) return false;
-  return JSON.stringify(readRowEditor(editor)) !== openEditorSnapshot;
+  return JSON.stringify(readRowEditor(row)) !== openEditorSnapshot;
 }
 
-function readRowEditor(editor) {
+function readRowEditor(row) {
   return normalizeRow({
-    row_id: editor.querySelector(".row-id").value,
-    input: editor.querySelector(".row-input").value,
-    expected: editor.querySelector(".row-expected").value,
-    tags: editor.querySelector(".row-tags").value,
-    metadata: editor.querySelector(".row-metadata").value,
-    rubric: editor.querySelector(".row-rubric").value,
+    row_id: row.querySelector(".row-id").value,
+    input: row.querySelector(".row-input").value,
+    expected: row.querySelector(".row-expected").value,
+    tags: row.querySelector(".row-tags").value,
+    metadata: row.querySelector(".row-metadata").value,
+    rubric: row.querySelector(".row-rubric").value,
   });
 }
 
 function commitOpenEditor() {
   if (openEditorIndex === null) return;
-  const editor = rowsHost.querySelector("tr.row-editor");
-  if (editor) rowsData[openEditorIndex] = readRowEditor(editor);
+  const row = rowsHost.querySelector(`tr.row-summary[data-index="${openEditorIndex}"]`);
+  if (row) rowsData[openEditorIndex] = readRowEditor(row);
   openEditorIndex = null;
   openEditorSnapshot = null;
 }
