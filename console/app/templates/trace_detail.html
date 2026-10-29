@@ -89,8 +89,8 @@
         <tr>
           <td class="mono muted">{{ h.created_at | fmt_time }}</td>
           <td>{{ verdict_icon_span(h.overall_verdict) }}{{ verdict_label(h.overall_verdict) }}</td>
-          <td class="mono">{% for name, value in h.dims.items() %}{{ name }} {{ value }}{% if not loop.last %} · {% endif %}{% endfor %}</td>
-          <td class="truncate-cell">{{ h.note or '—' }}</td>
+          <td class="mono cell-ellipsis" title="{% for name, value in h.dims.items() %}{{ name }} {{ value }}{% if not loop.last %} · {% endif %}{% endfor %}">{% for name, value in h.dims.items() %}{{ name }} {{ value }}{% if not loop.last %} · {% endif %}{% endfor %}</td>
+          <td class="muted cell-ellipsis" title="{{ h.note or '（无备注）' }}">{{ h.note or '—' }}</td>
         </tr>
         {% endfor %}
       </tbody>

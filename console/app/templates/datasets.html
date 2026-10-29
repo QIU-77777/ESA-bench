@@ -13,11 +13,11 @@
   <tbody>
     {% for d in datasets %}
     <tr data-href="/datasets/{{ d.id }}">
-      <td><a href="/datasets/{{ d.id }}">{{ d.name }}</a></td>
-      <td class="muted">{{ d.description }}</td>
+      <td class="cell-ellipsis" title="{{ d.name }}"><a href="/datasets/{{ d.id }}">{{ d.name }}</a></td>
+      <td class="muted cell-ellipsis" title="{{ d.description }}">{{ d.description }}</td>
       <td><span class="badge">{{ d.env_template }}</span></td>
       <td class="num">{{ d.row_count or 0 }}</td>
-      <td class="mono muted">{{ d.last_changed | fmt_time }}</td>
+      <td class="mono muted cell-ellipsis">{{ d.last_changed | fmt_time }}</td>
     </tr>
     {% else %}
     <tr><td colspan="5" class="muted">暂无数据集</td></tr>

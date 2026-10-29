@@ -16,14 +16,14 @@
   <tbody>
     {% for e in experiments %}
     <tr data-href="/experiments/{{ e.id }}" data-search="{{ e.name }} {{ e.dataset_name }} {{ e.profile_name }} {{ e.model_id }} {{ e.status }}">
-      <td><a href="/experiments/{{ e.id }}">{{ e.name }}</a></td>
+      <td class="cell-ellipsis" title="{{ e.name }}"><a href="/experiments/{{ e.id }}">{{ e.name }}</a></td>
       <td>
         <span class="badge {{ 'ok' if e.status == 'completed' else 'fail' if e.status in ('failed', 'aborted') else 'dim' }}">{{ e.status }}</span>
       </td>
-      <td>{{ e.dataset_name }} <span class="mono muted">v{{ e.version_no }}</span></td>
-      <td>{{ e.profile_name }} <span class="mono muted">v{{ e.profile_version_no }}</span></td>
-      <td class="mono">{{ e.model_id }}</td>
-      <td class="mono muted">{{ e.created_at | fmt_time }}</td>
+      <td class="cell-ellipsis" title="{{ e.dataset_name }} v{{ e.version_no }}">{{ e.dataset_name }} <span class="mono muted">v{{ e.version_no }}</span></td>
+      <td class="cell-ellipsis" title="{{ e.profile_name }} v{{ e.profile_version_no }}">{{ e.profile_name }} <span class="mono muted">v{{ e.profile_version_no }}</span></td>
+      <td class="mono cell-ellipsis" title="{{ e.model_id }}">{{ e.model_id }}</td>
+      <td class="mono muted cell-ellipsis">{{ e.created_at | fmt_time }}</td>
     </tr>
     {% else %}
     <tr><td colspan="6" class="muted">暂无实验，点击 "+ New experiment" 创建</td></tr>

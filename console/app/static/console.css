@@ -187,7 +187,15 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 #rows-host th:nth-child(6), #rows-host td:nth-child(6) { width: 15%; }
 #rows-host th:nth-child(7), #rows-host td:nth-child(7) { width: 170px; }
 #rows-host .row-actions { flex-wrap: wrap; }
-#rows-host .cell-ellipsis {
+.review-table th:nth-child(1), .review-table td:nth-child(1) { width: 12%; }
+.review-table th:nth-child(2), .review-table td:nth-child(2) { width: 11%; }
+.review-table th:nth-child(3), .review-table td:nth-child(3) { width: 11%; }
+.review-table th:nth-child(4), .review-table td:nth-child(4) { width: 8%; }
+.review-table th:nth-child(5), .review-table td:nth-child(5) { width: 9%; }
+.review-table th:nth-child(6), .review-table td:nth-child(6) { width: 21%; }
+.review-table th:nth-child(7), .review-table td:nth-child(7) { width: 14%; }
+.review-table th:nth-child(8), .review-table td:nth-child(8) { width: 14%; }
+.cell-ellipsis {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -198,6 +206,7 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
   max-width: 280px;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
   vertical-align: bottom;
 }
 
