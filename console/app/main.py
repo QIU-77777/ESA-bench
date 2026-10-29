@@ -19,6 +19,7 @@ from .services import (
     analysis_service,
     dataset_service,
     experiment_service,
+    harbor_view_service,
     loop_service,
     profiles,
     review_service,
@@ -29,6 +30,7 @@ app = FastAPI(title="Console")
 config.load_env()
 config.ensure_workspace()
 init_db()
+harbor_view_service.ensure_running()
 
 app.mount("/static", StaticFiles(directory=config.CONSOLE_ROOT / "app" / "static"), name="static")
 templates = Jinja2Templates(directory=str(config.CONSOLE_ROOT / "app" / "templates"))
@@ -752,11 +754,21 @@ def _proxy_to_harbor_view(
     try:
         upstream = httpx.request(request.method, url, timeout=30)
     except httpx.HTTPError as exc:
-        return Response(
-            f"Harbor view 未运行或不可达（{config.HARBOUR_VIEW_BASE}）：{exc}",
-            status_code=502,
-            media_type="text/plain",
-        )
+        recovered = harbor_view_service.recover()
+        if recovered:
+            url = f"{recovered}/{path}"
+            if request.url.query:
+                url = f"{url}?{request.url.query}"
+            try:
+                upstream = httpx.request(request.method, url, timeout=30)
+            except httpx.HTTPError:
+                upstream = None
+        if upstream is None:
+            return Response(
+                f"Harbor view 未运行或不可达（{config.HARBOUR_VIEW_BASE}）：{exc}",
+                status_code=502,
+                media_type="text/plain",
+            )
     headers = {
         k: v for k, v in upstream.headers.items()
         if k.lower() not in _HARBOUR_STRIP_HEADERS

@@ -15,6 +15,7 @@ REPORTS_DIR = WORKSPACE / "reports"
 JOBS_DIR = REPO_ROOT / "jobs"
 RUN_SH = REPO_ROOT / "scripts" / "run.sh"
 RENDER_JOB_PY = REPO_ROOT / "scripts" / "render-job.py"
+HARBOR_VIEW_BIN = REPO_ROOT / ".venv" / "bin" / "harbor"
 PYTHON = REPO_ROOT / ".venv" / "bin" / "python"
 ESA_TASK_ENV_DIR = REPO_ROOT / "tasks" / "esa-sc-a1" / "environment"
 

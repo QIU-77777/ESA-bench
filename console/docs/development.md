@@ -288,7 +288,9 @@ FastAPI 增加反向代理路由：
 /harbor-view/<path>  →  转发到本机 Harbor view 服务
 ```
 
-Trace 详情页以 iframe 内嵌 `harbor-view/jobs/<job-name>/<trial>` 的 trial 页面。同源转发避免 iframe 跨源限制。Harbor view 服务由 console 启动时检查并拉起（`harbor view jobs --port <固定端口>`）。
+Trace 详情页以 iframe 内嵌 `harbor-view/jobs/<job-name>/<trial>` 的 trial 页面。同源转发避免 iframe 跨源限制。
+
+Harbor view 服务由 console 启动时检查并拉起（`harbor_view_service.ensure_running`）：探测 127.0.0.1:8080-8089 中已有实例，未运行时以独立会话启动 viewer 并把代理目标改为实际端口。启动命令带 litellm 预热导入——Harbor view 的 pricing 端点惰性导入 litellm，并发请求下该导入会抛 KeyError 且不被 Harbor 捕获，导致服务卡死；预热后请求直达模块缓存。代理转发失败时若实例由 console 拉起过，会终止旧实例并重启（60 秒冷却），随后重试一次。
 
 ### 5.5 密钥与模型
 
