@@ -73,6 +73,9 @@
       </div>
       <div class="row-actions">
         <button type="button" id="review-submit">提交复核</button>
+        {% if detail.review and not detail.review.dims %}
+        <button type="button" class="outline" id="review-cancel">取消</button>
+        {% endif %}
       </div>
     </div>
     {% if detail.review and not detail.review.dims %}
@@ -141,6 +144,17 @@ document.getElementById("review-submit")?.addEventListener("click", async () => 
   const result = await response.json();
   if (result.ok) location.reload();
   else alert((result.errors || ["提交失败"]).join("\n"));
+});
+
+document.getElementById("review-cancel")?.addEventListener("click", async () => {
+  const response = await fetch("/api/reviews/cancel", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ experiment_task_id: taskId }),
+  });
+  const result = await response.json();
+  if (result.ok) location.reload();
+  else alert((result.errors || ["取消失败"]).join("\n"));
 });
 </script>
 {% endblock %}

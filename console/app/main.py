@@ -616,6 +616,15 @@ def submit_review(payload: dict = Body(...)) -> dict:
     return {"ok": True, "review_id": review_id}
 
 
+@app.post("/api/reviews/cancel")
+def cancel_review(payload: dict = Body(...)) -> dict:
+    try:
+        review_service.cancel_review(int(payload.get("experiment_task_id") or 0))
+    except review_service.ReviewError as exc:
+        return {"ok": False, "errors": str(exc)}
+    return {"ok": True}
+
+
 # ── Settings ────────────────────────────────────────────────────────────
 
 

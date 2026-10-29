@@ -125,6 +125,18 @@ def get_review(experiment_task_id: int) -> dict | None:
     return dict(row) if row else None
 
 
+def cancel_review(experiment_task_id: int) -> None:
+    """Remove a task from the review queue together with its history."""
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT id FROM reviews WHERE experiment_task_id=?", (experiment_task_id,)
+        ).fetchone()
+        if row is None:
+            return
+        conn.execute("DELETE FROM review_history WHERE review_id=?", (row["id"],))
+        conn.execute("DELETE FROM reviews WHERE id=?", (row["id"],))
+
+
 def get_history(review_id: int) -> list[dict]:
     with connect() as conn:
         rows = conn.execute(
