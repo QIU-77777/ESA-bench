@@ -147,7 +147,7 @@ class SettingsTests(unittest.TestCase):
             settings = make_settings(Path(tmp))
             self.assertEqual(settings.mock_url, "http://127.0.0.1:8003")
             self.assertEqual(settings.mock_internal_url, "http://mock-system:8003")
-            self.assertEqual(settings.runtime_url, "http://127.0.0.1:8080")
+            self.assertEqual(settings.runtime_url, "http://127.0.0.1:18080")
 
     def test_local_mode_defaults_and_model_override(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -552,9 +552,18 @@ class ServiceStartupTests(unittest.TestCase):
             root = Path(tmp)
             (root / "chat.env").write_text("STEPFUN_OPENAI_BASE_URL=https://example.invalid/v1\nSTEPFUN_API_KEY=offline\n", "utf-8")
             settings = make_settings(root, no_stack=False, env=str(root / "chat.env"))
-            with patch.dict(os.environ, {}, clear=True), patch.object(cli, "health_ok", return_value=False), patch.object(cli, "start_docker_stack", return_value=[]) as start:
+            with patch.dict(os.environ, {}, clear=True), patch.object(cli, "health_ok", return_value=False), patch.object(cli, "port_open", return_value=False), patch.object(cli, "start_docker_stack", return_value=[]) as start:
                 cli.ensure_services(settings, root / "logs")
             start.assert_called_once()
+
+    def test_foreign_service_on_port_reports_conflict(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "chat.env").write_text("STEPFUN_OPENAI_BASE_URL=https://example.invalid/v1\nSTEPFUN_API_KEY=offline\n", "utf-8")
+            settings = make_settings(root, no_stack=False, env=str(root / "chat.env"))
+            with patch.dict(os.environ, {}, clear=True), patch.object(cli, "health_ok", return_value=False), patch.object(cli, "port_open", side_effect=lambda port, **kw: port == 18080):
+                with self.assertRaisesRegex(cli.CliError, "端口 18080 已被其他服务占用"):
+                    cli.ensure_services(settings, root / "logs")
 
     def test_healthy_services_skip_startup(self):
         with tempfile.TemporaryDirectory() as tmp:

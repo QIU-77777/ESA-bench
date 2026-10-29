@@ -63,7 +63,7 @@
 `docker-compose.dev.yaml` 位于仓库根目录，项目名 `esa-dev`：
 
 - `mock-system`：镜像 `${MOCK_SYSTEM_IMAGE:-esa-local-environment:1.0.0}`，端口绑定 `127.0.0.1:8003`，依赖 Redis 健康。
-- `agent-api`：镜像 `${AGENT_API_IMAGE:-esa-react-runtime:1.0.0}`，端口绑定 `127.0.0.1:8080`，依赖环境服务健康。环境变量 `RESPONSES_API_BASE_URL` 与 `RESPONSES_API_KEY` 由宿主环境传入。
+- `agent-api`：镜像 `${AGENT_API_IMAGE:-esa-react-runtime:1.0.0}`，端口绑定 `127.0.0.1:18080`（容器内 8080），依赖环境服务健康。环境变量 `RESPONSES_API_BASE_URL` 与 `RESPONSES_API_KEY` 由宿主环境传入。
 - `redis`：镜像 `redis:7-alpine`，不发布端口。
 
 ### 服务启动模式
@@ -76,7 +76,7 @@
 - `--no-stack`：不启动任何服务，不可达时直接报错并给出启动命令提示。
 - `--ephemeral`：退出时执行 `docker compose -p esa-dev down`。默认退出时保留服务运行。
 
-`--local` 与 Docker 模式的默认地址不同：Docker 模式命令行自身访问 `http://127.0.0.1:8003`，传递给 runtime 的环境服务地址为 `http://mock-system:8003`；`--local` 模式两者均为 `http://127.0.0.1:18003`。两个地址都可用参数覆盖。
+`--local` 与 Docker 模式的默认地址不同：Docker 模式命令行自身访问 `http://127.0.0.1:8003`，传递给 runtime 的环境服务地址为 `http://mock-system:8003`；`--local` 模式两者均为 `http://127.0.0.1:18003`。两个地址都可用参数覆盖。runtime 的宿主端口两种模式均为 18080，与 Harbor view 默认的 8080 错开；容器内部仍监听 8080。
 
 模型端点使用本机地址时，命令行提示改用 `host.docker.internal`，否则 runtime 容器内无法访问。
 

@@ -29,7 +29,7 @@ QUOTE_CHARS = "\"'"
 
 DOCKER_MOCK_URL = "http://127.0.0.1:8003"
 DOCKER_MOCK_INTERNAL_URL = "http://mock-system:8003"
-DOCKER_RUNTIME_URL = "http://127.0.0.1:8080"
+DOCKER_RUNTIME_URL = "http://127.0.0.1:18080"
 LOCAL_MOCK_URL = "http://127.0.0.1:18003"
 LOCAL_RUNTIME_URL = "http://127.0.0.1:18080"
 LOCAL_REDIS_PORT = 16379
@@ -72,7 +72,11 @@ def http_json(url, method="GET", body=None, timeout=30):
         raise CliError(method + " " + url + " 返回 " + str(error.code) + ": " + detail) from error
     except urllib.error.URLError as error:
         raise CliError("无法连接 " + url + ": " + str(error.reason)) from error
-    return json.loads(raw) if raw else {}
+    try:
+        return json.loads(raw) if raw else {}
+    except json.JSONDecodeError as error:
+        detail = raw[:200].decode("utf-8", "replace")
+        raise CliError(method + " " + url + " 返回的不是 JSON: " + detail) from error
 
 
 def health_ok(url):
@@ -207,15 +211,33 @@ def model_endpoint(settings):
 
 
 def ensure_services(settings, log_dir):
-    if health_ok(settings.mock_url + "/health") and health_ok(settings.runtime_url + "/v1/health"):
+    mock_up = health_ok(settings.mock_url + "/health")
+    runtime_up = health_ok(settings.runtime_url + "/v1/health")
+    if mock_up and runtime_up:
         return []
     if settings.no_stack:
         raise CliError("环境服务或 runtime 不可达。请先启动服务，或去掉 --no-stack 由命令自动启动。")
     if not model_endpoint(settings):
         raise CliError("未配置模型端点。请在 .env 中设置 STEPFUN_OPENAI_BASE_URL 与 STEPFUN_API_KEY，或导出同名环境变量后重试。变量名前缀不限服务提供方，端点需兼容 OpenAI Responses API。")
+    _reject_foreign_service(settings, mock_up, runtime_up)
     if settings.local:
         return start_local_stack(settings, log_dir)
     return start_docker_stack(settings)
+
+
+def _reject_foreign_service(settings, mock_up, runtime_up):
+    """端口被其他服务占用时给出明确提示，避免启动后绑定失败。"""
+    from urllib.parse import urlparse
+
+    for up, url in ((mock_up, settings.mock_url), (runtime_up, settings.runtime_url)):
+        if up:
+            continue
+        port = urlparse(url).port
+        if port and port_open(port):
+            raise CliError(
+                f"端口 {port} 已被其他服务占用（{url} 健康检查未通过）。"
+                "停止该服务后重试，或用 --runtime-url、--mock-url 指定其他端口。"
+            )
 
 
 def stop_processes(processes):

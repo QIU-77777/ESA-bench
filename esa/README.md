@@ -71,4 +71,4 @@ node --test esa/test-driver.mjs
 ESA_INTEGRATION=1 node --test esa/test-local-integration.mjs
 ```
 
-端到端集成测试需要本地工具服务与runtime已启动（默认`http://127.0.0.1:18003`与`http://127.0.0.1:8080`，可用`ESA_MOCK_URL`、`ESA_RUNTIME_URL`覆盖）；未设置`ESA_INTEGRATION`时该测试跳过。
+端到端集成测试需要本地工具服务与runtime已启动（默认`http://127.0.0.1:18003`与`http://127.0.0.1:18080`，可用`ESA_MOCK_URL`、`ESA_RUNTIME_URL`覆盖）；未设置`ESA_INTEGRATION`时该测试跳过。

@@ -23,7 +23,7 @@ services:
       RESPONSES_API_BASE_URL: ${STEPFUN_OPENAI_BASE_URL:-}
       RESPONSES_API_KEY: ${STEPFUN_API_KEY:-}
     ports:
-      - "127.0.0.1:8080:8080"
+      - "127.0.0.1:18080:8080"
     depends_on:
       mock-system:
         condition: service_healthy

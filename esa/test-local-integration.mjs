@@ -34,7 +34,7 @@ test("Redis environment and Go runtime perform navigation and read updated state
     const fixture=JSON.parse(readFileSync("tasks/esa-sc-a1/environment/esa/initial_state.json"));
     const result=await run({caseId:"local-integration",instruction:fixture.instruction,initialContext:fixture.context,
       datasetVersion:fixture.dataset_version,mockSystemUrl:process.env.ESA_MOCK_URL??"http://127.0.0.1:18003",
-      agentApiUrl:process.env.ESA_RUNTIME_URL??"http://127.0.0.1:8080",outputPath:join(directory,"result.json"),
+      agentApiUrl:process.env.ESA_RUNTIME_URL??"http://127.0.0.1:18080",outputPath:join(directory,"result.json"),
       agentPayload:{engine:"react",react:{instructions:"使用本地工具",model:{model_id:"fake-model",stream:false},
         model_params:{explicit_api_base:"http://127.0.0.1:"+model.address().port}}}});
     assert.deepEqual(result.errors,[]);assert.equal(result.turnStatus,"completed");
