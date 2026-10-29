@@ -26,7 +26,7 @@
   <div class="section-title">运行 #{{ run.id }}
     <span class="badge {{ 'ok' if run.status == 'done' else 'fail' if run.status == 'failed' else 'dim' }}">{{ run.status }}</span>
   </div>
-  <p class="mono muted">{{ run.agent }} · {{ run.model }} · {{ run.created_at }}{% if run.finished_at %} → {{ run.finished_at }}{% endif %}</p>
+  <p class="mono muted">{{ run.agent }} · {{ run.model }} · {{ run.created_at | fmt_time }}{% if run.finished_at %} → {{ run.finished_at | fmt_time }}{% endif %}</p>
   {% if run.report %}
   <p>{{ run.report.overall }}</p>
   {% if run.report.categories %}
@@ -98,7 +98,7 @@
     <button type="button" id="merge-draft-{{ draft.id }}">确认合并</button>
   </div>
   {% else %}
-  <p class="muted">已合并进数据集 {{ draft.target_dataset_id }}，时间 {{ draft.confirmed_at }}。</p>
+  <p class="muted">已合并进数据集 {{ dataset_names.get(draft.target_dataset_id, draft.target_dataset_id) }}，时间 {{ draft.confirmed_at | fmt_time }}。</p>
   {% endif %}
 </div>
 {% endfor %}

@@ -29,4 +29,11 @@
     {% endfor %}
   </tbody>
 </table>
+
+<div class="section-title">运行日志</div>
+{% if run_log %}
+<pre class="snapshot">{{ run_log }}</pre>
+{% else %}
+<p class="muted">暂无运行日志。实验运行后在此显示 run.sh 输出。</p>
+{% endif %}
 {% endblock %}

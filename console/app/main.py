@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from urllib.parse import quote
 
 import httpx
@@ -31,6 +32,20 @@ init_db()
 app.mount("/static", StaticFiles(directory=config.CONSOLE_ROOT / "app" / "static"), name="static")
 templates = Jinja2Templates(directory=str(config.CONSOLE_ROOT / "app" / "templates"))
 templates.env.filters["from_json"] = json.loads
+
+
+def _fmt_time(value):
+    """Render UTC ISO timestamps as compact local time."""
+    if not value:
+        return "—"
+    try:
+        parsed = datetime.fromisoformat(str(value))
+    except ValueError:
+        return str(value)
+    return parsed.astimezone().strftime("%m-%d %H:%M")
+
+
+templates.env.filters["fmt_time"] = _fmt_time
 
 
 def _beautify_json(value):
@@ -328,14 +343,15 @@ def delete_tryout(tryout_id: int) -> RedirectResponse:
 @app.get("/experiments/new", response_class=HTMLResponse)
 def new_experiment_page(request: Request) -> HTMLResponse:
     datasets = dataset_service.list_datasets()
+    versions = {
+        d["id"]: dataset_service.list_versions(d["id"]) for d in datasets
+    }
     return templates.TemplateResponse(
         request,
         "new_experiment.html",
         {
-            "datasets": datasets,
-            "dataset_versions": {
-                d["id"]: dataset_service.list_versions(d["id"]) for d in datasets
-            },
+            "datasets": [d for d in datasets if versions[d["id"]]],
+            "dataset_versions": versions,
             "profiles": profiles.list_profiles(),
             "scorer_versions": scorer_service.list_all_versions(),
         },
@@ -371,6 +387,9 @@ def create_experiment(
 def experiment_detail(request: Request, experiment_id: int) -> HTMLResponse:
     experiment = experiment_service.get_experiment(experiment_id)
     datasets = dataset_service.list_datasets()
+    versions = {
+        d["id"]: dataset_service.list_versions(d["id"]) for d in datasets
+    }
     return templates.TemplateResponse(
         request,
         "experiment_detail.html",
@@ -378,10 +397,8 @@ def experiment_detail(request: Request, experiment_id: int) -> HTMLResponse:
             "experiment": experiment,
             "tasks": experiment_service.list_tasks(experiment_id),
             "snapshot": json.loads(experiment["snapshot"]) if experiment else {},
-            "datasets": datasets,
-            "dataset_versions": {
-                d["id"]: dataset_service.list_versions(d["id"]) for d in datasets
-            },
+            "datasets": [d for d in datasets if versions[d["id"]]],
+            "dataset_versions": versions,
             "profiles": profiles.list_profiles(),
             "scorer_versions": scorer_service.list_all_versions(),
         },
@@ -426,8 +443,14 @@ def experiment_logs(request: Request, experiment_id: int) -> HTMLResponse:
         experiment_service.list_tasks(experiment_id),
         key=lambda t: (t["score"] is None, t["score"] if t["score"] is not None else 0),
     )
+    log_path = config.REPORTS_DIR / f"run-{experiment_id}.log"
+    run_log = ""
+    if log_path.is_file():
+        run_log = "\n".join(log_path.read_text(errors="replace").splitlines()[-200:])
     return templates.TemplateResponse(
-        request, "logs.html", {"experiment": experiment, "tasks": tasks}
+        request,
+        "logs.html",
+        {"experiment": experiment, "tasks": tasks, "run_log": run_log},
     )
 
 
@@ -643,6 +666,7 @@ def loop_page(request: Request, experiment_id: int) -> HTMLResponse:
             "latest": runs[0] if runs else None,
             "drafts": drafts,
             "datasets": datasets,
+            "dataset_names": {d["id"]: d["name"] for d in datasets},
             "n_failures": len(loop_service.get_failures(experiment_id)),
             "settings": review_service.get_settings(),
         },

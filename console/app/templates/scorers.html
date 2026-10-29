@@ -66,7 +66,7 @@
     {% for t in tryouts %}
     {% set out = t.output | from_json %}
     <tr data-href="/scorers?tryout={{ t.id }}">
-      <td class="mono muted">{{ t.created_at }}</td>
+      <td class="mono muted">{{ t.created_at | fmt_time }}</td>
       <td class="mono"><a class="truncate-cell" href="/scorers?tryout={{ t.id }}">{{ t.trace_ref }}</a></td>
       <td class="num">{{ out.score }}</td>
       <td><span class="badge {{ 'ok' if out.verdict == 'pass' else 'fail' }}">{{ out.verdict }}</span></td>
@@ -115,7 +115,7 @@
       <a href="/scorers" class="modal-close">×</a>
     </header>
     <div class="section-title" style="margin-top:0">概要</div>
-    <p class="mono">trace: {{ tryout_detail.trace_ref }} · 耗时 {{ tryout_detail.duration_ms }}ms · {{ tryout_detail.created_at }}</p>
+    <p class="mono">trace: {{ tryout_detail.trace_ref }} · 耗时 {{ tryout_detail.duration_ms }}ms · {{ tryout_detail.created_at | fmt_time }}</p>
     <div class="section-title">任务输入</div>
     <pre class="snapshot">{{ tryout_detail.input }}</pre>
     <div class="section-title">预期结果</div>
@@ -154,13 +154,13 @@
       <label class="field-label" for="detail-version">版本</label>
       <select id="detail-version">
         {% for v in scorer_detail.versions %}
-        <option value="{{ loop.index0 }}">v{{ v.version_no }} · {{ v.created_at }} · {{ v.change_note or '无变更说明' }}</option>
+        <option value="{{ loop.index0 }}">v{{ v.version_no }} · {{ v.created_at | fmt_time }} · {{ v.change_note or '无变更说明' }}</option>
         {% endfor %}
       </select>
     </div>
     {% for v in scorer_detail.versions %}
     <div class="detail-version-panel{% if not loop.first %} hidden{% endif %}" data-version="{{ loop.index0 }}">
-      <p class="mono muted">v{{ v.version_no }} · {{ v.created_at }} · {{ v.change_note or '无变更说明' }}</p>
+      <p class="mono muted">v{{ v.version_no }} · {{ v.created_at | fmt_time }} · {{ v.change_note or '无变更说明' }}</p>
       <pre class="snapshot json">{{ v.config | pretty_json }}</pre>
     </div>
     {% endfor %}

@@ -86,7 +86,7 @@
       <tbody>
         {% for h in detail.review.history %}
         <tr>
-          <td class="mono muted">{{ h.created_at }}</td>
+          <td class="mono muted">{{ h.created_at | fmt_time }}</td>
           <td>{{ dict(verdicts).get(h.overall_verdict, h.overall_verdict) }}</td>
           <td class="mono">{% for name, value in h.dims.items() %}{{ name }} {{ value }}{% if not loop.last %} · {% endif %}{% endfor %}</td>
           <td class="truncate-cell">{{ h.note or '—' }}</td>

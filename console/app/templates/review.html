@@ -56,8 +56,8 @@
         {% endif %}
       </td>
       <td class="truncate-cell">{{ r.note or '—' }}</td>
-      <td class="mono muted">{{ r.created_at }}</td>
-      <td class="mono muted">{{ r.updated_at }}</td>
+      <td class="mono muted">{{ r.created_at | fmt_time }}</td>
+      <td class="mono muted">{{ r.updated_at | fmt_time }}</td>
     </tr>
     {% else %}
     <tr><td colspan="8" class="muted">复核队列为空。在 Trace 详情页标记存疑后，记录进入队列。</td></tr>

@@ -8,7 +8,9 @@
 <div class="row-actions" style="margin: 1rem 0">
   <button type="button" class="hidden" id="edit-save">保存</button>
   <button type="button" class="outline hidden" id="open-save-as">另存</button>
+  {% if versions %}
   <a class="btn outline" href="/datasets/{{ dataset.id }}/versions/{{ versions[0].id }}/export" style="margin-left:auto">导出 CSV</a>
+  {% endif %}
   <form method="post" action="/datasets/{{ dataset.id }}/delete">
     <button type="button" class="destructive"
       data-confirm-title="删除数据集"

@@ -44,7 +44,7 @@
       <td><span class="badge">{{ p.harness }}</span></td>
       <td class="mono">{{ p.model_id }}</td>
       <td class="mono muted">{{ p.params }}</td>
-      <td class="mono muted">{{ p.created_at }}</td>
+      <td class="mono muted">{{ p.created_at | fmt_time }}</td>
     </tr>
     {% else %}
     <tr><td colspan="6" class="muted">暂无评测对象</td></tr>
@@ -115,7 +115,7 @@ for (const row of document.querySelectorAll("tr[data-profile-name]")) {
     for (const [i, v] of versions.entries()) {
       const opt = document.createElement("option");
       opt.value = String(i);
-      opt.textContent = `v${v.version_no} · ${v.created_at}`;
+      opt.textContent = `v${v.version_no} · ${new Date(v.created_at).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false })}`;
       pdSelect.appendChild(opt);
     }
     document.getElementById("pd-delete-form").action = `/eval-profiles/${currentProfile.id}/delete`;

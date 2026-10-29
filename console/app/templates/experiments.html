@@ -23,7 +23,7 @@
       <td>{{ e.dataset_name }} <span class="mono muted">v{{ e.version_no }}</span></td>
       <td>{{ e.profile_name }} <span class="mono muted">v{{ e.profile_version_no }}</span></td>
       <td class="mono">{{ e.model_id }}</td>
-      <td class="mono muted">{{ e.created_at }}</td>
+      <td class="mono muted">{{ e.created_at | fmt_time }}</td>
     </tr>
     {% else %}
     <tr><td colspan="6" class="muted">暂无实验，点击 "+ New experiment" 创建</td></tr>

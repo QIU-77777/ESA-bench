@@ -14,7 +14,7 @@
   <p><span class="badge ok">本实验是当前基线</span></p>
   {% elif baseline %}
   <p>当前基线：<a href="/experiments/{{ baseline.id }}">{{ baseline.name }}</a>
-    <span class="mono muted">{{ baseline.set_at }}</span></p>
+    <span class="mono muted">{{ baseline.set_at | fmt_time }}</span></p>
   {% else %}
   <p class="muted">该数据集还没有基线实验</p>
   {% endif %}
