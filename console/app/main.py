@@ -626,6 +626,9 @@ def settings_page(request: Request) -> HTMLResponse:
     if agents and current_agent not in {a["id"] for a in agents}:
         current_agent = agents[0]["id"]
     models = agent_registry.list_models(current_agent) if current_agent else []
+    saved_model = str(settings.get("loop_model") or "")
+    if models and saved_model not in models:
+        saved_model = models[0]
     return templates.TemplateResponse(
         request,
         "settings.html",
@@ -634,6 +637,7 @@ def settings_page(request: Request) -> HTMLResponse:
             "agents": agents,
             "models": models,
             "current_agent": current_agent,
+            "loop_model": saved_model,
         },
     )
 

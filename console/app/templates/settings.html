@@ -44,15 +44,12 @@
       <label class="field-label" for="loop-model">分析模型</label>
       <select id="loop-model" name="loop_model">
         {% for m in models %}
-        <option value="{{ m }}" {% if m == settings.loop_model %}selected{% endif %}>{{ m }}</option>
+        <option value="{{ m }}" {% if m == loop_model %}selected{% endif %}>{{ m }}</option>
         {% endfor %}
-        {% if settings.loop_model not in models %}
-        <option value="{{ settings.loop_model }}" selected>{{ settings.loop_model }}</option>
-        {% endif %}
       </select>
       {% else %}
       <label class="field-label" for="loop-model">分析模型</label>
-      <input id="loop-model" name="loop_model" value="{{ settings.loop_model }}" placeholder="provider/model-id">
+      <input id="loop-model" name="loop_model" value="{{ loop_model }}" placeholder="provider/model-id">
       {% endif %}
     </div>
   </div>
@@ -90,20 +87,18 @@ list.addEventListener("click", (ev) => {
 {
   const agentSel = document.getElementById("loop-agent");
   const modelField = document.getElementById("model-field");
-  const savedModel = {{ settings.loop_model | tojson }};
+  const savedModel = {{ loop_model | tojson }};
   const escAttr = (s) => String(s).replace(/&/g, "&amp;").replace(/"/g, "&quot;");
 
   const renderModels = (models) => {
     if (models.length) {
+      const selected = models[0];
       const options = models
-        .map((m) => `<option value="${escAttr(m)}"${m === savedModel ? " selected" : ""}>${escAttr(m)}</option>`)
+        .map((m) => `<option value="${escAttr(m)}"${m === selected ? " selected" : ""}>${escAttr(m)}</option>`)
         .join("");
-      const extra = models.includes(savedModel)
-        ? ""
-        : `<option value="${escAttr(savedModel)}" selected>${escAttr(savedModel)}</option>`;
       modelField.innerHTML =
         `<label class="field-label" for="loop-model">分析模型</label>` +
-        `<select id="loop-model" name="loop_model">${options}${extra}</select>`;
+        `<select id="loop-model" name="loop_model">${options}</select>`;
       initCustomSelect(document.getElementById("loop-model"));
     } else {
       modelField.innerHTML =
