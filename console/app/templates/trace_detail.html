@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "macros.html" import verdict_icon_span, verdict_label %}
 {% block title %}Trace {{ task.row_id }} · Console{% endblock %}
 {% block content %}
 <h1 class="page-title">Trace · {{ task.row_id }}
@@ -61,7 +62,7 @@
           {% for value, label in verdicts %}
           <label>
             <input type="radio" name="overall-verdict" value="{{ value }}" {% if detail.review and detail.review.overall_verdict == value %}checked{% endif %}>
-            {{ label }}
+            {{ verdict_icon_span(value) }}{{ label }}
           </label>
           {% endfor %}
         </div>
@@ -87,7 +88,7 @@
         {% for h in detail.review.history %}
         <tr>
           <td class="mono muted">{{ h.created_at | fmt_time }}</td>
-          <td>{{ dict(verdicts).get(h.overall_verdict, h.overall_verdict) }}</td>
+          <td>{{ verdict_icon_span(h.overall_verdict) }}{{ verdict_label(h.overall_verdict) }}</td>
           <td class="mono">{% for name, value in h.dims.items() %}{{ name }} {{ value }}{% if not loop.last %} · {% endif %}{% endfor %}</td>
           <td class="truncate-cell">{{ h.note or '—' }}</td>
         </tr>

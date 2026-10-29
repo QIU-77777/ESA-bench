@@ -19,6 +19,8 @@
   --accent-foreground: oklch(21% .006 285.885);
   --destructive: oklch(57.7% .245 27.325);
   --destructive-foreground: oklch(98.5% 0 0);
+  --success: oklch(59.5% .16 146);
+  --warning: oklch(68% .16 70);
   --ring: oklch(70.5% .015 286.067);
   --radius: 0rem;
   --sidebar-border: oklch(92% .004 286.32);
@@ -45,6 +47,8 @@
   --accent-foreground: oklch(98.5% 0 0);
   --destructive: oklch(70.4% .191 22.216);
   --destructive-foreground: oklch(21% .006 285.885);
+  --success: oklch(72% .17 148);
+  --warning: oklch(80% .15 75);
   --ring: oklch(55.2% .016 285.938);
   --sidebar-border: oklch(30.23% .006 286.033);
   --sidebar-accent: oklch(27.4% .006 286.033);
@@ -213,9 +217,15 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
   font-weight: 500;
   white-space: nowrap;
 }
-.badge.ok { border-color: var(--foreground); }
+.badge.ok { border-color: var(--success); color: var(--success); }
+.badge.warn { border-color: var(--warning); color: var(--warning); }
 .badge.fail { border-color: var(--destructive); color: var(--destructive); }
 .badge.dim { color: var(--muted-foreground); }
+.badge svg { flex-shrink: 0; }
+.verdict-icon { display: inline-flex; align-items: center; vertical-align: -2px; }
+.verdict-icon.ok { color: var(--success); }
+.verdict-icon.warn { color: var(--warning); }
+.verdict-icon.fail { color: var(--destructive); }
 
 button, .btn {
   display: inline-flex;

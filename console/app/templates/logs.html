@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "macros.html" import verdict_badge %}
 {% block title %}Logs · {{ experiment.name }} · Console{% endblock %}
 {% block content %}
 <h1 class="page-title">{{ experiment.name }} · Logs
@@ -20,7 +21,7 @@
       <td class="num">{{ '%.3f' | format(t.score) if t.score is not none else '—' }}</td>
       <td>{% if t.verdict %}<span class="badge {{ 'ok' if t.verdict == 'pass' else 'fail' }}">{{ t.verdict }}</span>{% else %}—{% endif %}</td>
       <td class="mono muted">{{ t.failure_category or '—' }}</td>
-      <td class="mono muted">{{ t.review_verdict or '未复核' }}</td>
+      <td>{{ verdict_badge(t.review_verdict) }}</td>
       <td class="num">{{ t.duration_ms or '—' }}</td>
       <td class="num">{{ ((t.n_input_tokens or 0) + (t.n_output_tokens or 0)) or '—' }}</td>
     </tr>

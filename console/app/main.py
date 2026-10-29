@@ -589,7 +589,6 @@ def review_page(
             "current_experiment": experiment,
             "current_state": state,
             "summary": summary,
-            "verdict_labels": dict(review_service.VERDICTS),
         },
     )
 

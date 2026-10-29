@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "macros.html" import verdict_badge %}
 {% block title %}Review · Console{% endblock %}
 {% block content %}
 <div class="list-header">
@@ -52,7 +53,7 @@
         {% if r.pending %}
         <span class="badge dim">待复核</span>
         {% else %}
-        <span class="badge {{ 'ok' if r.overall_verdict == 'pass' else 'fail' if r.overall_verdict == 'fail' else 'dim' }}">{{ verdict_labels.get(r.overall_verdict, r.overall_verdict) }}</span>
+        {{ verdict_badge(r.overall_verdict) }}
         {% endif %}
       </td>
       <td class="truncate-cell">{{ r.note or '—' }}</td>

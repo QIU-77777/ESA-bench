@@ -1,0 +1,23 @@
+{% macro verdict_icon(value) %}
+{%- if value == 'pass' -%}
+<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5l3 3 7-7"/></svg>
+{%- elif value == 'suspect' -%}
+<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6.1 6.1a1.9 1.9 0 1 1 2.7 1.8c-.6.3-.9.9-.9 1.6"/><path d="M8 11.9v.1"/></svg>
+{%- elif value == 'fail' -%}
+<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 4l8 8M12 4l-8 8"/></svg>
+{%- endif -%}
+{% endmacro %}
+
+{% macro verdict_color(value) %}{{ 'ok' if value == 'pass' else 'warn' if value == 'suspect' else 'fail' if value == 'fail' else 'dim' }}{% endmacro %}
+
+{% macro verdict_label(value) %}{{ {'pass': '通过', 'suspect': '存疑', 'fail': '不通过'}.get(value, value) }}{% endmacro %}
+
+{% macro verdict_icon_span(value) %}<span class="verdict-icon {{ verdict_color(value) }}">{{ verdict_icon(value) }}</span>{% endmacro %}
+
+{% macro verdict_badge(value) %}
+{%- if value -%}
+<span class="badge {{ verdict_color(value) }}">{{ verdict_icon(value) }}{{ verdict_label(value) }}</span>
+{%- else -%}
+<span class="badge dim">未复核</span>
+{%- endif -%}
+{% endmacro %}

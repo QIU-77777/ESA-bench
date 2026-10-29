@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "macros.html" import verdict_badge %}
 {% block title %}Dashboard · {{ experiment.name }} · Console{% endblock %}
 {% block content %}
 <h1 class="page-title">{{ experiment.name }} · Dashboards</h1>
@@ -74,7 +75,7 @@
   <tbody>
     {% for g in dashboard.groups %}
     <tr>
-      <td class="mono">{{ g.group }}</td>
+      <td>{% if g.group in ('pass', 'suspect', 'fail') %}{{ verdict_badge(g.group) }}{% else %}<span class="mono">{{ g.group }}</span>{% endif %}</td>
       <td class="num">{{ g.n }}</td>
       <td class="num">{{ g.n_pass }}</td>
       <td class="num">{{ '%.0f%%' | format((g.pass_rate or 0) * 100) }}</td>
