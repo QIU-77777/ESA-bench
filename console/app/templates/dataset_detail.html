@@ -149,9 +149,11 @@ function updateDirty() {
   return dirty;
 }
 
-document.addEventListener("input", (ev) => {
-  if (ev.target.closest("#rows-host, .field")) updateDirty();
-});
+for (const eventType of ["input", "change"]) {
+  document.addEventListener(eventType, (ev) => {
+    if (ev.target.closest("#rows-host, .field")) updateDirty();
+  });
+}
 
 let openEditorIndex = null;
 let openEditorSnapshot = null;
@@ -173,7 +175,7 @@ function renderRows() {
     const tags = normalizeTags(r.tags);
     const metadata = typeof r.metadata === "string" ? r.metadata : JSON.stringify(r.metadata ?? {});
     const action = isOpen
-      ? `<button type="button" class="outline row-toggle" data-index="${i}">取消编辑</button>`
+      ? `<button type="button" class="outline row-toggle" data-index="${i}">取消</button>`
       : `<button type="button" class="outline row-edit" data-index="${i}">编辑</button>`;
     const cells = isOpen
       ? `<td><input class="row-id mono" value="${esc(r.row_id)}"></td>
@@ -218,7 +220,7 @@ rowsHost.addEventListener("input", (ev) => {
   const row = ev.target.closest("tr.row-summary");
   if (!row || Number(row.dataset.index) !== openEditorIndex) return;
   const toggle = row.querySelector(".row-toggle");
-  if (toggle) toggle.textContent = rowDirty(row) ? "保存编辑" : "取消编辑";
+  if (toggle) toggle.textContent = rowDirty(row) ? "保存" : "取消";
 });
 
 function expandRowEditor(index) {

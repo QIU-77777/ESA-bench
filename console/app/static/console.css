@@ -200,7 +200,7 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
   overflow: hidden;
   text-overflow: ellipsis;
 }
-#rows-host input, #rows-host textarea { width: 100%; }
+#rows-host input, #rows-host textarea { width: 100%; font-size: 0.875rem; }
 .truncate-cell {
   display: inline-block;
   max-width: 280px;
