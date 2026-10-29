@@ -5,6 +5,7 @@ from __future__ import annotations
 import csv
 import io
 import json
+import re
 
 REQUIRED_COLUMNS = ("id", "input")
 OPTIONAL_COLUMNS = ("expected", "tags", "metadata", "rubric")
@@ -51,6 +52,32 @@ def validate_rows(rows: list[dict]) -> list[str]:
     return errors
 
 
+def _clean_tag(value) -> str:
+    """Strip stray JSON brackets and quotes left by earlier encodings."""
+    text = re.sub(r"^\[+", "", str(value).strip())
+    text = re.sub(r"\]+$", "", text)
+    return text.strip().strip("\"'").strip()
+
+
+def _tag_list(tags) -> list[str]:
+    """Accept a list, a JSON array string, or a comma-separated string."""
+    if isinstance(tags, list):
+        items = tags
+    else:
+        text = str(tags or "").strip()
+        items = None
+        if text.startswith("["):
+            try:
+                parsed = json.loads(text)
+                if isinstance(parsed, list):
+                    items = parsed
+            except json.JSONDecodeError:
+                items = None
+        if items is None:
+            items = text.split(",")
+    return [tag for tag in (_clean_tag(item) for item in items) if tag]
+
+
 def normalize_rows(rows: list[dict]) -> list[dict]:
     """Coerce row dicts into the canonical dataset row shape."""
     result = []
@@ -58,15 +85,12 @@ def normalize_rows(rows: list[dict]) -> list[dict]:
         metadata = row.get("metadata")
         if isinstance(metadata, str):
             metadata = json.loads(metadata) if metadata.strip() else {}
-        tags = row.get("tags")
-        if isinstance(tags, str):
-            tags = [t.strip() for t in tags.split(",") if t.strip()]
         result.append(
             {
                 "row_id": str(row.get("row_id") or "").strip(),
                 "input": str(row.get("input") or "").strip(),
                 "expected": str(row.get("expected") or "").strip(),
-                "tags": list(tags or []),
+                "tags": _tag_list(row.get("tags")),
                 "metadata": dict(metadata or {}),
                 "rubric": str(row.get("rubric") or "").strip(),
             }

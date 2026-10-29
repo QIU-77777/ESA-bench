@@ -95,18 +95,34 @@ const datasetId = {{ dataset.id }};
 let rowsData = {{ rows | tojson }};
 const rowsHost = document.getElementById("rows-host");
 
-const esc = (s) => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;");
+const esc = (s) => String(s ?? "")
+  .replace(/&/g, "&amp;")
+  .replace(/</g, "&lt;")
+  .replace(/"/g, "&quot;");
+
+function cleanTag(t) {
+  return String(t ?? "")
+    .replace(/^\[+/, "")
+    .replace(/\]+$/, "")
+    .replace(/^["']+|["']+$/g, "")
+    .trim();
+}
 
 function normalizeTags(tags) {
-  if (Array.isArray(tags)) return tags.join(", ");
-  const text = String(tags ?? "").trim();
-  if (text.startsWith("[")) {
-    try {
-      const parsed = JSON.parse(text);
-      if (Array.isArray(parsed)) return parsed.join(", ");
-    } catch {}
+  let items = null;
+  if (Array.isArray(tags)) {
+    items = tags;
+  } else {
+    const text = String(tags ?? "").trim();
+    if (text.startsWith("[")) {
+      try {
+        const parsed = JSON.parse(text);
+        if (Array.isArray(parsed)) items = parsed;
+      } catch {}
+    }
+    if (items === null) items = text.split(",");
   }
-  return text;
+  return items.map(cleanTag).filter(Boolean).join(", ");
 }
 
 function collectState() {
@@ -137,15 +153,33 @@ document.addEventListener("input", (ev) => {
   if (ev.target.closest("#rows-host, .field")) updateDirty();
 });
 
+let openEditorIndex = null;
+let openEditorSnapshot = null;
+
+function normalizeRow(r) {
+  return {
+    row_id: String(r.row_id ?? "").trim(),
+    input: String(r.input ?? ""),
+    expected: String(r.expected ?? ""),
+    tags: normalizeTags(r.tags),
+    metadata: typeof r.metadata === "string" ? r.metadata : JSON.stringify(r.metadata ?? {}),
+    rubric: String(r.rubric ?? ""),
+  };
+}
+
 function renderRows() {
   const body = rowsData.map((r, i) => {
     const tags = normalizeTags(r.tags);
+    const isOpen = i === openEditorIndex;
+    const action = isOpen
+      ? `<button type="button" class="outline row-toggle" data-index="${i}">取消编辑</button>`
+      : `<button type="button" class="outline row-edit" data-index="${i}">编辑</button>`;
     return `<tr class="row-summary" data-index="${i}">
       <td class="mono">${esc(r.row_id)}</td>
       <td>${esc((r.input ?? "").slice(0, 80))}${(r.input ?? "").length > 80 ? "…" : ""}</td>
       <td class="muted">${esc((r.expected ?? "").slice(0, 60))}</td>
       <td class="mono muted">${esc(tags) || "—"}</td>
-      <td><div class="row-actions"><button type="button" class="outline row-edit" data-index="${i}">编辑</button><button type="button" class="outline row-remove" data-index="${i}">删除</button></div></td>
+      <td><div class="row-actions">${action}<button type="button" class="outline row-remove" data-index="${i}">删除</button></div></td>
     </tr>`;
   }).join("");
   rowsHost.innerHTML = `
@@ -153,23 +187,31 @@ function renderRows() {
       <thead><tr><th>id</th><th>input</th><th>expected</th><th>tags</th><th></th></tr></thead>
       <tbody>${body || '<tr><td colspan="5" class="muted">暂无任务行</td></tr>'}</tbody>
     </table>`;
-  rowsHost.querySelectorAll(".row-remove").forEach((btn) =>
-    btn.addEventListener("click", () => {
-      rowsData.splice(Number(btn.dataset.index), 1);
-      renderRows();
-      updateDirty();
-    })
-  );
-  rowsHost.querySelectorAll(".row-edit").forEach((btn) =>
-    btn.addEventListener("click", () => expandRowEditor(Number(btn.dataset.index)))
-  );
 }
 
+rowsHost.addEventListener("click", (ev) => {
+  const editBtn = ev.target.closest(".row-edit");
+  const toggleBtn = ev.target.closest(".row-toggle");
+  const removeBtn = ev.target.closest(".row-remove");
+  if (editBtn) expandRowEditor(Number(editBtn.dataset.index));
+  else if (toggleBtn) collapseRowEditor(Number(toggleBtn.dataset.index));
+  else if (removeBtn) {
+    commitOpenEditor();
+    rowsData.splice(Number(removeBtn.dataset.index), 1);
+    renderRows();
+    updateDirty();
+  }
+});
+
 function expandRowEditor(index) {
+  if (openEditorIndex === index) return;
+  commitOpenEditor();
+  renderRows();
   const r = rowsData[index] || { row_id: "", input: "", expected: "", tags: "", metadata: {}, rubric: "" };
   const tags = normalizeTags(r.tags);
   const metadata = typeof r.metadata === "string" ? r.metadata : JSON.stringify(r.metadata ?? {});
   const tr = rowsHost.querySelector(`tr.row-summary[data-index="${index}"]`);
+  if (!tr) return;
   const editor = document.createElement("tr");
   editor.className = "row-editor";
   editor.innerHTML = `
@@ -182,36 +224,57 @@ function expandRowEditor(index) {
       <div class="field"><label class="field-label">expected</label><textarea class="row-expected" rows="2">${esc(r.expected)}</textarea></div>
       <div class="field"><label class="field-label">metadata</label><textarea class="row-metadata mono" rows="2">${esc(metadata)}</textarea></div>
       <div class="field"><label class="field-label">rubric</label><textarea class="row-rubric" rows="2">${esc(r.rubric)}</textarea></div>
-      <div class="row-actions"><button type="button" class="outline row-collapse">收起</button></div>
     </td>`;
   tr.after(editor);
-  editor.querySelector(".row-collapse").addEventListener("click", () => {
-    rowsData[index] = readRowEditor(editor);
-    renderRows();
-    updateDirty();
+  openEditorIndex = index;
+  openEditorSnapshot = JSON.stringify(normalizeRow(rowsData[index]));
+  const btn = tr.querySelector(".row-edit");
+  if (btn) {
+    btn.classList.remove("row-edit");
+    btn.classList.add("row-toggle");
+    btn.textContent = "取消编辑";
+  }
+  editor.addEventListener("input", () => {
+    const toggle = rowsHost.querySelector(`tr.row-summary[data-index="${index}"] .row-toggle`);
+    if (toggle) toggle.textContent = editorDirty(editor) ? "保存编辑" : "取消编辑";
   });
+}
+
+function collapseRowEditor(index) {
+  const editor = rowsHost.querySelector("tr.row-editor");
+  if (editor) rowsData[index] = readRowEditor(editor);
+  openEditorIndex = null;
+  openEditorSnapshot = null;
+  renderRows();
+  updateDirty();
+}
+
+function editorDirty(editor) {
+  if (openEditorSnapshot === null) return false;
+  return JSON.stringify(readRowEditor(editor)) !== openEditorSnapshot;
 }
 
 function readRowEditor(editor) {
-  return {
-    row_id: editor.querySelector(".row-id").value.trim(),
+  return normalizeRow({
+    row_id: editor.querySelector(".row-id").value,
     input: editor.querySelector(".row-input").value,
     expected: editor.querySelector(".row-expected").value,
-    tags: normalizeTags(editor.querySelector(".row-tags").value),
+    tags: editor.querySelector(".row-tags").value,
     metadata: editor.querySelector(".row-metadata").value,
     rubric: editor.querySelector(".row-rubric").value,
-  };
-}
-
-function collectOpenEditors() {
-  rowsHost.querySelectorAll("tr.row-editor").forEach((editor) => {
-    const index = Number(editor.previousElementSibling.dataset.index);
-    rowsData[index] = readRowEditor(editor);
   });
 }
 
+function commitOpenEditor() {
+  if (openEditorIndex === null) return;
+  const editor = rowsHost.querySelector("tr.row-editor");
+  if (editor) rowsData[openEditorIndex] = readRowEditor(editor);
+  openEditorIndex = null;
+  openEditorSnapshot = null;
+}
+
 async function saveChanges() {
-  collectOpenEditors();
+  commitOpenEditor();
   const payload = {
     meta: {
       name: document.getElementById("meta-name").value.trim(),
@@ -237,7 +300,7 @@ async function saveChanges() {
 }
 
 document.getElementById("rows-add")?.addEventListener("click", () => {
-  collectOpenEditors();
+  commitOpenEditor();
   rowsData.push({ row_id: "", input: "", expected: "", tags: "", metadata: {}, rubric: "" });
   renderRows();
   expandRowEditor(rowsData.length - 1);
@@ -248,7 +311,7 @@ document.getElementById("open-save-as")?.addEventListener("click", () => {
   document.getElementById("save-as-modal").classList.remove("hidden");
 });
 document.getElementById("save-as-confirm")?.addEventListener("click", async () => {
-  collectOpenEditors();
+  commitOpenEditor();
   const response = await fetch(`/datasets/${datasetId}/save-as`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -270,7 +333,7 @@ document.getElementById("save-as-confirm")?.addEventListener("click", async () =
 });
 
 document.getElementById("back-link")?.addEventListener("click", (ev) => {
-  collectOpenEditors();
+  commitOpenEditor();
   if (!updateDirty()) return;
   ev.preventDefault();
   document.getElementById("unsaved-modal").classList.remove("hidden");
