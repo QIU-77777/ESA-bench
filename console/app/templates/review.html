@@ -6,7 +6,7 @@
   <h1 class="page-title" style="margin:0">Review</h1>
 </div>
 
-<form method="get" action="/review" class="field-grid" style="margin: 1rem 0; align-items:end">
+<form method="get" action="/review" id="review-filter" class="field-grid" style="margin: 1rem 0; align-items:end">
   <div class="field">
     <label class="field-label" for="rv-exp">实验</label>
     <select id="rv-exp" name="experiment">
@@ -23,9 +23,6 @@
       <option value="pending" {% if current_state == 'pending' %}selected{% endif %}>待复核</option>
       <option value="done" {% if current_state == 'done' %}selected{% endif %}>已复核</option>
     </select>
-  </div>
-  <div class="field">
-    <button type="submit" class="outline">筛选</button>
   </div>
 </form>
 
@@ -65,4 +62,12 @@
     {% endfor %}
   </tbody>
 </table>
+{% endblock %}
+{% block scripts %}
+<script>
+const filterForm = document.getElementById("review-filter");
+for (const sel of ["rv-exp", "rv-state"]) {
+  document.getElementById(sel)?.addEventListener("change", () => filterForm.submit());
+}
+</script>
 {% endblock %}
