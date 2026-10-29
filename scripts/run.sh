@@ -281,7 +281,12 @@ PY="$_HB_PY"
   Keep them in sync (version bump: edit the manifest, scripts/build-harness.sh $_harness, update $JOB_CONFIG)."
 [ "$JOB_TARGET" = "$HARNESS_MOUNT_PATH" ] || fail "$JOB_CONFIG mounts the harness at '$JOB_TARGET' but manifest mount_path is '$HARNESS_MOUNT_PATH'."
 
-# ── 4) Harness image exists and its version label matches ─────────────
+# ── 4) Docker daemon reachable ─────────────────────────────────────────
+_server_api="$(docker version --format '{{.Server.APIVersion}}' 2>/dev/null)" \
+    || fail "cannot query the Docker daemon (is Docker running?)
+  Start Docker Desktop, wait for the daemon, then run again."
+
+# ── 5) Harness image exists and its version label matches ─────────────
 if docker image inspect "$HARNESS_IMAGE" >/dev/null 2>&1; then
     _label="$(docker image inspect -f '{{index .Config.Labels "'"$HARNESS_NAME"'.version"}}' "$HARNESS_IMAGE")"
     [ "$_label" = "$HARNESS_VERSION" ] || fail "image $HARNESS_IMAGE carries LABEL $HARNESS_NAME.version=$_label but manifest says $HARNESS_VERSION.
@@ -299,9 +304,7 @@ else
     fi
 fi
 
-# ── 5) Docker API version supports image mounts (>= 1.48) ──────────────
-_server_api="$(docker version --format '{{.Server.APIVersion}}' 2>/dev/null)" \
-    || fail "cannot query the Docker daemon (is Docker running?)"
+# ── 6) Docker API version supports image mounts (>= 1.48) ──────────────
 _api_major="${_server_api%%.*}"
 _api_minor="${_server_api#*.}"
 _api_minor="${_api_minor%%.*}"
@@ -312,7 +315,7 @@ if ! { [ "$_api_major" -gt 1 ] || { [ "$_api_major" -eq 1 ] && [ "$_api_minor" -
     fail "Docker API $_server_api is older than 1.48; harness image mounts need >= 1.48. Upgrade Docker."
 fi
 
-# ── 6) Model gateway reachable with the provided key ───────────────────
+# ── 7) Model gateway reachable with the provided key ───────────────────
 [ -n "${API_KEY:-}" ] || fail "API_KEY is not set (model: $MODEL_SLUG → ${_prefix}_API_KEY in .env)."
 # Probe the endpoint this harness speaks (values from the selected .env
 # group; the gateway binds models to one protocol per endpoint). OpenAI-style
@@ -337,7 +340,7 @@ for _url in $_model_urls; do
 done
 [ "$_http_code" = "200" ] || fail "no models endpoint returned HTTP 200 under ${GATEWAY_URL} (tried: $_model_urls; last: HTTP $_http_code) — key invalid or gateway down."
 
-# ── 7) Dry run: report the resolved plan, run nothing ──────────────────
+# ── 8) Dry run: report the resolved plan, run nothing ──────────────────
 if [ "$DRY_RUN" = "1" ]; then
     echo "Preflight OK. Resolved plan:"
     echo "  job name   : $JOB_NAME"
@@ -357,7 +360,7 @@ if [ "$DRY_RUN" = "1" ]; then
     exit 0
 fi
 
-# ── 8) Run ─────────────────────────────────────────────────────────────
+# ── 9) Run ─────────────────────────────────────────────────────────────
 # --agent-env delivers key + endpoints into the container (for {env:VAR}
 # and $OPENAI_BASE_URL reads); harbor resolves the endpoint names host-side
 # from the exported environment. The key enters under both protocol names;
