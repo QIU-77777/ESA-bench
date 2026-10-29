@@ -540,6 +540,18 @@ def duplicate_experiment(
     return _redirect(f"/experiments/{new_id}")
 
 
+@app.post("/experiments/{experiment_id}/rename")
+def rename_experiment(
+    experiment_id: int,
+    name: str = Form(...),
+) -> RedirectResponse:
+    try:
+        experiment_service.rename_experiment(experiment_id, name)
+    except experiment_service.ExperimentError as exc:
+        return _redirect("/experiments", str(exc))
+    return _redirect("/experiments")
+
+
 @app.post("/experiments/{experiment_id}")
 def update_experiment(
     experiment_id: int,

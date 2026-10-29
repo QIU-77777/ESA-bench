@@ -195,11 +195,13 @@ def dashboard(experiment_id: int, group_by: str = "tags") -> dict:
 
 
 def _row_meta(experiment_id: int) -> dict[str, dict]:
+    from ..render.csv_loader import _tag_list
+
     experiment = experiment_service.get_experiment(experiment_id)
     result = {}
     for row in dataset_service.list_rows(experiment["dataset_version_id"]):
         result[row["row_id"]] = {
-            "tags": json.loads(row["tags"]),
+            "tags": _tag_list(row["tags"]),
             "metadata": json.loads(row["metadata"]),
         }
     return result

@@ -7,6 +7,7 @@ import time
 
 from .. import config
 from ..db import connect, rows_to_dicts, utc_now
+from ..render.csv_loader import _tag_list
 from ..scorers.base import run_scorer
 from . import dataset_service, harbor_adapter, review_service
 
@@ -318,6 +319,6 @@ def _dataset_row(experiment: dict, row_id: str) -> dict:
                 "input": row["input"],
                 "expected": row["expected"],
                 "rubric": row["rubric"],
-                "tags": json.loads(row["tags"]),
+                "tags": _tag_list(row["tags"]),
             }
     raise ScorerError(f"数据集版本里没有任务行：{row_id}")

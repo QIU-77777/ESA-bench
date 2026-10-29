@@ -8,7 +8,7 @@ import io
 import json
 
 from ..db import connect, rows_to_dicts, utc_now
-from ..render.csv_loader import parse_csv
+from ..render.csv_loader import _tag_list, parse_csv
 
 VALID_ENV_TEMPLATES = ("standard", "esa")
 
@@ -236,7 +236,7 @@ def export_version_csv(version_id: int) -> str:
                 row["row_id"],
                 row["input"],
                 row["expected"],
-                ",".join(json.loads(row["tags"])),
+                ",".join(_tag_list(row["tags"])),
                 json.dumps(json.loads(row["metadata"]), ensure_ascii=False)
                 if row["metadata"] != "{}"
                 else "",

@@ -5,7 +5,6 @@ from __future__ import annotations
 import csv
 import io
 import json
-import re
 
 REQUIRED_COLUMNS = ("id", "input")
 OPTIONAL_COLUMNS = ("expected", "tags", "metadata", "rubric")
@@ -53,10 +52,11 @@ def validate_rows(rows: list[dict]) -> list[str]:
 
 
 def _clean_tag(value) -> str:
-    """Strip stray JSON brackets and quotes left by earlier encodings."""
-    text = re.sub(r"^\[+", "", str(value).strip())
-    text = re.sub(r"\]+$", "", text)
-    return text.strip().strip("\"'").strip()
+    """Strip JSON structural characters left by nested encodings."""
+    text = str(value)
+    for char in ("[", "]", '"', "'", "\\"):
+        text = text.replace(char, "")
+    return text.strip(" ,")
 
 
 def _tag_list(tags) -> list[str]:

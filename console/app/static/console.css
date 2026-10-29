@@ -209,6 +209,44 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
   white-space: nowrap;
   vertical-align: bottom;
 }
+.row-menu { position: relative; display: flex; justify-content: flex-end; }
+.row-menu button.menu-trigger {
+  padding: 0 0.5rem;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--muted-foreground);
+}
+.row-menu button.menu-trigger:hover {
+  border: 0;
+  box-shadow: none;
+  background: var(--accent);
+  color: var(--accent-foreground);
+}
+.menu-pop {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 30;
+  min-width: 140px;
+  background: var(--popover);
+  border: 1px solid var(--border);
+  box-shadow: 0 4px 12px rgb(0 0 0 / 0.08);
+}
+.menu-pop.hidden { display: none; }
+.menu-item {
+  display: block;
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  background: transparent;
+  border: 0;
+  text-align: left;
+  font-size: 0.875rem;
+  color: var(--popover-foreground);
+  cursor: pointer;
+}
+.menu-item:hover { background: var(--accent); color: var(--accent-foreground); }
+#exp-table th:last-child, #exp-table td:last-child { width: 56px; }
 
 .badge {
   display: inline-flex;
@@ -551,7 +589,7 @@ pre.snapshot {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 1rem;
-  align-items: start;
+  align-items: stretch;
   margin-bottom: 1rem;
 }
 .grid-2 .card { margin-bottom: 0; }

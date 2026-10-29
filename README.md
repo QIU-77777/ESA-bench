@@ -19,9 +19,15 @@
 </div>
 
 <div align="center">
-  <img src="./assets/trial-details.png" alt="trial 详情" width="860" />
+  <img src="./assets/trial&judge-details.png" alt="trial 详情" width="860" />
   <br />
   <b>trial 详情</b>
+</div>
+
+<div align="center">
+  <img src="./assets/dataset-details.png" alt="datasets 详情" width="860" />
+  <br />
+  <b>datasets 详情</b>
 </div>
 
 <br>
@@ -40,6 +46,35 @@ ESA-bench 使用 Harbor 调度评测试验，在本地模拟座舱环境中运�
 - **完整证据**：输出Harbor结果、ATIF格式轨迹、初始与最终快照、工具事件和环境能力清单。
 
 路线、天气、视觉、知识和外部服务使用本地模拟资料。环境不控制真实车辆，也不执行真实预订、交易或救援。具体限制见[工具能力清单](environment/manifest.json)。
+
+## 评测工作台（Console）
+
+Console 是覆盖评测全链路的本地 Web 工作台：数据集、评分器、实验、结果分析、人工复核与闭环回流在同一个界面完成。服务与数据都在本机，不引入独立的执行服务。
+
+```bash
+nohup .venv/bin/python -m uvicorn console.app.main:app --host 127.0.0.1 --port 8899 &
+```
+
+浏览器打开 `http://127.0.0.1:8899`。Harbor view 由 Console 启动时自动拉起，轨迹页直接内嵌，无需单独开启。
+
+| 页面 | 能力 |
+|---|---|
+| Datasets | CSV 上传与校验、任务行编辑、保存/另存/导出/删除；编辑状态按当前内容与初始值实时比对 |
+| Evaluation Profiles | harness、模型与运行参数配置 |
+| Scorers | LLM judge 与 Code 评分器；试评、版本管理与载入编辑器 |
+| Experiments | 创建、运行、中止、复制、删除；启动即冻结不可变快照（数据集内容哈希、评分器版本、git commit） |
+| Logs / Trace | 任务列表与轨迹详情，内嵌 Harbor view 查看完整执行过程 |
+| Dashboards | 分数分布、失败类别分布、按维度分组、基线回归对比 |
+| Review | 标记存疑进入复核队列；结构化打分（维度 1-5 分、总体判定、备注）与变更历史 |
+| Loop-Assistant | 独立的 coding agent 分析失败任务，产出失败归类、改进方案与数据集草案，草案可合并回数据集 |
+
+实验支持两类运行环境：座舱任务使用 `esa` harness；通用编码任务使用 `pi`、`opencode`、`claude-code` 等 harness，经 `scripts/run.sh` 调度，评分由 Console 生成的评分器配置在 Harbor verifier 内执行。命令行也可直接运行：
+
+```bash
+scripts/run.sh --bench hello --harness pi --model deepseek/deepseek-flash
+```
+
+Console 的实现与接口约定见 [console/docs/requirements.md](console/docs/requirements.md) 与 [console/docs/development.md](console/docs/development.md)。
 
 ## 组件与目录
 
@@ -65,6 +100,7 @@ Harbor trial
 | [任务样例](tasks/esa-sc-a1/task.toml) | 导航到公司等五个座舱任务 |
 | [环境规范](docs/esa-local-eval-spec.md) | 接口、状态、故障与验收契约 |
 | [题目编写指南](docs/esa-task-authoring.md) | 初始数据、多轮输入、权限和评分 |
+| [console](console/README.md) | 评测工作台：页面、服务与接口约定 |
 
 ## 快速开始
 
@@ -272,6 +308,8 @@ result.json                              # job汇总、评分与异常数量
 ```
 
 检查状态快照和工具事件可以确认操作是否真正改变业务状态。模型回复文本与状态评分独立。
+
+也可以在 [Console](#评测工作台console) 中查看：实验详情与 Trace 页内嵌 Harbor view，Console 启动时自动拉起该服务。
 
 `trajectory.json` 采用Harbor的ATIF（Agent Trajectory Interchange Format）标准格式，记录每次ReAct迭代的推理、工具调用与工具结果，并附带token用量和延迟。`steps`按交互顺序排列，`source`区分`user`与`agent`，用户指令是第一个step。
 

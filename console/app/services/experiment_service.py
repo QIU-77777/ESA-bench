@@ -138,6 +138,24 @@ def duplicate_experiment(experiment_id: int, name: str) -> int:
         return new_id
 
 
+def rename_experiment(experiment_id: int, name: str) -> None:
+    """Rename an experiment; the name is display metadata only."""
+    new_name = name.strip()
+    if not new_name:
+        raise ExperimentError("实验名称不能为空")
+    with connect() as conn:
+        experiment = conn.execute(
+            "SELECT * FROM experiments WHERE id=?", (experiment_id,)
+        ).fetchone()
+        if experiment is None:
+            raise ExperimentError(f"实验不存在：{experiment_id}")
+        if new_name != experiment["name"] and conn.execute(
+            "SELECT 1 FROM experiments WHERE name=?", (new_name,)
+        ).fetchone():
+            raise ExperimentError(f"实验名称已存在：{new_name}")
+        conn.execute("UPDATE experiments SET name=? WHERE id=?", (new_name, experiment_id))
+
+
 def update_draft(
     experiment_id: int,
     dataset_version_id: int,

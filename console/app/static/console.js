@@ -172,3 +172,28 @@ function initCustomSelect(native) {
 }
 
 for (const sel of document.querySelectorAll("select")) initCustomSelect(sel);
+
+/* Row menus: a three-dot trigger toggles its popover; menus close on
+   outside click, Escape, or when a confirm dialog opens. */
+{
+  const closeAll = () =>
+    document.querySelectorAll(".menu-pop").forEach((p) => p.classList.add("hidden"));
+  document.addEventListener("click", (ev) => {
+    const trigger = ev.target.closest(".menu-trigger");
+    if (trigger) {
+      const pop = trigger.parentElement.querySelector(".menu-pop");
+      const willOpen = pop && pop.classList.contains("hidden");
+      closeAll();
+      if (willOpen) pop.classList.remove("hidden");
+      return;
+    }
+    if (ev.target.closest("[data-confirm-title]")) {
+      closeAll();
+      return;
+    }
+    if (!ev.target.closest(".menu-pop")) closeAll();
+  });
+  document.addEventListener("keydown", (ev) => {
+    if (ev.key === "Escape") closeAll();
+  });
+}

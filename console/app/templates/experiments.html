@@ -11,7 +11,7 @@
 
 <table id="exp-table">
   <thead>
-    <tr><th>Name</th><th>Status</th><th>Dataset</th><th>Profile</th><th>Model</th><th>Created</th></tr>
+    <tr><th>Name</th><th>Status</th><th>Dataset</th><th>Profile</th><th>Model</th><th>Created</th><th></th></tr>
   </thead>
   <tbody>
     {% for e in experiments %}
@@ -24,9 +24,24 @@
       <td class="cell-ellipsis" title="{{ e.profile_name }} v{{ e.profile_version_no }}">{{ e.profile_name }} <span class="mono muted">v{{ e.profile_version_no }}</span></td>
       <td class="mono cell-ellipsis" title="{{ e.model_id }}">{{ e.model_id }}</td>
       <td class="mono muted cell-ellipsis">{{ e.created_at | fmt_time }}</td>
+      <td>
+        <div class="row-menu">
+          <button type="button" class="outline menu-trigger" aria-label="编辑">⋯</button>
+          <div class="menu-pop hidden">
+            <form method="post" action="/experiments/{{ e.id }}/rename">
+              <input type="hidden" name="name" data-confirm-field>
+              <button type="button" class="menu-item"
+                data-confirm-title="重命名实验"
+                data-confirm-message="输入新的实验名称。"
+                data-confirm-label="确认重命名"
+                data-confirm-input="新实验名称">重命名</button>
+            </form>
+          </div>
+        </div>
+      </td>
     </tr>
     {% else %}
-    <tr><td colspan="6" class="muted">暂无实验，点击 "+ New experiment" 创建</td></tr>
+    <tr><td colspan="7" class="muted">暂无实验，点击 "+ New experiment" 创建</td></tr>
     {% endfor %}
   </tbody>
 </table>
