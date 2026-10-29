@@ -329,6 +329,9 @@ def _agent_command(agent: str, model: str, brief_path: Path, instruction: str) -
             command += ["--model", model]
         command += [f"@{brief_path}", instruction]
         return command
+    if agent == "dsh":
+        task = f"读取 {brief_path}，按照简报要求完成失败分析。"
+        return ["dsh", "--profile", "headless", task]
     raise LoopError(f"不支持的分析代理：{agent}")
 
 

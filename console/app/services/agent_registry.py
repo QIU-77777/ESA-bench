@@ -32,6 +32,8 @@ def list_models(agent: str) -> list[str]:
         return _opencode_models()
     if agent == "pi":
         return _pi_models()
+    if agent == "dsh":
+        return _dsh_models()
     return []
 
 
@@ -65,3 +67,26 @@ def _pi_models() -> list[str]:
                 if model_id:
                     models.append(f"{provider}/{model_id}")
     return models
+
+
+def _dsh_models() -> list[str]:
+    """dsh has no model listing command; read its default agent model."""
+    import yaml
+
+    candidates = [
+        Path.home() / ".dsh" / "settings.yaml",
+        Path.home() / ".dsh" / "settings.yaml.imported",
+    ]
+    for path in candidates:
+        if not path.is_file():
+            continue
+        try:
+            data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        except (OSError, yaml.YAMLError):
+            continue
+        default = data.get("agent-default-model") or {}
+        provider = str(default.get("provider") or "").strip()
+        model = str(default.get("model") or "").strip()
+        if model:
+            return [f"{provider}/{model}" if provider else model]
+    return []
