@@ -15,6 +15,7 @@ from fastapi.templating import Jinja2Templates
 from . import config
 from .db import init_db
 from .services import (
+    agent_registry,
     analysis_service,
     dataset_service,
     experiment_service,
@@ -619,9 +620,27 @@ def submit_review(payload: dict = Body(...)) -> dict:
 
 @app.get("/settings", response_class=HTMLResponse)
 def settings_page(request: Request) -> HTMLResponse:
+    settings = review_service.get_settings()
+    agents = agent_registry.detect_agents()
+    current_agent = str(settings.get("loop_agent") or "")
+    if agents and current_agent not in {a["id"] for a in agents}:
+        current_agent = agents[0]["id"]
+    models = agent_registry.list_models(current_agent) if current_agent else []
     return templates.TemplateResponse(
-        request, "settings.html", {"settings": review_service.get_settings()}
+        request,
+        "settings.html",
+        {
+            "settings": settings,
+            "agents": agents,
+            "models": models,
+            "current_agent": current_agent,
+        },
     )
+
+
+@app.get("/api/settings/models")
+def settings_models(agent: str = "") -> dict:
+    return {"ok": True, "models": agent_registry.list_models(agent)}
 
 
 @app.post("/settings")

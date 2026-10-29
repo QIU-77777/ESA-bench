@@ -279,9 +279,12 @@ def _analyze(run_id: int) -> None:
             " report.json 文件，写完后停止。"
         )
     if report is None:
+        detail = ((last.stdout if last else "") or "")[-800:].strip()
         raise LoopError(
             "分析代理未产出 report.json。"
-            f"退出码 {last.returncode if last else '?'}；stderr：{((last.stderr if last else '') or '')[:500]}"
+            f"退出码 {last.returncode if last else '?'}；"
+            f"stderr：{((last.stderr if last else '') or '')[:300]}；"
+            f"stdout 尾部：{detail or '（空）'}"
         )
     report_path = work_dir / "report.json"
     report_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
