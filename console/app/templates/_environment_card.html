@@ -1,0 +1,42 @@
+<div class="cap-card">
+  <div class="cap-head">
+    <span class="badge">{{ e.name }}</span>
+    {% if e.version %}<span class="mono muted">v{{ e.version }}</span>{% endif %}
+  </div>
+  <p class="muted">{{ e.description }}</p>
+
+  {% if e.tools.total %}
+  <div class="cap-section">
+    <div class="cap-label">工具清单（environment/catalog.json，共 {{ e.tools.total }} 项，启用 {{ e.tools.enabled }} 项）</div>
+    <table class="cap-table">
+      <thead><tr><th>工具</th><th>说明</th><th>状态</th></tr></thead>
+      <tbody>
+        {% for t in e.tools.entries %}
+        <tr>
+          <td class="mono">{{ t.name }}</td>
+          <td>{{ t.title }}{% if t.description %}<span class="muted"> · {{ t.description }}</span>{% endif %}</td>
+          <td>{% if t.enabled %}<span class="badge ok">启用</span>{% else %}<span class="badge dim">关闭</span>{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="cap-section">
+    <div class="cap-label">工具清单</div>
+    <p class="muted">无 MCP 工具，Agent 通过 shell 直接操作容器文件系统。</p>
+  </div>
+  {% endif %}
+
+  {% if e.data.entities %}
+  <div class="cap-section">
+    <div class="cap-label">内置数据规模（environment/seed-v1.json）</div>
+    <p class="mono muted">
+      {% for item in e.data.entities %}{{ item.label }} {{ item.count }}{% if not loop.last %} · {% endif %}{% endfor %}
+    </p>
+    {% if e.data.seed_sha256 %}
+    <p class="mono muted field-hint">seed 哈希 {{ e.data.seed_sha256[:16] }}…</p>
+    {% endif %}
+  </div>
+  {% endif %}
+</div>

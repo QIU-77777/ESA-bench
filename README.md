@@ -49,7 +49,7 @@ ESA-bench 使用 Harbor 调度评测试验，在本地模拟座舱环境中运�
 
 ## 评测工作台（Console）
 
-Console 是覆盖评测全链路的本地 Web 工作台：数据集、评分器、实验、结果分析、人工复核与闭环回流在同一个界面完成。服务与数据都在本机，不引入独立的执行服务。
+Console 是覆盖评测全链路的本地 Web 工作台：数据集、评分器、实验、结果分析、人工复核、闭环回流与座舱对话台在同一个界面完成。服务与数据都在本机，不引入独立的执行服务。
 
 ```bash
 nohup .venv/bin/python -m uvicorn console.app.main:app --host 127.0.0.1 --port 8899 &
@@ -59,8 +59,9 @@ nohup .venv/bin/python -m uvicorn console.app.main:app --host 127.0.0.1 --port 8
 
 | 页面 | 能力 |
 |---|---|
+| Chat | 座舱对话台：会话管理、流式对话、每会话独立配置覆盖，证据按命令行格式落盘 |
 | Datasets | CSV 上传与校验、任务行编辑、保存/另存/导出/删除；编辑状态按当前内容与初始值实时比对 |
-| Evaluation Profiles | harness、模型与运行参数配置 |
+| Evaluation Profiles | harness、模型与运行参数配置；harness 与环境能力卡片（系统提示词、模型默认参数、工具清单、数据规模） |
 | Scorers | LLM judge 与 Code 评分器；试评、版本管理与载入编辑器 |
 | Experiments | 创建、运行、中止、复制、删除；启动即冻结不可变快照（数据集内容哈希、评分器版本、git commit） |
 | Logs / Trace | 任务列表与轨迹详情，内嵌 Harbor view 查看完整执行过程 |
@@ -74,7 +75,7 @@ nohup .venv/bin/python -m uvicorn console.app.main:app --host 127.0.0.1 --port 8
 scripts/run.sh --bench hello --harness pi --model deepseek/deepseek-flash
 ```
 
-Console 的实现与接口约定见 [console/docs/requirements.md](console/docs/requirements.md) 与 [console/docs/development.md](console/docs/development.md)。
+Console 的实现与接口约定见 [console/docs/requirements.md](console/docs/requirements.md)、[console/docs/development.md](console/docs/development.md) 与 [console/docs/design-spec.md](console/docs/design-spec.md)。
 
 ## 组件与目录
 
@@ -101,6 +102,7 @@ Harbor trial
 | [环境规范](docs/esa-local-eval-spec.md) | 接口、状态、故障与验收契约 |
 | [题目编写指南](docs/esa-task-authoring.md) | 初始数据、多轮输入、权限和评分 |
 | [console](console/README.md) | 评测工作台：页面、服务与接口约定 |
+| [Console 设计规范](console/docs/design-spec.md) | 样式 token、组件规则与对话轨迹规范 |
 
 ## 快速开始
 
@@ -183,16 +185,22 @@ PYTHONPATH="$PWD" .venv/bin/harbor run \
 ESA使用上述 `render-job.py + harbor run` 流程；[通用运行脚本](scripts/run.sh)用于仓库保留的编码Agent示例，其镜像挂载预检不适用于ESA。
 
 ## 交互式对话
-除了批量评测，可以直接与车载 Agent 对话，用于人工体验和问题发现：
+除了批量评测，可以直接与车载 Agent 对话，用于人工体验和问题发现。Console 的 Chat 页面（`http://127.0.0.1:8899/chat`）与命令行使用同一 Agent 实现、工具集和环境数据，网页版额外提供会话管理、轨迹查看与逐会话参数覆盖；未启动座舱服务时页面给出一键启动。命令行入口：
 
 ```bash
 .venv/bin/python -m esa.cli chat
 ```
+<div align="center">
+  <img src="./assets/web-chat.png" alt="web 交互式对话" width="860" />
+  <br />
+  <b>web 交互式对话</b>
+</div>
+<br>
 
 <div align="center">
-  <img src="./assets/esa-chat.png" alt="交互式对话" width="860" />
+  <img src="./assets/cli-chat.png" alt="cli 交互式对话" width="860" />
   <br />
-  <b>交互式对话</b>
+  <b>cli 交互式对话</b>
 </div>
 <br>
 

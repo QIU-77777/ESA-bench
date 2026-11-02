@@ -1,6 +1,6 @@
 # Console · 评测工作台
 
-覆盖评测全链路的本地 Web 工作台：数据集、评分器、实验、结果分析、人工复核与闭环回流。
+覆盖评测全链路的本地 Web 工作台：数据集、评分器、实验、结果分析、人工复核、闭环回流与座舱对话台。
 
 ## 启动
 
@@ -14,9 +14,10 @@ nohup .venv/bin/python -m uvicorn console.app.main:app --host 127.0.0.1 --port 8
 
 | 路径 | 内容 |
 |---|---|
+| `/chat` | 座舱对话台：会话管理、流式对话、逐会话配置覆盖、证据落盘 |
 | `/experiments` | 实验列表、创建、运行、中止、复制、删除 |
 | `/datasets` | 数据集管理与任务行编辑 |
-| `/eval-profiles` | harness、模型与运行参数 |
+| `/eval-profiles` | harness、模型与运行参数；harness 与环境能力卡片 |
 | `/scorers` | LLM judge 与 Code 评分器，试评与版本 |
 | `/review` | 人工复核队列与结构化打分 |
 | `/settings` | 复核维度、盲审开关、Loop-Assistant 分析代理与模型 |
@@ -25,4 +26,4 @@ nohup .venv/bin/python -m uvicorn console.app.main:app --host 127.0.0.1 --port 8
 
 ## 技术形态
 
-FastAPI + 标准库 SQLite + Jinja2 服务端渲染 + 原生 JavaScript，无前端构建链，静态资源全部本地。实现约定见 [docs/requirements.md](docs/requirements.md)（产品需求）与 [docs/development.md](docs/development.md)（架构与实现）。
+FastAPI + 标准库 SQLite + Jinja2 服务端渲染 + 原生 JavaScript，无前端构建链，静态资源全部本地。实现约定见 [docs/requirements.md](docs/requirements.md)（产品需求）、[docs/development.md](docs/development.md)（架构与实现）与 [docs/design-spec.md](docs/design-spec.md)（设计规范）。

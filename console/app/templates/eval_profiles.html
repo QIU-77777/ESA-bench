@@ -23,6 +23,12 @@
       </select>
     </div>
     <div class="field">
+      <label class="field-label" for="pf-env">交互环境</label>
+      <select id="pf-env" name="environment">
+        {% for e in environments %}<option value="{{ e }}">{{ e }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="field">
       <label class="field-label" for="pf-params">运行参数</label>
       <textarea id="pf-params" name="params" rows="6">{{ default_params_json }}</textarea>
     </div>
@@ -30,11 +36,17 @@
       <button type="submit">保存</button>
     </div>
   </form>
+
+  <div class="section-title">Harness 能力</div>
+  <div id="harness-card-host">{% with h = harness_card %}{% include "_harness_card.html" %}{% endwith %}</div>
+
+  <div class="section-title">交互环境能力</div>
+  <div id="environment-card-host">{% with e = environment_card %}{% include "_environment_card.html" %}{% endwith %}</div>
 </div>
 
 <table>
   <thead>
-    <tr><th>名称</th><th>版本</th><th>Harness</th><th>模型</th><th>参数</th><th>创建时间</th></tr>
+    <tr><th>名称</th><th>版本</th><th>Harness</th><th>环境</th><th>模型</th><th>参数</th><th>创建时间</th></tr>
   </thead>
   <tbody>
     {% for p in profiles %}
@@ -42,12 +54,13 @@
       <td>{{ p.name }}</td>
       <td class="mono">v{{ p.version_no }}</td>
       <td><span class="badge">{{ p.harness }}</span></td>
+      <td><span class="badge dim">{{ p.environment or 'standard' }}</span></td>
       <td class="mono">{{ p.model_id }}</td>
       <td class="mono muted">{{ p.params }}</td>
       <td class="mono muted">{{ p.created_at | fmt_time }}</td>
     </tr>
     {% else %}
-    <tr><td colspan="6" class="muted">暂无评测对象</td></tr>
+    <tr><td colspan="7" class="muted">暂无评测对象</td></tr>
     {% endfor %}
   </tbody>
 </table>
@@ -58,7 +71,7 @@
       <span id="pd-title">配置详情</span>
       <a href="javascript:void(0)" class="modal-close" data-close="profile-detail-modal">×</a>
     </header>
-    <p><span class="badge" id="pd-harness"></span> <span class="mono muted" id="pd-model"></span></p>
+    <p><span class="badge" id="pd-harness"></span> <span class="badge dim" id="pd-env"></span> <span class="mono muted" id="pd-model"></span></p>
     <div class="field">
       <label class="field-label" for="pd-version">版本</label>
       <select id="pd-version"></select>
@@ -82,9 +95,26 @@
 const harnessDefaults = {{ harness_defaults_json | safe }};
 const paramsBox = document.getElementById("pf-params");
 const harnessSelect = document.getElementById("pf-harness");
+const envSelect = document.getElementById("pf-env");
+
+async function refreshCard(hostId, url) {
+  const host = document.getElementById(hostId);
+  if (!host) return;
+  try {
+    const response = await fetch(url);
+    host.innerHTML = response.ok ? await response.text() : "卡片加载失败";
+  } catch {
+    host.innerHTML = "卡片加载失败";
+  }
+}
+
 harnessSelect?.addEventListener("change", (ev) => {
   const params = harnessDefaults[ev.target.value];
   if (params && paramsBox) paramsBox.value = JSON.stringify(params, null, 2);
+  refreshCard("harness-card-host", `/eval-profiles/harness-card/${encodeURIComponent(ev.target.value)}`);
+});
+envSelect?.addEventListener("change", (ev) => {
+  refreshCard("environment-card-host", `/eval-profiles/environment-card/${encodeURIComponent(ev.target.value)}`);
 });
 
 const allProfiles = {{ profiles | tojson }};
@@ -110,6 +140,7 @@ for (const row of document.querySelectorAll("tr[data-profile-name]")) {
     currentProfile = versions[0];
     document.getElementById("pd-title").textContent = `${currentProfile.name} · 配置详情`;
     document.getElementById("pd-harness").textContent = currentProfile.harness;
+    document.getElementById("pd-env").textContent = currentProfile.environment || "standard";
     document.getElementById("pd-model").textContent = currentProfile.model_id;
     pdSelect.innerHTML = "";
     for (const [i, v] of versions.entries()) {
@@ -133,6 +164,10 @@ document.getElementById("pd-load")?.addEventListener("click", () => {
   const model = document.getElementById("pf-model");
   model.value = currentProfile.model_id;
   model.dispatchEvent(new Event("change", { bubbles: true }));
+  if (envSelect) {
+    envSelect.value = currentProfile.environment || "standard";
+    envSelect.dispatchEvent(new Event("change", { bubbles: true }));
+  }
   paramsBox.value = currentProfile.params;
   pdModal.classList.add("hidden");
   document.getElementById("pf-name").focus();

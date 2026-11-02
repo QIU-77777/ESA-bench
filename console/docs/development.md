@@ -1,21 +1,23 @@
 # Console 开发文档
 
-- 版本：v1.0（开发前规格）
-- 日期：2026-10-27
-- 关联文档：`console/docs/requirements.md`（需求文档）
+- 版本：v1.1
+- 日期：2026-11-02
+- 关联文档：`console/docs/requirements.md`（产品需求）、`console/docs/design-spec.md`（设计规范）、`console/docs/chat-playground-spec.md`（对话台规格）、`console/docs/capability-registry-spec.md`（能力登记规格）
 
 ## 1. 架构总览
 
 ```text
 ┌─────────────────────────────────────────────────────┐
-│ console UI（Jinja2 模板 + Tailwind + Alpine.js）      │
-│ 数据集 / 评测对象 / Scorer / 实验 / 分析 / Review / Loop │
+│ console UI（Jinja2 模板 + 原生 JavaScript）           │
+│ 数据集 / 能力登记 / 评测对象 / Scorer / 实验 / 分析 /  │
+│ Review / Loop / Chat 对话台                          │
 └──────────────────────┬──────────────────────────────┘
                        │ HTTP（同源）
 ┌──────────────────────▼──────────────────────────────┐
-│ console API（FastAPI）                                │
-│ services: dataset / scorer / experiment / judge /     │
-│           review / loop / dashboard                   │
+│ console API（FastAPI，路由集中在 app/main.py）         │
+│ services: dataset / scorer / experiment / review /    │
+│           loop / analysis / profiles /                │
+│           capability_registry / chat / harbor_adapter │
 └──────┬───────────────────────┬───────────────────────┘
        │ 调用                   │ 读写
 ┌──────▼──────────────┐  ┌─────▼──────┐  ┌────────────┐
@@ -39,53 +41,44 @@
 - Harbor 负责 trial 执行与轨迹记录。
 - Harbor view 负责轨迹渲染，console 通过同源反向代理内嵌。
 - Harbor 编排代码与 Harbor view 读取逻辑零改动。
+- Chat 对话台复用座舱 runtime 与 mock-system，不进入评测管线；对话证据按命令行格式落盘到 `~/.esa/sessions/`。架构见第 6 章。
 
 ## 2. 目录结构
 
 ```text
 console/
-├── docs/
-│   ├── requirements.md
-│   └── development.md
+├── docs/                        # 需求、设计规范、架构与两份功能规格
 ├── app/
-│   ├── main.py                 # FastAPI 入口、路由注册、Harbor view 反向代理
-│   ├── api/                    # REST 接口，按领域分文件
-│   │   ├── datasets.py
-│   │   ├── scorers.py
-│   │   ├── experiments.py
-│   │   ├── reviews.py
-│   │   ├── dashboards.py
-│   │   ├── loop.py
-│   │   └── settings.py
-│   ├── services/               # 领域逻辑，不依赖 HTTP
+│   ├── main.py                  # FastAPI 入口，全部路由注册
+│   ├── config.py                # 路径、端口与环境变量
+│   ├── db.py                    # SQLite 连接、建表与轻量迁移
+│   ├── render/                  # CSV 解析与数据集版本 → Harbor tasks 目录
+│   ├── scorers/                 # 评分函数层（verifier 与试评同源）
+│   ├── services/                # 领域逻辑，不依赖 HTTP
 │   │   ├── dataset_service.py
-│   │   ├── scorer_service.py
+│   │   ├── scorer_service.py    # 评分器、试评与结果解析
 │   │   ├── experiment_service.py
-│   │   ├── judge_service.py    # 评分执行服务：verifier 与试评共用
 │   │   ├── review_service.py
 │   │   ├── loop_service.py
-│   │   └── harbor_adapter.py   # 调 run.sh / 解析 jobs/
-│   ├── scorers/                # 评分函数层（纯逻辑，verifier 与试评同源）
-│   │   ├── base.py
-│   │   ├── llm_judge.py
-│   │   └── code_runner.py
-│   ├── render/
-│   │   ├── csv_loader.py       # CSV 解析与校验
-│   │   └── task_renderer.py    # 数据集版本 → Harbor tasks 目录
-│   ├── store/
-│   │   ├── models.py           # SQLAlchemy 模型
-│   │   └── migrations/         # schema 版本迁移
-│   ├── templates/              # Jinja2 页面模板
+│   │   ├── analysis_service.py   # Dashboards 与回归对比
+│   │   ├── profiles.py          # 评测对象（harness + environment）
+│   │   ├── agent_registry.py    # harness 与模型清单读取
+│   │   ├── capability_registry.py # harness 与 environment 能力登记
+│   │   ├── chat_service.py      # Chat 对话台：会话、消息、证据、SSE 转发
+│   │   ├── harbor_adapter.py    # 调 run.sh / 解析 jobs/
+│   │   └── harbor_view_service.py # Harbor view 进程守护与反向代理目标
+│   ├── templates/               # Jinja2 页面与卡片片段
+│   │   ├── chat.html            # Chat 三栏页面与轨迹渲染
+│   │   ├── _harness_card.html · _environment_card.html · _capability_missing.html
 │   └── static/
-│       ├── console.css         # Harbor view 对齐的样式变量与组件
-│       └── console.js          # Alpine.js 交互
-├── prompts/                    # judge 与 Loop-Assistant 提示词模板
-├── workspace/                  # 运行产物（gitignore）
-│   ├── console.db
-│   ├── generated/              # 渲染出的 bench 配置与 tasks 目录
-│   ├── snapshots/              # 实验快照归档
-│   └── reports/                # Loop-Assistant 报告
-└── tests/
+│       ├── console.css          # 样式，规则见 docs/design-spec.md
+│       └── console.js           # 原生 JavaScript 交互
+├── tests/
+└── workspace/                   # 运行产物（gitignore）
+    ├── console.db
+    ├── generated/               # 渲染出的 bench 配置与 tasks 目录
+    ├── snapshots/               # 实验快照归档
+    └── reports/                 # Harbor view 日志与 Loop-Assistant 报告
 ```
 
 ## 3. 技术选型
@@ -93,11 +86,11 @@ console/
 | 层 | 选型 | 理由 |
 | --- | --- | --- |
 | 后端 | FastAPI + Uvicorn | 与 Harbor 的依赖栈一致（Harbor 已依赖 FastAPI），无新增依赖冲突。 |
-| 存储 | SQLite（SQLAlchemy） | 单人单机，零运维。单文件备份。评测产物不进库，只存 `jobs/` 路径引用。 |
-| 页面 | Jinja2 服务端渲染 | 薄工作台不需要前端构建链。Harbor 升级、样式复制都不涉及前端工具链。 |
-| 交互 | Alpine.js（本地静态资源） | 表格筛选、表单联动、进度轮询所需的轻量交互。 |
+| 存储 | SQLite（标准库 `sqlite3`） | 单人单机，零运维。单文件备份。评测产物不进库，只存 `jobs/` 路径引用。 |
+| 页面 | Jinja2 服务端渲染 | 薄工作台不需要前端构建链。Harbor 升级、样式调整都不涉及前端工具链。 |
+| 交互 | 原生 JavaScript（本地静态资源） | 表格筛选、表单联动、SSE 流式渲染、进度轮询所需的轻量交互。 |
 | 图表 | ECharts（本地静态资源） | Dashboards 的直方图与分布图。主题色取平台样式变量。 |
-| 样式 | Tailwind（本地静态资源）+ 自定义变量文件 | 直接复制 Harbor view 的 CSS 变量达到视觉一致。前端依赖全部下载到 `console/app/static/vendor/`，不依赖 CDN，离线可用。 |
+| 样式 | 手写 `console.css`，token 与 Harbor view 一致 | 无 CDN 依赖，离线可用。组件规则见 `docs/design-spec.md`。 |
 
 ## 4. 数据模型
 
@@ -140,8 +133,10 @@ scorer_tryouts
 
 ```text
 eval_profiles
-  id, name, harness, model_id, params(json), version_no, created_at
+  id, name, harness, model_id, params(json), version_no, environment, created_at
   params 示例：{thinking: "medium", max_turns: 32}
+  environment：standard（通用编码任务）或 esa（座舱任务），与数据集内容哈希
+  共同构成渲染缓存键，换环境必须重新渲染
   修改产生新版本，旧版本随实验快照保留
 ```
 
@@ -182,6 +177,20 @@ reviews
 review_history
   id, review_id, dims(json), overall_verdict, note, created_at
   每次提交追加一条，保留变更历史
+```
+
+### 对话台
+
+```text
+chat_sessions
+  id, name, mock_session_id(唯一), agent_config(json), created_at, updated_at
+  agent_config：model_id / reasoning_effort / temperature / max_iterations /
+  turn_timeout / instructions 的会话级覆盖，tool_profile 为建会话时固定的工具集
+
+chat_messages
+  id, session_id, role(user|assistant), content, events(json), usage(json), created_at
+  events：该轮全部 runtime 事件（reasoning_delta、tool_call、tool_result、
+  iteration_meta 等），页面渲染与刷新还原同源
 ```
 
 ### 基线与回流
@@ -311,6 +320,7 @@ Harbor view 服务由 console 启动时检查并拉起（`harbor_view_service.en
 
 - harness 列表读取 `configs/harnesses/*.yaml`，模型列表读取 `configs/models/**/*.yaml`。
 - 参数编辑生成新 `eval_profiles` 版本行，不覆盖历史。
+- 交互环境在评测对象层选择（standard / esa），能力透出见 6.8。
 
 ### 6.3 Scorer（FR-3）
 
@@ -404,6 +414,28 @@ Loop-Assistant 由独立配置的 coding agent 在本机执行（agent 命令与
 - 产出解析失败时按更严格指令重试一次，仍失败则记录错误可重新发起分析；stdout 文本作为兜底解析来源。
 - 草案编辑：页面可改行、剔除行，保存后合并；合并时字段 `id` 映射为内部 `row_id`，写入目标数据集生成新快照，`change_note` 自动引用来源实验编号。
 
+### 6.8 能力登记（FR-2）
+
+`services/capability_registry.py` 从仓库配置读出 harness 与 environment 的能力事实，Evaluation Profiles 页以卡片片段展示，不进入数据库：
+
+- harness 卡片：系统提示词（`esa/agent.json` 的 instructions）、模型默认参数（`esa/agent.json` 的 react.model）、能力清单（harness 支持的引擎与工具协议）、可调参数（`configs/harnesses/<id>.yaml` 的 kwargs）。
+- environment 卡片：工具清单（`environment/catalog.json`，含启用数）、内置数据规模（`environment/seed-v1.json` 的 POI、曲目、路线、联系人数目）。
+- 卡片缺失时渲染 `_capability_missing.html` 占位说明，不报错。
+- 评测对象新增 `environment` 字段（standard 或 esa）。渲染缓存键从「数据集内容哈希」改为「数据集内容哈希 + 环境」，换环境必须重新渲染，避免座舱任务与编码任务互相复用错误的环境目录。
+
+### 6.9 Chat 对话台（FR-8）
+
+架构：浏览器 → Console 后端（`chat_service`）→ runtime 与 mock-system。后端即 agent 客户端，调用路径镜像 `esa/cli.py`；runtime 无状态，transcript 随请求往返。
+
+- 端口：mock-system 8003，座舱 runtime 18080（容器内仍为 8080，与 Harbor view 的 8080 错开）。
+- 建会话：向 mock-system 建座舱会话拿到 `mock_session_id`，从快照读出 `tool_profile` 固定工具集；对话历史与车辆状态跨轮保留在 mock-system 侧。
+- 发消息：组装 agent 定义（会话覆盖值合并 `esa/agent.json` 基线）POST 到 runtime `/v1/run`，`Accept: text/event-stream` 流式读取，逐事件转发给浏览器并缓存。
+- 落库：`turn_end` 后写 assistant 消息，events 存本轮全部事件（含 `run_end` 结果合成的 `iteration_meta`，携带每轮耗时、token 用量与状态），刷新后页面从 events 完整还原。
+- 证据：每轮把六个文件写入 `~/.esa/sessions/<mock_session_id>/`（transcript、初末快照、状态事件、轮次结果、meta），格式与命令行一致。
+- 会话配置：model_id、reasoning_effort、temperature、max_iterations、turn_timeout、instructions 按会话覆盖，留空或选择默认时取 `esa/agent.json` 取值；工具集更换等于新建会话。
+- 就绪探测：`/health` 与 `/v1/health`，未就绪时页面提供一键启动（`docker compose -p esa-dev -f docker-compose.dev.yaml up -d`）。
+- 页面规格见 `docs/chat-playground-spec.md`。
+
 ## 7. API 设计
 
 页面路由服务端渲染，数据接口返回 JSON。
@@ -426,8 +458,17 @@ Loop-Assistant 由独立配置的 coding agent 在本机执行（agent 命令与
 | POST | `/api/scorers` | 创建 Scorer |
 | POST | `/api/scorers/{id}/tryout` | 试评（真实日志） |
 | POST | `/api/scorers/{id}/versions` | 保存版本 |
-| GET | `/eval-profiles` | 评测对象配置页 |
+| GET | `/eval-profiles` | 评测对象配置页（harness 与环境选择） |
+| GET | `/eval-profiles/harness-card/{harness_id}` | harness 能力卡片片段 |
+| GET | `/eval-profiles/environment-card/{env_id}` | environment 能力卡片片段 |
 | POST | `/api/eval-profiles/{id}/versions` | 参数新版本 |
+| GET | `/chat` | Chat 对话台页面 |
+| POST | `/api/chat/sessions` | 新建会话（可带配置与工具集） |
+| POST | `/api/chat/sessions/{id}/rename` · `/delete` · `/config` | 重命名、删除、保存配置 |
+| POST | `/api/chat/sessions/{id}/messages` | 发送消息，SSE 流式转发 runtime 事件 |
+| GET | `/api/chat/sessions/{id}/tools` | 当前会话工具清单 |
+| POST | `/api/chat/stack/start` | 一键启动座舱开发服务 |
+| GET | `/api/chat/readiness` | mock-system 与 runtime 就绪探测 |
 | POST | `/api/experiments` | 创建实验（草稿） |
 | POST | `/api/experiments/{id}/run` | 预检并启动 |
 | POST | `/api/experiments/{id}/abort` | 中止 |
@@ -448,59 +489,18 @@ Loop-Assistant 由独立配置的 coding agent 在本机执行（agent 命令与
 
 ## 8. 页面与视觉设计规范
 
-目标：内嵌 Harbor view 的轨迹页与平台页面并排时无风格割裂。全部样式值从 Harbor view 的 `root-*.css` 提取，写入 `console/static/console.css`。
+设计规范独立成文：`docs/design-spec.md`。该文件是唯一规则来源，包含 token 表、字号三档、组件规范、对话轨迹规范、禁止事项与 Harbor view 升级后的同步方法。本章只记实现位置与集成方式。
 
-### 8.1 设计变量（与 Harbor view 一致）
+- 样式全部写在 `app/static/console.css`，无 Tailwind、无 CDN、无构建步骤。
+- token 与 Harbor view 的 `root-*.css` 一致，`:root` 之外不新增颜色值。
+- 核心原则：浅灰填充与浅灰描边从不同时出现在同一个组件上。
+- 模板内联样式只允许布局间距，不允许字号与颜色。
 
-```css
-:root {
-  --background: oklch(100% 0 0);
-  --foreground: oklch(14.1% .005 285.823);
-  --card: oklch(100% 0 0);
-  --card-foreground: oklch(14.1% .005 285.823);
-  --muted: oklch(96.7% .001 286.375);
-  --muted-foreground: oklch(55.2% .016 285.938);
-  --border: oklch(92% .004 286.32);
-  --primary: oklch(21% .006 285.885);
-  --primary-foreground: oklch(98.5% 0 0);
-  --secondary: oklch(96.7% .001 286.375);
-  --destructive: oklch(57.7% .245 27.325);
-  --ring: oklch(55.2% .016 285.938);
-  --radius: 0rem;
-}
-.dark { /* 深色值同 Harbor view 的 .dark 块 */ }
-```
-
-### 8.2 排版
-
-- 字体：`"Google Sans Code"` 为主字体与等宽字体（与 Harbor view 相同回退链）。数据列、ID、模型名、分数使用 `font-mono`。
-- 字号阶梯：`text-xs`（0.75rem，辅助信息）、`text-sm`（0.875rem，正文与表格）、`text-base`（标题）。
-- 数字使用 `tabular-nums`，右对齐。
-
-### 8.3 组件
-
-| 组件 | 规范 |
-| --- | --- |
-| 卡片 | `border bg-card`，无阴影，直角 |
-| 表格 | 表头 `sticky top-* bg-card`，行 `hover:bg-muted`，单元格 `px-4 py-3`，外框 `border` |
-| 按钮 | `rounded-none shadow-none border`，变体：primary（黑底白字）、outline、destructive |
-| 输入框 | `border bg-background px-3 py-2 text-sm`，聚焦 `ring-2 ring-ring` |
-| 标签徽章 | `border px-2 py-0.5 text-xs font-mono` |
-| 空状态 | 居中图标 + `text-muted-foreground text-sm` |
-| 进度 | 横向条 `bg-muted` 底 + `bg-foreground` 填充，或数字进度（同 Harbor 的 trial 计数风格） |
-
-### 8.4 页面布局
-
-- 顶部：面包屑导航（左侧）+ 页面标题（大号 `text-lg`）+ 右侧操作按钮，下方 1px 边框分隔。与 Harbor view 的 job 页头一致。
-- 内容区：单列布局，最大宽度自适应，内边距 `px-4 py-6`。
-- 工具条：表格上方粘性工具条（筛选、搜索、列设置），形态对齐 Harbor view 的 results 工具条。
-- 状态展示：分数热力用 `color-mix(in oklch, var(--foreground) N%, var(--card))`（N 为分数百分比），与 Harbor view 的 waffle 色阶方法一致。失败用 `--destructive`。
-
-### 8.5 内嵌 Harbor view
+### 内嵌 Harbor view
 
 - iframe 无边框，宽度占满内容区，高度按视口自适应（最小 600px）。
-- 内嵌页与平台页共享顶部导航时，iframe 页面内部的 Harbor view 自带面包屑，平台侧不再重复展示 trial 名。
-- 深浅主题跟随平台设置，通过反向代理注入主题参数（Harbor view 遵循系统主题，平台主题切换时同步）。
+- 平台侧不重复展示 trial 名，由 Harbor view 自带面包屑。
+- 深浅主题跟随 Harbor view 自身设置。
 
 ## 9. 不可变快照实现
 
@@ -548,6 +548,7 @@ Loop-Assistant 由独立配置的 coding agent 在本机执行（agent 命令与
 | M3 分析 | Logs、Trace 详情内嵌、Dashboards、基线对比、导出 | 端到端验收场景第 4、6 步通过 |
 | M4 复核 | Review 队列、结构化打分、变更历史、汇总列 | 端到端验收场景第 5 步通过 |
 | M5 回流 | Loop-Assistant（独立 coding agent + 强模型）归类、方案报告、草案合并 | 端到端验收场景第 7 步通过 |
+| M6 对话台与能力登记 | Chat 三栏对话台（会话、流式对话、配置覆盖、证据落盘）、harness 与 environment 能力卡片、评测对象环境字段 | 端到端验收场景第 8 步通过 |
 
 每个里程碑发布前执行端到端验收场景中对应步骤，M5 完成后执行全链路。
 

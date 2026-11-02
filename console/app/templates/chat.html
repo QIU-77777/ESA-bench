@@ -1,0 +1,476 @@
+{% extends "base.html" %}
+{% block title %}对话 · Console{% endblock %}
+{% block content %}
+<div class="chat-layout">
+  <aside class="chat-sessions">
+    <button type="button" class="primary" id="chat-new" style="width:100%">＋ 新会话</button>
+    <div class="chat-session-list" id="chat-session-list">
+      {% for s in sessions %}
+      <div class="chat-session-item {{ 'active' if current and s.id == current.id }}" data-session-id="{{ s.id }}">
+        <div class="chat-session-name">{{ s.name }}</div>
+        <div class="chat-session-summary">{{ (s.first_message or '新会话')[:24] }}</div>
+      </div>
+      {% endfor %}
+    </div>
+  </aside>
+
+  <main class="chat-main">
+    {% if not readiness.mock or not readiness.runtime %}
+    <div class="chat-not-ready">
+      <p>座舱服务未就绪：mock-system 与 runtime 需要运行。</p>
+      <p class="muted">点击下方按钮启动开发服务（docker-compose.dev.yaml），等待就绪后即可对话。</p>
+      <button type="button" id="chat-start-stack">启动服务</button>
+      <p class="muted" id="chat-stack-status"></p>
+    </div>
+    {% elif not current %}
+    <div class="chat-empty">
+      <p class="muted">在左侧选择会话，或新建一个会话开始对话。</p>
+    </div>
+    {% else %}
+    <div class="chat-messages" id="chat-messages"></div>
+    <div class="chat-input-bar">
+      <textarea id="chat-input" rows="1" placeholder="输入消息，Enter 发送，Shift+Enter 换行"></textarea>
+      <button type="button" class="primary" id="chat-send">发送</button>
+    </div>
+    {% endif %}
+  </main>
+
+  <aside class="chat-config" id="chat-config" {{ 'style=display:none' if not current }}>
+    <div class="section-title">会话配置</div>
+    <p class="field-hint">每会话独立覆盖。留空或选择默认时，使用 esa/agent.json 的取值。修改保存后下一轮生效。</p>
+
+    <div class="chat-config-group">模型</div>
+    <div class="field">
+      <label class="field-label" for="cfg-model">model_id<span class="field-note">模型标识</span></label>
+      <input id="cfg-model" value="{{ config.model_id or '' }}" placeholder="{{ baseline.model_id }}">
+    </div>
+    <div class="field">
+      <label class="field-label" for="cfg-effort">reasoning_effort<span class="field-note">推理强度</span></label>
+      <select id="cfg-effort">
+        {% for level in ['', 'low', 'medium', 'high'] %}
+        <option value="{{ level }}" {% if config.reasoning_effort == level %}selected{% endif %}>{{ level or '默认' }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="field">
+      <label class="field-label" for="cfg-temperature">temperature<span class="field-note">温度</span></label>
+      <input id="cfg-temperature" type="number" step="0.1" min="0" max="2" value="{{ config.temperature if config.temperature is not none else '' }}" placeholder="{{ baseline.temperature if baseline.temperature is not none else '' }}">
+    </div>
+
+    <div class="chat-config-group">运行限制</div>
+    <div class="field">
+      <label class="field-label" for="cfg-iterations">max_iterations<span class="field-note">单轮最大迭代轮数</span></label>
+      <input id="cfg-iterations" type="number" min="1" max="64" value="{{ config.max_iterations }}">
+    </div>
+    <div class="field">
+      <label class="field-label" for="cfg-timeout">turn_timeout<span class="field-note">单轮超时（秒）</span></label>
+      <input id="cfg-timeout" type="number" min="30" max="900" value="{{ config.turn_timeout }}">
+    </div>
+
+    <div class="chat-config-group">提示词</div>
+    <div class="field">
+      <label class="field-label" for="cfg-prompt">SYSTEM PROMPT<span class="field-note">系统提示词</span></label>
+      <textarea id="cfg-prompt" rows="6" placeholder="留空使用 esa/agent.json 的系统提示词">{{ config.instructions or '' }}</textarea>
+    </div>
+
+    <div class="row-actions chat-config-save">
+      <button type="button" class="soft" id="cfg-save">保存配置</button>
+    </div>
+
+    <div class="section-title">工具（{{ tools | length }} 项）</div>
+    <div class="chat-tool-list">
+      {% for t in tools %}
+      <details class="chat-tool-item">
+        <summary>
+          <span class="mono">{{ t.name }}</span>
+          {% if t.title and t.title != t.name %}<span class="muted">{{ t.title }}</span>{% endif %}
+        </summary>
+        <div class="chat-tool-detail">
+          {% if t.description %}<p>{{ t.description }}</p>{% endif %}
+          {% if t.schema %}
+          <div class="cap-label">参数 schema</div>
+          <pre class="snapshot json chat-tool-schema">{{ t.schema | pretty_json }}</pre>
+          {% endif %}
+        </div>
+      </details>
+      {% endfor %}
+    </div>
+    <div class="row-actions">
+      <button type="button" class="outline" id="cfg-change-tools">更换工具配置</button>
+    </div>
+    <p class="field-hint">工具集在会话创建时固定，更换将创建新会话，车辆状态与对话历史重置。</p>
+  </aside>
+</div>
+
+<div class="modal-overlay hidden" id="chat-tools-modal">
+  <div class="modal">
+    <header>
+      <span>更换工具配置</span>
+      <a href="javascript:void(0)" class="modal-close" data-close="chat-tools-modal">×</a>
+    </header>
+    <p class="muted">选择新会话启用的工具。确认后创建新会话并切换，当前会话的对话历史不保留。</p>
+    <div class="check-list" id="chat-tools-options">
+      {% for t in tools %}
+      <label>
+        <input type="checkbox" name="tool" value="{{ t.name }}" checked>
+        {{ t.name }}<span class="muted"> · {{ t.title }}</span>
+      </label>
+      {% endfor %}
+    </div>
+    <div class="row-actions">
+      <button type="button" class="outline" data-close="chat-tools-modal">取消</button>
+      <button type="button" id="chat-tools-confirm">创建新会话</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay hidden" id="chat-rename-modal">
+  <div class="modal">
+    <header>
+      <span>重命名会话</span>
+      <a href="javascript:void(0)" class="modal-close" data-close="chat-rename-modal">×</a>
+    </header>
+    <div class="field">
+      <label class="field-label" for="chat-rename-input">名称</label>
+      <input id="chat-rename-input">
+    </div>
+    <div class="row-actions">
+      <button type="button" class="outline" data-close="chat-rename-modal">取消</button>
+      <button type="button" id="chat-rename-confirm">确认</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+const sessionId = {{ current.id if current else 0 }};
+const initialMessages = {{ messages | tojson }};
+const initialTools = {{ tools | tojson }};
+const messagesHost = document.getElementById("chat-messages");
+const inputBox = document.getElementById("chat-input");
+const sendButton = document.getElementById("chat-send");
+
+const esc = (s) => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+function parseMaybeJson(text) {
+  const trimmed = (text || "").trim();
+  if (!trimmed) return null;
+  let value;
+  try {
+    value = JSON.parse(trimmed);
+  } catch {
+    return null;
+  }
+  for (let depth = 0; depth < 3 && typeof value === "string"; depth++) {
+    try { value = JSON.parse(value); } catch { break; }
+  }
+  if (value && typeof value === "object" && Array.isArray(value.content)) {
+    const texts = value.content.map((c) => (c && (c.text || c.content)) || "").filter(Boolean);
+    if (texts.length) {
+      const inner = texts.join("\n");
+      try { value = JSON.parse(inner); } catch { value = inner; }
+    }
+  }
+  return value;
+}
+
+function fmtValue(value) {
+  if (value === null || value === undefined) return "";
+  if (typeof value === "string") return value;
+  try { return JSON.stringify(value, null, 2); } catch { return String(value); }
+}
+
+function renderEvents(events) {
+  const groups = [];
+  const meta = {};
+  const errors = [];
+  let current = null;
+  for (const ev of events) {
+    if (ev.type === "iteration_meta") {
+      meta[ev.iteration] = ev;
+      continue;
+    }
+    if (ev.type === "turn_end" && (ev.status !== "completed" || ev.error)) {
+      errors.push(ev.error || `本轮状态：${ev.status}`);
+      continue;
+    }
+    if (ev.type === "iteration_start" || !current) {
+      current = { iteration: ev.iteration || groups.length + 1, reasoning: "", tools: [] };
+      groups.push(current);
+    }
+    if (ev.type === "reasoning_delta") current.reasoning += ev.text || "";
+    else if (ev.type === "tool_call") {
+      current.tools.push({ call_id: ev.call_id, name: ev.name, arguments: ev.arguments, output: "", latency: 0, status: "", chars: 0 });
+    } else if (ev.type === "tool_result") {
+      const tool = current.tools.find((t) => t.call_id && t.call_id === ev.call_id)
+        || current.tools.find((t) => !t.output)
+        || current.tools[current.tools.length - 1];
+      if (tool) {
+        tool.output = ev.output || "";
+        tool.latency = ev.latency_ms || 0;
+        tool.status = ev.status || "";
+        tool.chars = ev.output_chars || 0;
+      }
+    }
+  }
+  let html = "";
+  for (const group of groups) {
+    if (!group.reasoning && !group.tools.length) continue;
+    const info = meta[group.iteration] || {};
+    const label = [`第 ${group.iteration} 步`];
+    if (info.latency_ms) label.push(`${(info.latency_ms / 1000).toFixed(1)}s`);
+    if (info.status && info.status !== "completed") label.push(info.status);
+    html += `<div class="chat-iter"><div class="chat-iter-label">${label.join(" · ")}</div>`;
+    if (group.reasoning) {
+      html += `<details class="chat-step"><summary>
+        <span class="chat-step-key">reasoning</span>
+      </summary><div class="chat-step-body">${esc(group.reasoning)}</div></details>`;
+    }
+    for (const tool of group.tools) {
+      const failed = tool.status && tool.status !== "completed";
+      const argsParsed = parseMaybeJson(tool.arguments);
+      const chips = argsParsed && typeof argsParsed === "object"
+        ? Object.entries(argsParsed).map(([k, v]) => `<span class="chat-chip">${esc(k)}: ${esc(typeof v === "object" ? JSON.stringify(v) : v)}</span>`).join("")
+        : `<span class="chat-chip">${esc(tool.arguments || "")}</span>`;
+      const meta_ = [tool.latency ? `${tool.latency}ms` : "", tool.chars ? `${tool.chars} 字符` : "", failed ? tool.status : ""].filter(Boolean).join(" · ");
+      const argsText = fmtValue(argsParsed) || tool.arguments || "";
+      const output = fmtValue(parseMaybeJson(tool.output)) || tool.output || "";
+      const truncated = output.length > 8000;
+      let body = "";
+      if (argsText) {
+        body += `<div class="chat-tool-label">入参</div><pre class="snapshot chat-tool-block">${esc(argsText)}</pre>`;
+      }
+      if (output) {
+        body += `<div class="chat-tool-label">结果${tool.chars ? ` · ${tool.chars} 字符` : ""}</div><pre class="snapshot chat-tool-block">${esc(output.slice(0, 8000))}${truncated ? "\n…（已截断，仅显示前 8000 字符）" : ""}</pre>`;
+      }
+      html += `<details class="chat-step ${failed ? "chat-step-failed" : ""}"><summary>
+        <span class="chat-step-key">${esc(tool.name)}</span>
+        <span class="chat-step-chips">${chips}</span>
+        <span class="chat-step-meta">${meta_}</span>
+      </summary><div class="chat-step-body">${body}</div></details>`;
+    }
+    html += `</div>`;
+  }
+  for (const message of errors) {
+    html += `<div class="chat-error">${esc(message)}</div>`;
+  }
+  return html;
+}
+
+function renderMessage(m) {
+  if (m.role === "user") {
+    return `<div class="chat-msg user"><div class="chat-bubble">${esc(m.content)}</div></div>`;
+  }
+  const usage = m.usage || {};
+  const meta = [usage.iterations ? `${usage.iterations} 步` : "", usage.total_sec ? `${Math.round(usage.total_sec)}s` : "",
+    usage.input_tokens ? `↑${usage.input_tokens}` : "", usage.output_tokens ? `↓${usage.output_tokens}` : ""].filter(Boolean).join(" · ");
+  return `<div class="chat-msg assistant">
+    <div class="chat-bubble">${renderEvents(m.events || [])}<div class="chat-reply">${esc(m.content)}</div>
+    ${meta ? `<div class="chat-meta muted">${meta}</div>` : ""}</div>
+  </div>`;
+}
+
+function renderAll() {
+  if (!messagesHost) return;
+  messagesHost.innerHTML = initialMessages.map(renderMessage).join("");
+  messagesHost.scrollTop = messagesHost.scrollHeight;
+}
+renderAll();
+
+/* 发送与流式接收 */
+let sending = false;
+async function send() {
+  const text = inputBox.value.trim();
+  if (!text || sending) return;
+  sending = true;
+  sendButton.disabled = true;
+  inputBox.value = "";
+  const bubble = document.createElement("div");
+  bubble.className = "chat-msg user";
+  bubble.innerHTML = `<div class="chat-bubble">${esc(text)}</div>`;
+  messagesHost.appendChild(bubble);
+
+  const reply = document.createElement("div");
+  reply.className = "chat-msg assistant";
+  reply.innerHTML = `<div class="chat-bubble"><span class="muted">思考中…</span></div>`;
+  messagesHost.appendChild(reply);
+  messagesHost.scrollTop = messagesHost.scrollHeight;
+
+  const events = [];
+  let content = "";
+  let usage = {};
+  try {
+    const response = await fetch(`/api/chat/sessions/${sessionId}/messages`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text }),
+    });
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const parts = buffer.split("\n\n");
+      buffer = parts.pop() || "";
+      for (const part of parts) {
+        const line = part.trim();
+        if (!line.startsWith("data:")) continue;
+        const ev = JSON.parse(line.slice(5));
+        if (ev.type === "error") { alert(ev.message || "发送失败"); return; }
+        if (ev.type === "user_message") continue;
+        if (ev.type === "done") { content = ev.content || content; usage = ev.usage || {}; continue; }
+        events.push(ev);
+        if (ev.type === "text_delta") content += ev.text || "";
+        reply.innerHTML = `<div class="chat-bubble">${renderEvents(events)}<div class="chat-reply">${esc(content)}</div></div>`;
+        messagesHost.scrollTop = messagesHost.scrollHeight;
+      }
+    }
+    if (!content) {
+      content = events.filter(e => e.type === "turn_end").map(e => e.reply || "").join("") || "";
+    }
+    const meta = [usage.iterations ? `${usage.iterations} 步` : "", usage.total_sec ? `${usage.total_sec}s` : "",
+      usage.input_tokens ? `↑${usage.input_tokens}` : "", usage.output_tokens ? `↓${usage.output_tokens}` : ""].filter(Boolean).join(" · ");
+    reply.innerHTML = `<div class="chat-bubble">${renderEvents(events)}<div class="chat-reply">${esc(content)}</div>${meta ? `<div class="chat-meta muted">${meta}</div>` : ""}</div>`;
+  } catch (error) {
+    reply.innerHTML = `<div class="chat-bubble"><span class="muted">发送失败：${esc(error.message)}</span></div>`;
+  } finally {
+    sending = false;
+    sendButton.disabled = false;
+    inputBox.focus();
+  }
+}
+
+sendButton?.addEventListener("click", send);
+inputBox?.addEventListener("keydown", (ev) => {
+  if (ev.key === "Enter" && !ev.shiftKey) { ev.preventDefault(); send(); }
+});
+
+/* 会话管理 */
+document.getElementById("chat-new")?.addEventListener("click", async () => {
+  const response = await fetch("/api/chat/sessions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name: "新会话", config: {} }),
+  });
+  const result = await response.json();
+  if (result.ok) location.href = `/chat?session=${result.session_id}`;
+  else alert((result.errors || ["创建失败"]).join("\n"));
+});
+
+let renameTarget = 0;
+const sessionMenu = document.createElement("div");
+sessionMenu.className = "session-menu hidden";
+sessionMenu.innerHTML = `<button type="button" data-menu="rename">重命名</button><button type="button" data-menu="delete">删除</button>`;
+document.body.appendChild(sessionMenu);
+
+function openSessionMenu(item, x, y) {
+  renameTarget = Number(item.dataset.sessionId);
+  sessionMenu.classList.remove("hidden");
+  sessionMenu.style.left = "0px";
+  sessionMenu.style.top = "0px";
+  const menuWidth = sessionMenu.offsetWidth;
+  const menuHeight = sessionMenu.offsetHeight;
+  sessionMenu.style.left = `${Math.min(x, window.innerWidth - menuWidth - 8)}px`;
+  sessionMenu.style.top = `${Math.min(y, window.innerHeight - menuHeight - 8)}px`;
+}
+function closeSessionMenu() {
+  sessionMenu.classList.add("hidden");
+}
+for (const item of document.querySelectorAll(".chat-session-item")) {
+  item.addEventListener("click", () => {
+    if (!item.classList.contains("active")) location.href = `/chat?session=${item.dataset.sessionId}`;
+  });
+  item.addEventListener("contextmenu", (ev) => {
+    ev.preventDefault();
+    openSessionMenu(item, ev.clientX, ev.clientY);
+  });
+}
+sessionMenu.addEventListener("click", async (ev) => {
+  const action = ev.target.dataset ? ev.target.dataset.menu : "";
+  if (!action) return;
+  closeSessionMenu();
+  const nameNode = document.querySelector(`.chat-session-item[data-session-id="${renameTarget}"] .chat-session-name`);
+  if (action === "rename") {
+    document.getElementById("chat-rename-input").value = nameNode ? nameNode.textContent : "";
+    document.getElementById("chat-rename-modal").classList.remove("hidden");
+    return;
+  }
+  if (!confirm("删除该会话及其对话历史？")) return;
+  await fetch(`/api/chat/sessions/${renameTarget}/delete`, { method: "POST" });
+  location.reload();
+});
+document.addEventListener("click", (ev) => {
+  if (!ev.target.closest(".session-menu")) closeSessionMenu();
+});
+document.addEventListener("keydown", (ev) => {
+  if (ev.key === "Escape") closeSessionMenu();
+});
+window.addEventListener("resize", closeSessionMenu);
+document.getElementById("chat-rename-confirm")?.addEventListener("click", async () => {
+  const name = document.getElementById("chat-rename-input").value.trim();
+  if (!name) return;
+  await fetch(`/api/chat/sessions/${renameTarget}/rename`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name }),
+  });
+  location.reload();
+});
+
+/* 配置保存 */
+document.getElementById("cfg-save")?.addEventListener("click", async () => {
+  const response = await fetch(`/api/chat/sessions/${sessionId}/config`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ config: {
+      model_id: document.getElementById("cfg-model").value.trim(),
+      reasoning_effort: document.getElementById("cfg-effort").value,
+      temperature: document.getElementById("cfg-temperature").value === "" ? null : Number(document.getElementById("cfg-temperature").value),
+      max_iterations: Number(document.getElementById("cfg-iterations").value || 16),
+      turn_timeout: Number(document.getElementById("cfg-timeout").value || 240),
+      instructions: document.getElementById("cfg-prompt").value,
+    } }),
+  });
+  const result = await response.json();
+  if (!result.ok) alert((result.errors || ["保存失败"]).join("\n"));
+});
+
+/* 更换工具：确认后创建新会话 */
+document.getElementById("cfg-change-tools")?.addEventListener("click", () => {
+  document.getElementById("chat-tools-modal").classList.remove("hidden");
+});
+document.getElementById("chat-tools-confirm")?.addEventListener("click", async () => {
+  const toolProfile = [...document.querySelectorAll("#chat-tools-options input:checked")].map(i => i.value);
+  if (!toolProfile.length) { alert("至少选择一个工具"); return; }
+  const config = {
+    model_id: document.getElementById("cfg-model").value.trim(),
+    reasoning_effort: document.getElementById("cfg-effort").value,
+    temperature: document.getElementById("cfg-temperature").value === "" ? null : Number(document.getElementById("cfg-temperature").value),
+    max_iterations: Number(document.getElementById("cfg-iterations").value || 16),
+    turn_timeout: Number(document.getElementById("cfg-timeout").value || 240),
+    instructions: document.getElementById("cfg-prompt").value,
+    tool_profile: toolProfile,
+  };
+  const response = await fetch("/api/chat/sessions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name: "新会话", config }),
+  });
+  const result = await response.json();
+  if (result.ok) location.href = `/chat?session=${result.session_id}`;
+  else alert((result.errors || ["创建失败"]).join("\n"));
+});
+
+/* 启动服务 */
+document.getElementById("chat-start-stack")?.addEventListener("click", async () => {
+  const status = document.getElementById("chat-stack-status");
+  status.textContent = "正在启动，等待就绪…";
+  const response = await fetch("/api/chat/stack/start", { method: "POST" });
+  const result = await response.json();
+  if (result.ok) location.reload();
+  else status.textContent = (result.errors || ["启动失败"]).join("\n");
+});
+</script>
+{% endblock %}

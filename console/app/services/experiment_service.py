@@ -245,14 +245,16 @@ def _execute(experiment_id: int) -> None:
         ).fetchone()
     if profile is None:
         raise ExperimentError("评测对象不存在")
+    profile = dict(profile)
 
-    # 1. Render tasks (cached by dataset version content hash).
-    cache_key = dataset_version["content_hash"].replace(":", "-")
+    # 1. Render tasks (cached by dataset version content hash and environment).
+    env_template = profile.get("environment") or dataset["env_template"]
+    cache_key = (dataset_version["content_hash"] + "-" + env_template).replace(":", "-")
     dataset_dir = config.GENERATED_DIR / "datasets" / cache_key
     tasks_dir = dataset_dir / "tasks"
     if not tasks_dir.is_dir():
         task_renderer.render_tasks(
-            rows, dataset_dir, dataset["env_template"], dataset["name"], dataset_version["version_no"]
+            rows, dataset_dir, env_template, dataset["name"], dataset_version["version_no"]
         )
 
     # 2. Bench config pointing at the rendered tasks.
@@ -326,6 +328,7 @@ def _execute(experiment_id: int) -> None:
             "name": profile["name"],
             "harness": profile["harness"],
             "model_id": profile["model_id"],
+            "environment": profile.get("environment") or dataset["env_template"],
             "params": json.loads(profile["params"]),
         },
         "scorer": scorer_snapshot,

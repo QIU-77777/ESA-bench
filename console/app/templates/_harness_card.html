@@ -1,0 +1,56 @@
+<div class="cap-card">
+  <div class="cap-head">
+    <span class="badge">{{ h.name }}</span>
+    <span class="mono muted">{{ h.id }}</span>
+  </div>
+  <dl class="cap-facts">
+    <div><dt>协议</dt><dd class="mono">{{ h.protocol or '—' }}</dd></div>
+    <div><dt>镜像</dt><dd class="mono">{{ h.image.repository or '—' }}<span class="muted">:{{ h.image.version or '—' }}</span></dd></div>
+    <div><dt>容器内挂载点</dt><dd class="mono">{{ h.image.mount_path or '—' }}</dd></div>
+    <div><dt>CLI 包</dt><dd class="mono">{{ h.image.npm_package or '—' }}</dd></div>
+  </dl>
+
+  {% if h.agent %}
+  <div class="cap-section">
+    <div class="cap-label">系统提示词（esa/agent.json）</div>
+    <pre class="snapshot cap-prompt">{{ h.agent.instructions }}</pre>
+  </div>
+  <div class="cap-section">
+    <div class="cap-label">模型默认参数</div>
+    <dl class="cap-facts">
+      {% for key, value in h.agent.model_defaults.items() %}
+      <div><dt>{{ key }}</dt><dd class="mono">{{ value }}</dd></div>
+      {% endfor %}
+      <div><dt>上下文续接</dt><dd class="mono">{{ h.agent.context_continuity or '—' }}</dd></div>
+    </dl>
+  </div>
+  <div class="cap-section">
+    <div class="cap-label">能力清单</div>
+    <p class="mono muted">{{ h.agent.capabilities | join(' · ') or '—' }}</p>
+  </div>
+  {% endif %}
+
+  <div class="cap-section">
+    <div class="cap-label">可调参数（configs/harnesses/{{ h.id }}.yaml 的 kwargs）</div>
+    {% if h.params %}
+    <table class="cap-table">
+      <thead><tr><th>参数</th><th>默认值</th><th>说明</th></tr></thead>
+      <tbody>
+        {% for p in h.params %}
+        <tr>
+          <td class="mono">{{ p.key }}</td>
+          <td class="mono">{{ p.value if p.value is not none else '—' }}</td>
+          <td class="muted">{{ p.doc or '—' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="muted">该 harness 没有可调参数。</p>
+    {% endif %}
+  </div>
+
+  {% for note in h.notes %}
+  <p class="field-hint">{{ note }}</p>
+  {% endfor %}
+</div>

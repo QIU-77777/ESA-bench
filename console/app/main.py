@@ -8,7 +8,7 @@ from urllib.parse import quote
 
 import httpx
 from fastapi import Body, FastAPI, File, Form, Request, UploadFile
-from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from fastapi.responses import HTMLResponse, RedirectResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -17,6 +17,8 @@ from .db import init_db
 from .services import (
     agent_registry,
     analysis_service,
+    capability_registry,
+    chat_service,
     dataset_service,
     experiment_service,
     harbor_view_service,
@@ -213,20 +215,45 @@ def export_version(dataset_id: int, version_id: int) -> Response:
 @app.get("/eval-profiles", response_class=HTMLResponse)
 def profiles_page(request: Request) -> HTMLResponse:
     defaults = profiles.harness_defaults()
-    first_harness = profiles.available_harnesses()[0]
+    harnesses = profiles.available_harnesses()
+    first_harness = harnesses[0]
+    environments = profiles.available_environments()
     return templates.TemplateResponse(
         request,
         "eval_profiles.html",
         {
             "profiles": profiles.list_profiles(),
-            "harnesses": profiles.available_harnesses(),
+            "harnesses": harnesses,
             "models": profiles.available_models(),
+            "environments": environments,
             "harness_defaults_json": json.dumps(defaults, ensure_ascii=False),
             "default_params_json": json.dumps(
                 defaults.get(first_harness, {}), ensure_ascii=False, indent=2
             ),
+            "harness_card": capability_registry.harness_detail(first_harness),
+            "environment_card": capability_registry.environment_detail(environments[0]),
         },
     )
+
+
+@app.get("/eval-profiles/harness-card/{harness_id}", response_class=HTMLResponse)
+def harness_card(request: Request, harness_id: str) -> HTMLResponse:
+    detail = capability_registry.harness_detail(harness_id)
+    if detail is None:
+        return templates.TemplateResponse(
+            request, "_capability_missing.html", {"kind": "harness", "id": harness_id}
+        )
+    return templates.TemplateResponse(request, "_harness_card.html", {"h": detail})
+
+
+@app.get("/eval-profiles/environment-card/{env_id}", response_class=HTMLResponse)
+def environment_card(request: Request, env_id: str) -> HTMLResponse:
+    detail = capability_registry.environment_detail(env_id)
+    if detail is None:
+        return templates.TemplateResponse(
+            request, "_capability_missing.html", {"kind": "environment", "id": env_id}
+        )
+    return templates.TemplateResponse(request, "_environment_card.html", {"e": detail})
 
 
 @app.post("/eval-profiles")
@@ -235,12 +262,13 @@ def create_profile(
     harness: str = Form(...),
     model_id: str = Form(...),
     params: str = Form("{}"),
+    environment: str = Form("standard"),
 ) -> RedirectResponse:
     try:
         parsed = json.loads(params or "{}")
         if not isinstance(parsed, dict):
             raise profiles.ProfileError("params 必须是 JSON 对象")
-        profiles.create_profile(name, harness, model_id, parsed)
+        profiles.create_profile(name, harness, model_id, parsed, environment)
     except (profiles.ProfileError, json.JSONDecodeError) as exc:
         return _redirect("/eval-profiles", str(exc))
     return _redirect("/eval-profiles")
@@ -753,6 +781,107 @@ def merge_draft(draft_id: int, payload: dict = Body(...)) -> dict:
     except (loop_service.LoopError, dataset_service.DatasetError) as exc:
         return {"ok": False, "errors": str(exc)}
     return {"ok": True, "version_id": version_id}
+
+
+# ── Chat playground ────────────────────────────────────────────────────
+
+
+@app.get("/chat", response_class=HTMLResponse)
+def chat_page(request: Request, session: int = 0) -> HTMLResponse:
+    sessions = chat_service.list_sessions()
+    current = None
+    if session:
+        current = chat_service.get_session(session)
+    if current is None and sessions:
+        current = chat_service.get_session(sessions[0]["id"])
+    messages = chat_service.list_messages(current["id"]) if current else []
+    config_data = chat_service.session_config(current) if current else chat_service.DEFAULT_CONFIG
+    tools = chat_service.session_tools(current["id"]) if current else []
+    return templates.TemplateResponse(
+        request,
+        "chat.html",
+        {
+            "sessions": sessions,
+            "current": current,
+            "messages": messages,
+            "config": config_data,
+            "baseline": chat_service.agent_defaults(),
+            "tools": tools,
+            "readiness": chat_service.readiness(),
+        },
+    )
+
+
+@app.post("/api/chat/sessions")
+def chat_create_session(payload: dict = Body(...)) -> dict:
+    try:
+        session_id = chat_service.create_session(
+            str(payload.get("name") or ""), payload.get("config") or {}
+        )
+    except chat_service.ChatError as exc:
+        return {"ok": False, "errors": str(exc)}
+    return {"ok": True, "session_id": session_id}
+
+
+@app.post("/api/chat/sessions/{session_id}/rename")
+def chat_rename_session(session_id: int, payload: dict = Body(...)) -> dict:
+    try:
+        chat_service.rename_session(session_id, str(payload.get("name") or ""))
+    except chat_service.ChatError as exc:
+        return {"ok": False, "errors": str(exc)}
+    return {"ok": True}
+
+
+@app.post("/api/chat/sessions/{session_id}/delete")
+def chat_delete_session(session_id: int) -> dict:
+    chat_service.delete_session(session_id)
+    return {"ok": True}
+
+
+@app.post("/api/chat/sessions/{session_id}/config")
+def chat_update_config(session_id: int, payload: dict = Body(...)) -> dict:
+    try:
+        chat_service.update_session_config(session_id, payload.get("config") or {})
+    except chat_service.ChatError as exc:
+        return {"ok": False, "errors": str(exc)}
+    return {"ok": True}
+
+
+@app.get("/api/chat/sessions/{session_id}/tools")
+def chat_session_tools(session_id: int) -> dict:
+    return {"ok": True, "tools": chat_service.session_tools(session_id)}
+
+
+@app.post("/api/chat/sessions/{session_id}/messages")
+def chat_send_message(session_id: int, payload: dict = Body(...)):
+    text = str(payload.get("text") or "")
+
+    def stream():
+        try:
+            for event in chat_service.send_message(session_id, text):
+                yield _sse(event)
+        except chat_service.ChatError as exc:
+            yield _sse({"type": "error", "message": str(exc)})
+
+    return StreamingResponse(stream(), media_type="text/event-stream")
+
+
+@app.post("/api/chat/stack/start")
+def chat_start_stack() -> dict:
+    try:
+        chat_service.start_stack()
+    except chat_service.ChatError as exc:
+        return {"ok": False, "errors": str(exc)}
+    return {"ok": True}
+
+
+@app.get("/api/chat/readiness")
+def chat_readiness() -> dict:
+    return {"ok": True, "readiness": chat_service.readiness()}
+
+
+def _sse(payload: dict) -> str:
+    return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
 
 
 # ── Harbor view reverse proxy (registered last: console routes win) ────

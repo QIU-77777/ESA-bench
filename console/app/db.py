@@ -164,11 +164,30 @@ CREATE TABLE IF NOT EXISTS failure_categories (
   name TEXT UNIQUE NOT NULL,
   created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS chat_sessions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  mock_session_id TEXT NOT NULL DEFAULT '',
+  agent_config TEXT NOT NULL DEFAULT '{}',
+  evidence_dir TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS chat_messages (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  session_id INTEGER NOT NULL REFERENCES chat_sessions(id),
+  role TEXT NOT NULL,
+  content TEXT NOT NULL DEFAULT '',
+  events TEXT NOT NULL DEFAULT '[]',
+  usage TEXT NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL
+);
 """
 
 _MIGRATIONS = (
     "ALTER TABLE experiments ADD COLUMN scorer_version_id INTEGER REFERENCES scorer_versions(id)",
     "ALTER TABLE scorers ADD COLUMN description TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE eval_profiles ADD COLUMN environment TEXT NOT NULL DEFAULT 'standard'",
 )
 
 

@@ -33,6 +33,7 @@
       <option value="standard" {% if dataset.env_template == 'standard' %}selected{% endif %}>standard（单容器任务）</option>
       <option value="esa" {% if dataset.env_template == 'esa' %}selected{% endif %}>esa（含 mock-system / agent-api / redis）</option>
     </select>
+    <p class="field-hint">新建实验时的默认环境；运行时环境由评测对象的选择决定。</p>
   </div>
 </div>
 <div class="field" style="margin-bottom:1.5rem">
