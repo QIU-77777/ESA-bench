@@ -12,3 +12,7 @@ __pycache__/
 environment/.workspaces/
 console/workspace/
 .pytest_cache/
+
+# 本地工具运行时目录
+.playwright-cli/
+.workbuddy/
