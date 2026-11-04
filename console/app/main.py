@@ -797,6 +797,7 @@ def chat_page(request: Request, session: int = 0) -> HTMLResponse:
     messages = chat_service.list_messages(current["id"]) if current else []
     config_data = chat_service.session_config(current) if current else chat_service.DEFAULT_CONFIG
     tools = chat_service.session_tools(current["id"]) if current else []
+    chat_mode = chat_service.session_mode(current) if current else "esa"
     return templates.TemplateResponse(
         request,
         "chat.html",
@@ -808,6 +809,7 @@ def chat_page(request: Request, session: int = 0) -> HTMLResponse:
             "baseline": chat_service.agent_defaults(),
             "tools": tools,
             "readiness": chat_service.readiness(),
+            "chat_mode": chat_mode,
         },
     )
 
@@ -816,7 +818,8 @@ def chat_page(request: Request, session: int = 0) -> HTMLResponse:
 def chat_create_session(payload: dict = Body(...)) -> dict:
     try:
         session_id = chat_service.create_session(
-            str(payload.get("name") or ""), payload.get("config") or {}
+            str(payload.get("name") or ""), payload.get("config") or {},
+            "cockpit" if payload.get("mode") == "cockpit" else "esa",
         )
     except chat_service.ChatError as exc:
         return {"ok": False, "errors": str(exc)}
@@ -867,9 +870,9 @@ def chat_send_message(session_id: int, payload: dict = Body(...)):
 
 
 @app.post("/api/chat/stack/start")
-def chat_start_stack() -> dict:
+def chat_start_stack(payload: dict = Body(default={})) -> dict:
     try:
-        chat_service.start_stack()
+        chat_service.start_stack("cockpit" if payload.get("mode") == "cockpit" else "esa")
     except chat_service.ChatError as exc:
         return {"ok": False, "errors": str(exc)}
     return {"ok": True}

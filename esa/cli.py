@@ -2,7 +2,9 @@
 """ESA 交互式命令行：与车载 Agent 直接对话。
 
 入口：python -m esa.cli chat
-命令行不执行 ReAct 循环，不直接调用模型，全部经过 runtime，与批量评测走同一实现。
+默认链路不执行 ReAct 循环，不直接调用模型，全部经过 runtime，与批量评测走同一实现。
+--cockpit 切到座舱链路：逐轮调用座舱 agent 的 /v1/turn，从 recorder 拉取事件，
+与座舱批量评测走同一实现。
 """
 from __future__ import annotations
 
@@ -23,6 +25,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 AGENT_PAYLOAD_PATH = REPO_ROOT / "esa" / "agent.json"
 DEV_COMPOSE_PATH = REPO_ROOT / "docker-compose.dev.yaml"
+COCKPIT_COMPOSE_PATH = REPO_ROOT / "docker-compose.cockpit.yaml"
 ENV_VENV_PYTHON = REPO_ROOT / "environment" / ".venv" / "bin" / "python"
 RUNTIME_DIR = REPO_ROOT / "runtime"
 QUOTE_CHARS = "\"'"
@@ -33,6 +36,12 @@ DOCKER_RUNTIME_URL = "http://127.0.0.1:18080"
 LOCAL_MOCK_URL = "http://127.0.0.1:18003"
 LOCAL_RUNTIME_URL = "http://127.0.0.1:18080"
 LOCAL_REDIS_PORT = 16379
+COCKPIT_MOCK_URL = "http://127.0.0.1:18093"
+COCKPIT_AGENT_URL = "http://127.0.0.1:18090"
+COCKPIT_MCP_URL = "http://127.0.0.1:18091"
+COCKPIT_LOCAL_MCP_PORT = 18091
+COCKPIT_LOCAL_RECORDER_PORT = 18093
+COCKPIT_LOCAL_AGENT_PORT = 18090
 READY_TIMEOUT_SEC = 120.0
 
 STATUS_LABELS = {
@@ -123,6 +132,7 @@ class Settings:
         self.no_stack = bool(args.no_stack)
         self.ephemeral = bool(args.ephemeral)
         self.verbose = bool(args.verbose)
+        self.cockpit = bool(getattr(args, "cockpit", False))
         self.model = args.model
         self.turn_timeout = float(args.turn_timeout)
         self.max_iterations = int(args.max_iterations)
@@ -130,8 +140,12 @@ class Settings:
         self.resume = args.resume
         self.session_dir = Path(args.session_dir).expanduser()
         self.runtime_url = args.runtime_url or (LOCAL_RUNTIME_URL if self.local else DOCKER_RUNTIME_URL)
-        self.mock_url = args.mock_url or (LOCAL_MOCK_URL if self.local else DOCKER_MOCK_URL)
-        self.mock_internal_url = args.mock_internal_url or (LOCAL_MOCK_URL if self.local else DOCKER_MOCK_INTERNAL_URL)
+        self.agent_url = args.agent_url or COCKPIT_AGENT_URL
+        self.cockpit_mcp_url = args.cockpit_mcp_url or COCKPIT_MCP_URL
+        self.mock_url = args.mock_url or (COCKPIT_MOCK_URL if self.cockpit else
+                                          (LOCAL_MOCK_URL if self.local else DOCKER_MOCK_URL))
+        self.mock_internal_url = args.mock_internal_url or (self.mock_url if self.cockpit else
+                                                            (LOCAL_MOCK_URL if self.local else DOCKER_MOCK_INTERNAL_URL))
         self.env = env_values
         self.agent = json.loads(AGENT_PAYLOAD_PATH.read_text("utf-8"))
         react = self.agent.setdefault("react", {})
@@ -145,9 +159,14 @@ class Settings:
 def wait_ready(settings):
     deadline = time.monotonic() + READY_TIMEOUT_SEC
     while time.monotonic() < deadline:
-        if health_ok(settings.mock_url + "/health") and health_ok(settings.runtime_url + "/v1/health"):
+        if settings.cockpit:
+            if health_ok(settings.mock_url + "/health") and health_ok(settings.agent_url + "/v1/health"):
+                return
+        elif health_ok(settings.mock_url + "/health") and health_ok(settings.runtime_url + "/v1/health"):
             return
         time.sleep(1.0)
+    if settings.cockpit:
+        raise CliError("座舱服务在 " + str(int(READY_TIMEOUT_SEC)) + " 秒内未就绪。请执行 docker compose -p esa-cockpit-dev -f docker-compose.cockpit.yaml logs 查看日志。")
     raise CliError("服务在 " + str(int(READY_TIMEOUT_SEC)) + " 秒内未就绪。请执行 docker compose -p esa-dev -f docker-compose.dev.yaml logs 查看日志。")
 
 
@@ -159,12 +178,44 @@ def start_docker_stack(settings):
         print("提示：模型端点使用本机地址，容器内无法访问。请改用 host.docker.internal。")
     env = dict(os.environ)
     env.update(settings.env)
-    command = ["docker", "compose", "-p", "esa-dev", "-f", str(DEV_COMPOSE_PATH), "up", "-d"]
+    if settings.cockpit:
+        env.setdefault("COCKPIT_AGENT_MODEL_ID", settings.model_id or "")
+        command = ["docker", "compose", "-p", "esa-cockpit-dev", "-f", str(COCKPIT_COMPOSE_PATH), "up", "-d"]
+    else:
+        command = ["docker", "compose", "-p", "esa-dev", "-f", str(DEV_COMPOSE_PATH), "up", "-d"]
     result = subprocess.run(command, env=env, capture_output=True, text=True)
     if result.returncode != 0:
         raise CliError("启动开发服务失败: " + result.stderr.strip()[:500])
     wait_ready(settings)
     return []
+
+
+def start_local_cockpit_stack(settings, log_dir):
+    """宿主进程启动座舱链路：假 MCP server、recorder 与座舱 agent。"""
+    processes = []
+    log_dir.mkdir(parents=True, exist_ok=True)
+    if not health_ok(settings.cockpit_mcp_url + "/health"):
+        log = (log_dir / "cockpit-mcp.log").open("w")
+        processes.append(subprocess.Popen(
+            [sys.executable, "-m", "cockpit.fake_mcp", "--host", "127.0.0.1", "--port", str(COCKPIT_LOCAL_MCP_PORT)],
+            cwd=str(REPO_ROOT), stdout=log, stderr=subprocess.STDOUT, start_new_session=True))
+    if not health_ok(settings.mock_url + "/health"):
+        log = (log_dir / "recorder.log").open("w")
+        processes.append(subprocess.Popen(
+            [sys.executable, "-m", "cockpit.recorder", "--host", "127.0.0.1", "--port", str(COCKPIT_LOCAL_RECORDER_PORT),
+             "--mcp-url", settings.cockpit_mcp_url, "--store", "memory-test"],
+            cwd=str(REPO_ROOT), stdout=log, stderr=subprocess.STDOUT, start_new_session=True))
+    if not health_ok(settings.agent_url + "/v1/health"):
+        env = dict(os.environ)
+        env.update(settings.env)
+        env["ESA_MOCK_URL"] = settings.mock_url
+        log = (log_dir / "cockpit-agent.log").open("w")
+        processes.append(subprocess.Popen(
+            [sys.executable, "-m", "cockpit.fake_agent", "--host", "127.0.0.1", "--port", str(COCKPIT_LOCAL_AGENT_PORT),
+             "--mock-url", settings.mock_url],
+            cwd=str(REPO_ROOT), env=env, stdout=log, stderr=subprocess.STDOUT, start_new_session=True))
+    wait_ready(settings)
+    return processes
 
 
 def start_local_stack(settings, log_dir):
@@ -211,6 +262,16 @@ def model_endpoint(settings):
 
 
 def ensure_services(settings, log_dir):
+    if settings.cockpit:
+        mock_up = health_ok(settings.mock_url + "/health")
+        agent_up = health_ok(settings.agent_url + "/v1/health")
+        if mock_up and agent_up:
+            return []
+        if settings.no_stack:
+            raise CliError("座舱服务不可达。请先启动服务，或去掉 --no-stack 由命令自动启动。")
+        if settings.local:
+            return start_local_cockpit_stack(settings, log_dir)
+        return start_docker_stack(settings)
     mock_up = health_ok(settings.mock_url + "/health")
     runtime_up = health_ok(settings.runtime_url + "/v1/health")
     if mock_up and runtime_up:
@@ -665,6 +726,71 @@ class VehicleChat:
         return result
 
 
+class CockpitChat(VehicleChat):
+    """座舱链路对话：逐轮调用座舱 agent，从 recorder 拉取本轮调用。"""
+
+    def __init__(self, settings, session_id=None, transcript=None):
+        super().__init__(settings, session_id=session_id, transcript=transcript)
+        self.last_sequence = 0
+
+    def create_session(self):
+        task = self.settings.task
+        body = {
+            "type": "car",
+            "context": task.get("context") or {},
+            "initial_state": task.get("initial_state") or {},
+            "data_overlays": task.get("data_overlays") or {},
+            "faults": task.get("faults") or [],
+            "seed": task.get("seed", 0),
+        }
+        if task.get("tool_profile") is not None:
+            body["tool_profile"] = task["tool_profile"]
+        if task.get("dataset_version"):
+            body["dataset_version"] = task["dataset_version"]
+        created = http_json(self.settings.mock_url + "/eval/api/v1/sessions", "POST", body)
+        self.session_id = created.get("session_id")
+        if not self.session_id:
+            raise CliError("记录代理没有返回 session_id")
+        self.initial_snapshot = self.snapshot()
+
+    def turn(self, message):
+        body = {"session_id": self.session_id, "message": message, "history": list(self.transcript)}
+        renderer = TurnRenderer(self.settings.verbose)
+        result = http_json(self.settings.agent_url + "/v1/turn", "POST", body, timeout=self.settings.turn_timeout + 30)
+        if result.get("error") or (result.get("status") is not None and result.get("status") != "completed"):
+            raise CliError("座舱 agent 本轮失败：" + str(result.get("error") or result.get("status")))
+        reply = result.get("reply") or ""
+        events = http_json(self.settings.mock_url + "/api/v1/rl/sessions/" + self.session_id
+                           + "/events?after=" + str(self.last_sequence))
+        self.last_sequence = events.get("total_events", self.last_sequence)
+        calls = []
+        for event in events.get("events") or []:
+            if not event.get("call_id"):
+                continue
+            calls.append({"callId": event["call_id"], "name": event.get("tool"),
+                          "arguments": event.get("arguments") or {}, "output": event.get("result"),
+                          "status": event.get("status"), "turn_index": self.turn_count})
+            renderer.event("tool_call", {"name": event.get("tool"),
+                                         "arguments": json.dumps(event.get("arguments") or {}, ensure_ascii=False)})
+            renderer.event("tool_result", {"status": "completed" if event.get("status") == "ok" else "failed",
+                                           "output": json.dumps(event.get("result") or {}, ensure_ascii=False),
+                                           "latency_ms": 0})
+        renderer.event("text_delta", {"text": reply})
+        renderer.finish()
+        usage = result.get("usage") or {}
+        print_usage({"iterations": [{"usage": usage}]}, renderer.elapsed())
+        self.transcript = self.transcript + [{"role": "user", "content": message},
+                                             {"role": "assistant", "content": reply}]
+        self.turn_count += 1
+        payload = {"reply": reply, "status": "completed", "usage": usage,
+                   "iterations": [{"turnIndex": self.turn_count - 1, "message": reply, "toolCalls": calls,
+                                   "usage": usage, "status": "completed",
+                                   "receivedAt": datetime.now(timezone.utc).isoformat()}],
+                   "toolCalls": calls, "transcript": self.transcript}
+        self.results.append(payload)
+        return payload
+
+
 def write_evidence(chat):
     directory = chat.evidence_dir
     directory.mkdir(parents=True, exist_ok=True)
@@ -689,6 +815,8 @@ def write_evidence(chat):
         "runtime_url": chat.settings.runtime_url,
         "mock_url": chat.settings.mock_url,
     }
+    if chat.settings.cockpit:
+        meta["agent_url"] = chat.settings.agent_url
     (directory / "meta.json").write_text(json.dumps(meta, ensure_ascii=False, indent=2), "utf-8")
 
 
@@ -724,7 +852,7 @@ def resume_session(settings, session_id):
         snapshot = http_json(settings.mock_url + "/api/v1/rl/sessions/" + session_id + "/snapshot", timeout=5)
     except CliError as error:
         raise CliError("该会话在环境服务中不可用，无法续聊: " + str(error)) from error
-    chat = VehicleChat(settings, session_id=session_id, transcript=transcript)
+    chat = (CockpitChat if settings.cockpit else VehicleChat)(settings, session_id=session_id, transcript=transcript)
     chat.initial_snapshot = snapshot
     return chat
 
@@ -732,8 +860,12 @@ def resume_session(settings, session_id):
 def print_banner(chat, settings):
     snapshot = chat.initial_snapshot or {}
     manifest = snapshot.get("manifest") or {}
-    enabled = sum(1 for tool in manifest.get("tools") or [] if tool.get("enabled"))
-    print("ESA 交互会话")
+    profile = snapshot.get("tool_profile")
+    if isinstance(profile, list) and profile:
+        enabled = len(profile)
+    else:
+        enabled = sum(1 for tool in manifest.get("tools") or [] if tool.get("enabled"))
+    print("ESA 交互会话" if not settings.cockpit else "ESA 座舱交互会话")
     print("  会话标识: " + str(chat.session_id))
     print("  模型: " + str(settings.model_id))
     endpoint = model_endpoint(settings)
@@ -927,7 +1059,7 @@ def run_chat(settings):
         if settings.resume:
             chat = resume_session(settings, settings.resume)
         else:
-            chat = VehicleChat(settings)
+            chat = CockpitChat(settings) if settings.cockpit else VehicleChat(settings)
             chat.create_session()
         controller = ChatController(settings, chat)
         run_repl(controller)
@@ -939,7 +1071,9 @@ def run_chat(settings):
                 pass
         stop_processes(processes)
         if settings.ephemeral and not settings.local and not settings.no_stack:
-            subprocess.run(["docker", "compose", "-p", "esa-dev", "-f", str(DEV_COMPOSE_PATH), "down"], capture_output=True)
+            project = "esa-cockpit-dev" if settings.cockpit else "esa-dev"
+            stack = COCKPIT_COMPOSE_PATH if settings.cockpit else DEV_COMPOSE_PATH
+            subprocess.run(["docker", "compose", "-p", project, "-f", str(stack), "down"], capture_output=True)
     return 0
 
 
@@ -953,11 +1087,14 @@ def build_parser():
     chat.add_argument("--runtime-url", help="runtime 地址")
     chat.add_argument("--mock-url", help="环境服务地址（命令行自身访问）")
     chat.add_argument("--mock-internal-url", help="传递给 runtime 的环境服务地址")
+    chat.add_argument("--agent-url", help="座舱 agent 地址，配合 --cockpit 使用")
+    chat.add_argument("--cockpit-mcp-url", help="座舱 MCP server 地址，--local 模式启动假件时使用")
     chat.add_argument("--turn-timeout", type=float, default=240.0, help="单轮超时秒数")
     chat.add_argument("--max-iterations", type=int, default=12, help="单轮最大迭代次数")
     chat.add_argument("--local", action="store_true", help="使用宿主进程而非 Docker 服务组合")
     chat.add_argument("--no-stack", action="store_true", help="不自动启动服务")
     chat.add_argument("--ephemeral", action="store_true", help="退出时销毁 Docker 服务组合")
+    chat.add_argument("--cockpit", action="store_true", help="座舱链路：逐轮驱动座舱 agent，经 recorder 调用 MCP")
     chat.add_argument("--session-dir", default=str(Path.home() / ".esa" / "sessions"), help="证据目录")
     chat.add_argument("--verbose", action="store_true", help="显示模型思考内容")
     chat.add_argument("--resume", help="续聊已保存的会话标识")

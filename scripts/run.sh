@@ -132,7 +132,9 @@ if [ -n "$SCORER_CONFIG" ]; then
 fi
 
 # ESA uses a Go runtime service rather than a coding harness image mount.
-if [ "$HARNESS_SLUG" = "esa" ]; then
+# esa-cockpit shares the same fast path: the cockpit agent is a compose service,
+# not a mounted coding harness, so it must skip the coding-agent branch below.
+if [ "$HARNESS_SLUG" = "esa" ] || [ "$HARNESS_SLUG" = "esa-cockpit" ]; then
     "$PY" - "$JOB_CONFIG" <<'PY'
 import sys
 import yaml
@@ -146,6 +148,8 @@ PY
     if [ "$DRY_RUN" = "1" ]; then
         echo "ESA config accepted; references execute in the deployment before model calls."
     else
+        # 座舱 agent 从 compose 读取模型标识，与 job 模型保持一致。
+        [ "$HARNESS_SLUG" = "esa-cockpit" ] && export COCKPIT_AGENT_MODEL_ID="$MODEL_SLUG"
         PYTHONPATH="$PWD" .venv/bin/harbor run -c "$JOB_CONFIG" --job-name "$JOB_NAME" \
             ${VERIFIER_ARGS[@]+"${VERIFIER_ARGS[@]}"} -y
     fi

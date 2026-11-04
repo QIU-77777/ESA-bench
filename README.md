@@ -127,12 +127,15 @@ docker info >/dev/null
 bash scripts/build-esa-local.sh
 ```
 
-脚本生成两个镜像：
+脚本生成五个镜像：
 
 - `esa-react-runtime:1.0.0`：Go ReAct runtime。
 - `esa-local-environment:2.0.0`：Python工具服务与数据。
+- `esa-cockpit-recorder:1.0.0`：座舱 MCP 记录代理。
+- `esa-cockpit-agent:1.0.0`：默认座舱 agent（假件）。
+- `esa-cockpit-mcp:1.0.0`：默认座舱 MCP server（假件）。
 
-任务还使用 `redis:7-alpine` 和 `node:22-alpine`。Harbor自动构建任务容器并启动Compose服务，无需手动启动Redis或工具服务。
+任务还使用 `redis:7-alpine` 和 `node:22-alpine`。Harbor自动构建任务容器并启动Compose服务，无需手动启动Redis或工具服务。座舱链路详见[座舱接入契约](<docs/esa-cockpit-integration.md>)。
 
 如果需要使用镜像源，构建脚本支持 `ESA_GO_IMAGE`、`ESA_RUNTIME_BASE_IMAGE` 和 `ESA_PYTHON_IMAGE`。替换镜像源时保留对应版本：Go1.23.12-alpine3.22、Alpine3.22.1、Python3.12.9-slim。
 
@@ -169,13 +172,25 @@ JUDGE_MODEL_ID=step-3.5-flash
 .venv/bin/python scripts/sync-task-scorers.py
 .venv/bin/python scripts/sync-task-scorers.py --check
 .venv/bin/python -m environment.generate_manifest
-.venv/bin/python scripts/validate_task.py --all --local-http --json
-.venv/bin/python scripts/test-reference-docker.py
+.venv/bin/python scripts/validate_task.py --bench esa --local-http --json
+.venv/bin/python scripts/test-reference-docker.py --bench esa
 
 # Harbor原生Oracle与内置Docker环境实际验收
 STEPFUN_OPENAI_BASE_URL=http://127.0.0.1:1/v1 STEPFUN_API_KEY=oracle-no-model PYTHONPATH="$PWD" \
   .venv/bin/harbor run -c configs/jobs/esa-oracle-acceptance.yaml --job-name UNIQUE -y
 .venv/bin/python scripts/test-oracle-failure.py
+```
+
+任务选择统一走 `--bench <slug>`：`esa` 是 ESA 七题，`esa-cockpit` 是两个座舱示例任务。`--all` 保留全量发现，并检查任务已登记且不横跨多个集合。座舱任务的环境服务是记录代理，验证命令传 `--mock-url` 指向本地 recorder：
+
+```bash
+.venv/bin/python -m cockpit.fake_mcp --port 18091 &
+.venv/bin/python -m cockpit.recorder --port 18093 --mcp-url http://127.0.0.1:18091 --store memory-test &
+.venv/bin/python scripts/validate_task.py --bench esa-cockpit --mock-url http://127.0.0.1:18093 --json
+.venv/bin/python scripts/test-reference-docker.py --bench esa-cockpit --mock-url http://127.0.0.1:18093
+STEPFUN_OPENAI_BASE_URL=http://127.0.0.1:1/v1 STEPFUN_API_KEY=oracle-no-model PYTHONPATH="$PWD" \
+  .venv/bin/harbor run -c configs/jobs/esa-cockpit-oracle-acceptance.yaml --job-name UNIQUE -y
+.venv/bin/python scripts/test-oracle-failure.py --task tasks/esa-cockpit-navi --goal-path navigation.active
 ```
 
 [原生 Oracle 验收配置](<configs/jobs/esa-oracle-acceptance.yaml>)执行标准参考入口。命令显式覆盖模型地址和密钥，避免 Docker Compose 使用本地真实凭据。Oracle 使用实际工具服务和 Redis，不调用模型或 judge，无需执行凭据加载命令。每次选择未使用的 job 名称。
@@ -210,6 +225,14 @@ PYTHONPATH="$PWD" .venv/bin/harbor run \
 每次使用不同的job名称，名称不要包含 `/` 或 `:`。[任务集合配置](<configs/bench/esa.yaml>)决定运行哪些任务。需要修改并发数或重复次数时，在生成的Harbor配置中设置 顶层 `n_concurrent_trials` 和 `n_attempts`，再运行该配置。
 
 也可以执行 `scripts/run.sh --bench esa --harness esa --model stepfun/step-5-preview`。该分支检查可信任务材料并直接调用 Harbor。正式模型调用前，ESAAgent 仍会在实际部署环境重新执行完整参考验证。
+
+座舱 bench 用 `esa-cockpit` harness 运行，被测对象是座舱 agent 而不是模型循环：
+
+```bash
+scripts/run.sh --bench esa-cockpit --harness esa-cockpit --model stepfun/step-5-preview --job-name UNIQUE
+```
+
+该命令把 job 模型标识导出为 `COCKPIT_AGENT_MODEL_ID` 注入任务 compose，驱动在开跑前比对 agent 上报的模型标识。用户 agent 与 MCP server 就绪后，以 `COCKPIT_AGENT_IMAGE` 与 `COCKPIT_MCP_IMAGE` 覆盖默认假件，接入步骤见[座舱接入契约](<docs/esa-cockpit-integration.md>)。
 
 ## 交互式对话
 除了批量评测，可以直接与车载 Agent 对话，用于人工体验和问题发现。Console 的 Chat 页面（`http://127.0.0.1:8899/chat`）与命令行使用同一 Agent 实现、工具集和环境数据，网页版额外提供会话管理、轨迹查看与逐会话参数覆盖；未启动座舱服务时页面给出一键启动。命令行入口：
@@ -285,6 +308,9 @@ total: 4.7s | tokens: ↑1240  ↓320  ↺960(77.4%)
 
 # 连接已在运行的服务，不自动启动
 .venv/bin/python -m esa.cli chat --no-stack
+
+# 座舱链路：逐轮驱动座舱 agent，经 recorder 调用 MCP
+.venv/bin/python -m esa.cli chat --cockpit --task tasks/esa-cockpit-navi
 ```
 
 `--model` 覆盖模型标识，`--turn-timeout` 与 `--max-iterations` 调整单轮限制，`--session-dir` 更换证据目录，`--verbose` 显示模型收到的原始 MCP 信封。
@@ -452,6 +478,8 @@ uv pip install --python .venv/bin/python -r environment/requirements.txt
 git diff --exit-code environment/manifest.json
 .venv/bin/python -m unittest environment.test_environment -v
 .venv/bin/python -m unittest esa.test_state_score esa.test_trajectory esa.test_verifier -v
+.venv/bin/python -m unittest cockpit.recorder_test -v
+ESA_TEST_REDIS_URL=redis://127.0.0.1:6379/0 .venv/bin/python -m unittest cockpit.recorder_test -v
 node --test esa/test-driver.mjs
 ESA_INTEGRATION=1 node --test esa/test-local-integration.mjs
 (cd runtime && go test -race -cover ./... && go vet ./...)

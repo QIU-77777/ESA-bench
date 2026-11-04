@@ -3,6 +3,10 @@
 {% block content %}
 <div class="chat-layout">
   <aside class="chat-sessions">
+    <select id="chat-mode" style="width:100%;margin-bottom:8px">
+      <option value="esa" {% if chat_mode != 'cockpit' %}selected{% endif %}>ESA 座舱（runtime）</option>
+      <option value="cockpit" {% if chat_mode == 'cockpit' %}selected{% endif %}>座舱 agent（cockpit）</option>
+    </select>
     <button type="button" class="primary" id="chat-new" style="width:100%">＋ 新会话</button>
     <div class="chat-session-list" id="chat-session-list">
       {% for s in sessions %}
@@ -15,7 +19,26 @@
   </aside>
 
   <main class="chat-main">
-    {% if not readiness.mock or not readiness.runtime %}
+    {% if chat_mode == 'cockpit' %}
+      {% if not readiness.recorder or not readiness.agent %}
+      <div class="chat-not-ready">
+        <p>座舱服务未就绪：recorder 与座舱 agent 需要运行。</p>
+        <p class="muted">点击下方按钮启动开发服务（docker-compose.cockpit.yaml），等待就绪后即可对话。</p>
+        <button type="button" id="chat-start-stack">启动服务</button>
+        <p class="muted" id="chat-stack-status"></p>
+      </div>
+      {% elif not current %}
+      <div class="chat-empty">
+        <p class="muted">在左侧选择会话，或新建一个会话开始对话。</p>
+      </div>
+      {% else %}
+      <div class="chat-messages" id="chat-messages"></div>
+      <div class="chat-input-bar">
+        <textarea id="chat-input" rows="1" placeholder="输入消息，Enter 发送，Shift+Enter 换行"></textarea>
+        <button type="button" class="primary" id="chat-send">发送</button>
+      </div>
+      {% endif %}
+    {% elif not readiness.mock or not readiness.runtime %}
     <div class="chat-not-ready">
       <p>座舱服务未就绪：mock-system 与 runtime 需要运行。</p>
       <p class="muted">点击下方按钮启动开发服务（docker-compose.dev.yaml），等待就绪后即可对话。</p>
@@ -352,7 +375,7 @@ document.getElementById("chat-new")?.addEventListener("click", async () => {
   const response = await fetch("/api/chat/sessions", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name: "新会话", config: {} }),
+    body: JSON.stringify({ name: "新会话", config: {}, mode: document.getElementById("chat-mode").value }),
   });
   const result = await response.json();
   if (result.ok) location.href = `/chat?session=${result.session_id}`;
@@ -456,7 +479,7 @@ document.getElementById("chat-tools-confirm")?.addEventListener("click", async (
   const response = await fetch("/api/chat/sessions", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name: "新会话", config }),
+    body: JSON.stringify({ name: "新会话", config, mode: document.getElementById("chat-mode").value }),
   });
   const result = await response.json();
   if (result.ok) location.href = `/chat?session=${result.session_id}`;
@@ -467,7 +490,11 @@ document.getElementById("chat-tools-confirm")?.addEventListener("click", async (
 document.getElementById("chat-start-stack")?.addEventListener("click", async () => {
   const status = document.getElementById("chat-stack-status");
   status.textContent = "正在启动，等待就绪…";
-  const response = await fetch("/api/chat/stack/start", { method: "POST" });
+  const response = await fetch("/api/chat/stack/start", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ mode: document.getElementById("chat-mode") ? document.getElementById("chat-mode").value : "esa" }),
+  });
   const result = await response.json();
   if (result.ok) location.reload();
   else status.textContent = (result.errors || ["启动失败"]).join("\n");

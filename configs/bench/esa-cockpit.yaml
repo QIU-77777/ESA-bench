@@ -1,0 +1,5 @@
+id: esa-cockpit
+
+tasks:
+  - path: tasks/esa-cockpit-navi
+  - path: tasks/esa-cockpit-climate

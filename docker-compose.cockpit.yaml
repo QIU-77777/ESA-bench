@@ -1,0 +1,43 @@
+# 座舱交互式开发服务组合：esa chat --cockpit 默认使用。
+# 端口绑定 127.0.0.1，不对外暴露。模型端点与密钥由宿主环境变量传入。
+name: esa-cockpit-dev
+
+services:
+  mock-system:
+    image: ${MOCK_SYSTEM_IMAGE:-esa-cockpit-recorder:1.0.0}
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      COCKPIT_MCP_URL: http://cockpit-mcp:8091
+    ports:
+      - "127.0.0.1:18093:8003"
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8003/health')"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+  cockpit-agent:
+    image: ${COCKPIT_AGENT_IMAGE:-esa-cockpit-agent:1.0.0}
+    environment:
+      ESA_MOCK_URL: http://mock-system:8003
+      COCKPIT_AGENT_MODEL_ID: ${COCKPIT_AGENT_MODEL_ID:-}
+      AGENT_MODEL_BASE_URL: ${STEPFUN_OPENAI_BASE_URL:-}
+      AGENT_MODEL_API_KEY: ${STEPFUN_API_KEY:-}
+    ports:
+      - "127.0.0.1:18090:8090"
+    depends_on:
+      mock-system:
+        condition: service_healthy
+  cockpit-mcp:
+    image: ${COCKPIT_MCP_IMAGE:-esa-cockpit-mcp:1.0.0}
+    ports:
+      - "127.0.0.1:18091:8091"
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 20

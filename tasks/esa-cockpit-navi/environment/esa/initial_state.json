@@ -1,0 +1,25 @@
+{
+  "case_id": "esa-cockpit-navi",
+  "dataset_version": "esa-cockpit-v1",
+  "seed": 0,
+  "user_messages": [
+    "导航去公司。"
+  ],
+  "initial_state": {
+    "vehicle": {
+      "gear": "D"
+    },
+    "navigation": {
+      "active": false
+    }
+  },
+  "tool_profile": [
+    "get_favorite_poi",
+    "start_navi"
+  ],
+  "metadata": {
+    "domain": "navi",
+    "acceptance": true,
+    "title": "查询公司地址并启动导航"
+  }
+}

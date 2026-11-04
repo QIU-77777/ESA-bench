@@ -25,6 +25,10 @@ AGENT_PAYLOAD_PATH = config.REPO_ROOT / "esa" / "agent.json"
 TOOL_CATALOG_PATH = config.REPO_ROOT / "environment" / "catalog.json"
 TOOL_CONFIG_PATH = config.REPO_ROOT / "configs" / "tools.json"
 STACK_FILE = config.REPO_ROOT / "docker-compose.dev.yaml"
+COCKPIT_STACK_FILE = config.REPO_ROOT / "docker-compose.cockpit.yaml"
+COCKPIT_PROJECT = "esa-cockpit-dev"
+COCKPIT_MOCK_URL = "http://127.0.0.1:18093"
+COCKPIT_AGENT_URL = "http://127.0.0.1:18090"
 EVIDENCE_ROOT = Path.home() / ".esa" / "sessions"
 
 _READY_TIMEOUT_SEC = 120.0
@@ -40,6 +44,7 @@ DEFAULT_CONFIG = {
     "max_iterations": 16,
     "turn_timeout": 240,
     "tool_profile": None,
+    "mode": "esa",
 }
 
 
@@ -47,14 +52,22 @@ class ChatError(ValueError):
     pass
 
 
+def session_mode(session: dict) -> str:
+    """会话链路：esa 走 runtime，cockpit 走座舱 agent。"""
+    merged = session_config(session)
+    return "cockpit" if merged.get("mode") == "cockpit" else "esa"
+
+
 # ── Readiness ──────────────────────────────────────────────────────────
 
 
 def readiness() -> dict:
-    """Health of the two services the playground depends on."""
+    """Health of the services both playground stacks depend on."""
     return {
         "mock": _health(MOCK_URL + "/health"),
         "runtime": _health(RUNTIME_URL + "/v1/health"),
+        "recorder": _health(COCKPIT_MOCK_URL + "/health"),
+        "agent": _health(COCKPIT_AGENT_URL + "/v1/health"),
     }
 
 
@@ -67,13 +80,14 @@ def _health(url: str) -> bool:
         return False
 
 
-def start_stack() -> None:
-    """Bring up the esa dev stack (mock-system + runtime + redis)."""
+def start_stack(mode: str = "esa") -> None:
+    """Bring up the requested dev stack (esa: mock+runtime, cockpit: recorder+agent+mcp)."""
     config.load_env()
+    cockpit = mode == "cockpit"
     subprocess.Popen(
         [
-            "docker", "compose", "-p", "esa-dev",
-            "-f", str(STACK_FILE), "up", "-d",
+            "docker", "compose", "-p", COCKPIT_PROJECT if cockpit else "esa-dev",
+            "-f", str(COCKPIT_STACK_FILE if cockpit else STACK_FILE), "up", "-d",
         ],
         cwd=str(config.REPO_ROOT),
         stdout=subprocess.DEVNULL,
@@ -83,10 +97,11 @@ def start_stack() -> None:
     deadline = time.monotonic() + _READY_TIMEOUT_SEC
     while time.monotonic() < deadline:
         state = readiness()
-        if state["mock"] and state["runtime"]:
+        ready = (state["recorder"] and state["agent"]) if cockpit else (state["mock"] and state["runtime"])
+        if ready:
             return
         time.sleep(2.0)
-    raise ChatError("服务在 120 秒内未就绪，请执行 docker compose -p esa-dev logs 查看日志")
+    raise ChatError("服务在 120 秒内未就绪，请执行 docker compose 查看日志")
 
 
 # ── Agent definition ───────────────────────────────────────────────────
@@ -183,30 +198,34 @@ def session_config(session: dict) -> dict:
     return merged
 
 
-def create_session(name: str, overrides: dict | None = None) -> int:
+def create_session(name: str, overrides: dict | None = None, mode: str = "esa") -> int:
+    cockpit = mode == "cockpit"
     state = readiness()
-    if not (state["mock"] and state["runtime"]):
+    ready = (state["recorder"] and state["agent"]) if cockpit else (state["mock"] and state["runtime"])
+    if not ready:
         raise ChatError("座舱服务未就绪，请先在对话页启动服务")
     config_data = dict(DEFAULT_CONFIG)
     config_data.update(overrides or {})
-    tools = tool_catalog()
+    config_data["mode"] = "cockpit" if cockpit else "esa"
+    config_data["last_sequence"] = 0
+    tools = [] if cockpit else tool_catalog()
     tool_profile = config_data.get("tool_profile")
-    if not tool_profile:
+    if not cockpit and not tool_profile:
         tool_profile = [t["name"] for t in tools if t["enabled"]]
     config_data["tool_profile"] = tool_profile
 
-    created = _post(
-        MOCK_URL + "/eval/api/v1/sessions",
-        {
-            "type": "car",
-            "context": {},
-            "initial_state": {},
-            "data_overlays": {},
-            "faults": [],
-            "seed": 0,
-            "tool_profile": tool_profile,
-        },
-    )
+    base = COCKPIT_MOCK_URL if cockpit else MOCK_URL
+    body = {
+        "type": "car",
+        "context": {},
+        "initial_state": {},
+        "data_overlays": {},
+        "faults": [],
+        "seed": 0,
+    }
+    if tool_profile:
+        body["tool_profile"] = tool_profile
+    created = _post(base + "/eval/api/v1/sessions", body)
     mock_session_id = str(created.get("session_id") or "")
     if not mock_session_id:
         raise ChatError("环境服务没有返回 session_id")
@@ -292,10 +311,11 @@ def session_tools(session_id: int) -> list[dict]:
     session = get_session(session_id)
     if session is None or not session["mock_session_id"]:
         return []
+    base = COCKPIT_MOCK_URL if session_mode(session) == "cockpit" else MOCK_URL
     catalog = {t["name"]: t for t in tool_catalog()}
     try:
         snapshot = _get(
-            MOCK_URL + f"/api/v1/rl/sessions/{session['mock_session_id']}/snapshot"
+            base + f"/api/v1/rl/sessions/{session['mock_session_id']}/snapshot"
         )
     except ChatError:
         return []
@@ -334,11 +354,33 @@ def send_message(session_id: int, text: str):
     if not text:
         raise ChatError("消息不能为空")
     state = readiness()
-    if not (state["mock"] and state["runtime"]):
+    cockpit = session_mode(session) == "cockpit"
+    ready = (state["recorder"] and state["agent"]) if cockpit else (state["mock"] and state["runtime"])
+    if not ready:
         raise ChatError("座舱服务未就绪，请先在对话页启动服务")
 
     overrides = session_config(session)
     transcript = session_transcript(session_id)
+    history = [
+        {"role": message["role"], "content": message["content"]}
+        for message in list_messages(session_id)
+    ]
+    now = utc_now()
+    with connect() as conn:
+        conn.execute(
+            "INSERT INTO chat_messages(session_id, role, content, events, usage, created_at)"
+            " VALUES (?, 'user', ?, '[]', '{}', ?)",
+            (session_id, text, now),
+        )
+        conn.execute(
+            "UPDATE chat_sessions SET updated_at=? WHERE id=?", (now, session_id)
+        )
+    yield {"type": "user_message", "content": text, "created_at": now}
+
+    if cockpit:
+        yield from _send_cockpit_turn(session_id, session, overrides, text, history)
+        return
+
     body = {
         "agent": build_agent(overrides),
         "user_messages": [text],
@@ -422,6 +464,71 @@ def send_message(session_id: int, text: str):
     yield {"type": "done", "content": content, "usage": usage}
 
 
+def _send_cockpit_turn(session_id: int, session: dict, overrides: dict, text: str, history: list):
+    """座舱链路：调用 agent /v1/turn，从 recorder 拉取本轮调用并落库。"""
+    started = time.monotonic()
+    try:
+        with httpx.Client(timeout=_TURN_TIMEOUT_SEC) as client:
+            response = client.post(
+                COCKPIT_AGENT_URL + "/v1/turn",
+                json={"session_id": session["mock_session_id"], "message": text, "history": history},
+            )
+    except httpx.HTTPError as exc:
+        raise ChatError(f"座舱 agent 调用失败：{exc}") from exc
+    if response.status_code != 200:
+        raise ChatError(f"座舱 agent 返回 {response.status_code}: {response.text[:500]}")
+    result = response.json()
+    if result.get("error") or (result.get("status") is not None and result.get("status") != "completed"):
+        raise ChatError("座舱 agent 本轮失败：" + str(result.get("error") or result.get("status")))
+    content = str(result.get("reply") or "")
+
+    after = int(overrides.get("last_sequence") or 0)
+    events = _events(session["mock_session_id"], base=COCKPIT_MOCK_URL, after=after)
+    records = events.get("events") or []
+    if isinstance(events.get("total_events"), int):
+        _store_sequence(session_id, overrides, events["total_events"])
+    # 事件形状与 runtime 链路一致：入参与结果都是 JSON 字符串，前端直接解析。
+    stored_events = []
+    for event in records:
+        if not event.get("call_id"):
+            continue
+        stored_events.append({"type": "tool_call", "name": event.get("tool"),
+                              "arguments": json.dumps(event.get("arguments") or {}, ensure_ascii=False),
+                              "call_id": event.get("call_id")})
+        stored_events.append({"type": "tool_result", "status": "completed" if event.get("status") == "ok" else "failed",
+                              "output": json.dumps(event.get("result") or {}, ensure_ascii=False),
+                              "latency_ms": 0, "call_id": event.get("call_id")})
+    for event in stored_events:
+        yield event
+    usage = {"input_tokens": int((result.get("usage") or {}).get("input_tokens") or 0),
+             "output_tokens": int((result.get("usage") or {}).get("output_tokens") or 0),
+             "total_sec": round(time.monotonic() - started, 1)}
+
+    now = utc_now()
+    with connect() as conn:
+        conn.execute(
+            "INSERT INTO chat_messages(session_id, role, content, events, usage, created_at)"
+            " VALUES (?, 'assistant', ?, ?, ?, ?)",
+            (session_id, content, json.dumps(stored_events, ensure_ascii=False),
+             json.dumps(usage, ensure_ascii=False), now),
+        )
+        conn.execute(
+            "UPDATE chat_sessions SET updated_at=? WHERE id=?", (now, session_id)
+        )
+    _write_evidence(session_id, history + [{"role": "assistant", "content": content}], [result])
+    yield {"type": "done", "content": content, "usage": usage}
+
+
+def _store_sequence(session_id: int, overrides: dict, sequence: int) -> None:
+    merged = dict(overrides)
+    merged["last_sequence"] = sequence
+    with connect() as conn:
+        conn.execute(
+            "UPDATE chat_sessions SET agent_config=?, updated_at=? WHERE id=?",
+            (json.dumps(merged, ensure_ascii=False), utc_now(), session_id),
+        )
+
+
 def _iter_sse(response):
     """Parse an SSE body into event dicts with a type field."""
     event_name = ""
@@ -476,19 +583,21 @@ def _write_evidence(session_id: int, transcript: list, turn_results: list) -> No
     if session is None or not session["mock_session_id"]:
         return
     directory = EVIDENCE_ROOT / session["mock_session_id"]
+    cockpit = session_mode(session) == "cockpit"
+    base = COCKPIT_MOCK_URL if cockpit else MOCK_URL
     try:
         directory.mkdir(parents=True, exist_ok=True)
         overrides = session_config(session)
         initial_path = directory / "snapshot-initial.json"
         if not initial_path.is_file():
             initial_path.write_text(
-                json.dumps(_snapshot(session["mock_session_id"]) or {}, ensure_ascii=False, indent=2),
+                json.dumps(_snapshot(session["mock_session_id"], base=base) or {}, ensure_ascii=False, indent=2),
                 "utf-8",
             )
         payloads = {
             "transcript.json": transcript,
-            "snapshot-final.json": _snapshot(session["mock_session_id"]) or {},
-            "state-events.json": _events(session["mock_session_id"]),
+            "snapshot-final.json": _snapshot(session["mock_session_id"], base=base) or {},
+            "state-events.json": _events(session["mock_session_id"], base=base),
             "turn-results.json": turn_results,
             "meta.json": {
                 "session_id": session["mock_session_id"],
@@ -498,7 +607,8 @@ def _write_evidence(session_id: int, transcript: list, turn_results: list) -> No
                 "finished_at": utc_now(),
                 "turns": len(turn_results),
                 "runtime_url": RUNTIME_URL,
-                "mock_url": MOCK_URL,
+                "mock_url": base,
+                "mode": "cockpit" if cockpit else "esa",
             },
         }
         for name, payload in payloads.items():
@@ -509,16 +619,16 @@ def _write_evidence(session_id: int, transcript: list, turn_results: list) -> No
         pass  # evidence is best-effort; the conversation lives in the database
 
 
-def _snapshot(mock_session_id: str) -> dict:
+def _snapshot(mock_session_id: str, base: str = MOCK_URL) -> dict:
     try:
-        return _get(MOCK_URL + f"/api/v1/rl/sessions/{mock_session_id}/snapshot")
+        return _get(base + f"/api/v1/rl/sessions/{mock_session_id}/snapshot")
     except ChatError:
         return {}
 
 
-def _events(mock_session_id: str) -> dict:
+def _events(mock_session_id: str, base: str = MOCK_URL, after: int = 0) -> dict:
     try:
-        return _get(MOCK_URL + f"/api/v1/rl/sessions/{mock_session_id}/events")
+        return _get(base + f"/api/v1/rl/sessions/{mock_session_id}/events?after={after}")
     except ChatError:
         return {}
 

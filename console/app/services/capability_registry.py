@@ -47,7 +47,7 @@ def available_harnesses() -> list[str]:
 
 
 def available_environments() -> list[str]:
-    return ["standard", "esa"]
+    return ["standard", "esa", "esa-cockpit"]
 
 
 def harness_detail(harness_id: str) -> dict | None:
@@ -92,6 +92,8 @@ def environment_detail(env_id: str) -> dict | None:
             "data": {"entities": [], "seed_sha256": ""},
             "version": "",
         }
+    if env_id == "esa-cockpit":
+        return _cockpit_environment()
     if env_id != "esa":
         return None
 
@@ -140,6 +142,49 @@ def environment_detail(env_id: str) -> dict | None:
         },
         "version": str(manifest.get("environment_version") or ""),
     }
+
+
+def _cockpit_environment() -> dict:
+    """Cockpit stack card: recorder and MCP server runtime information.
+
+    The tool list lives in the user MCP server, so the card reads the running
+    recorder's manifest. Without the dev stack the card still describes the
+    chain; tool entries stay empty until the recorder answers.
+    """
+    manifest = _read_runtime_json("http://127.0.0.1:18093/eval/api/v1/manifest")
+    entries = []
+    for tool in manifest.get("tools") or []:
+        name = str(tool.get("name") or "")
+        if not name:
+            continue
+        entries.append({"name": name, "title": name,
+                        "description": str(tool.get("description") or ""),
+                        "enabled": bool(tool.get("enabled", True))})
+    return {
+        "id": "esa-cockpit",
+        "name": "esa-cockpit（座舱 agent 链路）",
+        "description": (
+            "座舱评测链路：mock-system 是 MCP 记录代理，cockpit-mcp 是用户 MCP server"
+            "（工具与座舱状态），cockpit-agent 是被测座舱 agent。记录代理执行工具权限、"
+            "故障注入与逐事件状态差异，证据与评分和 esa 环境一致。"
+        ),
+        "tools": {"total": len(entries), "enabled": sum(1 for item in entries if item["enabled"]),
+                  "entries": entries},
+        "data": {"entities": [], "seed_sha256": str(manifest.get("seed_sha256") or "")},
+        "version": str(manifest.get("server_version") or ""),
+    }
+
+
+def _read_runtime_json(url: str) -> dict:
+    """Best-effort read of a running service; the card stays usable without it."""
+    try:
+        import urllib.request
+
+        with urllib.request.urlopen(url, timeout=2) as response:
+            data = json.loads(response.read().decode("utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
 
 
 def _read_manifest(harness_id: str) -> dict:
