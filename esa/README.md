@@ -1,74 +1,105 @@
 # ESA 本地车机评测
 
 ## 组件
-- [规范](../docs/esa-local-eval-spec.md)：环境与 runtime 契约。
-- [工具配置](../configs/tools.json)：工具启用状态；模型与环境共用 session 权限。
-- [工具目录](../environment/catalog.json)：工具名称、描述与输入参数定义。
-- [ReAct runtime](../runtime/README.md)：独立 Go 服务。
-- [环境服务](../environment/README.md)：本地数据、Redis 状态和工具执行。
-- [驱动](driver.mjs)：创建 session、运行脚本对话、收集状态证据。
-- [Harbor agent](esa_agent.py)：生成 ATIF 与 verifier 素材。
-- [评分脚本](score.py)：verifier入口，读取rubric与工具调用、回复、模型评审三路证据，写出reward与明细。
-- [状态评分](state_score.py)：终态谓词、禁止变更和有序过程约束。
-- [Agent 定义](agent.json)：模型指令、模型参数与上下文续接方式。
-- [交互式命令行](cli.py)：esa chat，人工对话入口，复用同一 runtime 与环境。
 
+- [共享参考执行器](<reference.py>)：通过实际 HTTP/MCP 执行 Python 参考、合法替代解和错误答案测试。
+- [原生 Oracle 运行入口](<oracle.py>)：执行参考程序，保存正式 verifier 所需的证据，不读取 rubric 或调用模型。
+- [Harbor Agent](<esa_agent.py>)：正式模型运行前验证任务，生成 ATIF 与评分证据。
+- [驱动](<driver.mjs>)：创建独立模型会话，执行固定或澄清对话，保存状态与调用。
+- [统一评分](<score.py>)：提供 `evaluate(rubric, evidence, judge_runner=None)`，供参考验证与正式 verifier 共用。
+- [状态评分](<state_score.py>)：终态、禁止修改和过程约束。
+- [Agent 定义](<agent.json>)、[工具目录](<../environment/catalog.json>)、[环境服务](<../environment/README.md>)与[Go runtime](<../runtime/README.md>)。
+
+本文命令均在仓库根目录执行。
+
+## 原生 Oracle 与任务目录
+
+所有活动任务必须兼容 Harbor 原生 `OracleAgent`。任务提供标准 [solve.sh](<../tasks/esa-navi-execute/solution/solve.sh>)，它调用 [runner.py](<../tasks/esa-navi-execute/solution/runner.py>)，再使用 [reference_runtime.py](<../tasks/esa-navi-execute/solution/reference_runtime.py>) 执行 [reference.py](<../tasks/esa-navi-execute/solution/reference.py>)。
+
+原生 Oracle 在执行阶段上传 `solution/`。运行入口只读取环境初态与参考程序，并访问实际 MCP 服务；它不读取评分答案或错误答案测试。verifier 在评分阶段接收 `tests/`。普通模型运行不接收 `solution/`，任务环境镜像仅复制初态。
+
+任务的共享运行入口、参考执行器与评分副本必须和宿主实现逐字节一致。[同步脚本](<../scripts/sync-task-scorers.py>)同步这些副本；`--check` 检查一致性。目录与接口见[任务编写指南](<../docs/esa-task-authoring.md>)和[参考验证规格](<../docs/esa-solvability-spec.md>)。
+
+## 参考预检
+
+每题提供可信侧参考程序、独立 rubric 和非空错误答案测试。参考程序仅使用已交付的用户消息、`tools/list` 与实际 `structuredContent`，不直接读取初态、答案或 seed。
+
+正式 ESAAgent 核对宿主与容器初态，通过容器 HTTP 桥接访问本次部署环境。正例和已知合法替代解必须通过全部必需条件。错误解必须正常结束并被有效评分拒绝。全部程序使用独立会话，完成后删除。预检通过后创建模型会话。
+
+全部变体的初始和最终环境身份必须一致。副本过期、证据缺失、程序异常或必需 judge 不可用时拒绝认证。参考通过表示指定环境中有一个已验证解；信息来源、指令语义与未覆盖的合法路径仍需人工审核。
+
+Console 生成的任务包含标准目录骨架、未实现的 `solve(ctx)` 和空的 `CASES`。作者必须完成参考程序与错误测试。错误测试为空时，预检在创建 HTTP 会话前拒绝认证。
+
+## 构建与原生验收
+
+```bash
+bash scripts/build-esa-local.sh
+.venv/bin/python scripts/sync-task-scorers.py
+.venv/bin/python scripts/sync-task-scorers.py --check
+.venv/bin/python scripts/validate_task.py --all --local-http --json
+
+STEPFUN_OPENAI_BASE_URL=http://127.0.0.1:1/v1 STEPFUN_API_KEY=oracle-no-model PYTHONPATH="$PWD" \
+  .venv/bin/harbor run -c configs/jobs/esa-oracle-acceptance.yaml --job-name UNIQUE -y
+.venv/bin/python scripts/test-oracle-failure.py
+```
+
+[原生验收配置](<../configs/jobs/esa-oracle-acceptance.yaml>)使用 Harbor 原生 `oracle` 和内置 Docker 环境运行七题。命令显式覆盖模型地址与密钥为不可用地址和占位值，避免 Docker Compose 使用本地凭据。工具服务和 Redis 正常运行；Oracle 不调用模型或 judge。无需执行凭据加载命令。
+
+[失败回归脚本](<../scripts/test-oracle-failure.py>)创建独立原生 Oracle 试验，检查目标状态已经达成后抛出异常仍然得到 `reward=0`、`valid=false`，随后清理资源。
+
+[七题原生验收结果](<../jobs/esa-native-oracle-standard-20261103/result.json>)包含七项完成试验、零项异常，各项 reward 为 1。[异常后达标回归结果](<../jobs/esa-native-oracle-failure-a3b231e311d8/failure-regression.json>)确认程序异常被拒绝。
+
+临时 HTTP/MCP 预检和自定义 Agent 验证不能替代原生 Oracle 实际环境验收。公共镜像为 `esa-react-runtime:1.0.0` 与 `esa-local-environment:2.0.0`。业务工具使用本地固定资料，不控制真实车辆。
+
+## 正式模型运行
+
+设置模型凭据后执行：
+
+```bash
+set -a
+source .env
+set +a
+.venv/bin/python scripts/render-job.py --bench esa --harness esa --model stepfun/step-5-preview --output /tmp/esa-job.yaml
+PYTHONPATH="$PWD" .venv/bin/harbor run -c /tmp/esa-job.yaml --job-name esa-model-run -y
+```
+
+新增任务必须同时加入 [benchmark 配置](<../configs/bench/esa.yaml>)和[原生验收配置](<../configs/jobs/esa-oracle-acceptance.yaml>)，并通过原生 Oracle 验收。
+
+## 评分与对话
+
+- `expected_state`：独立终态谓词。
+- `forbidden_changes`：检查所有事件，修改后恢复仍然失败。
+- `tool_checks`：成功调用、参数匹配与合法替代工具。
+- `tool_forbidden`：全程禁止、`before_check` 或 `before_turn`。
+- `reply_checks`：明确硬特征，可指定 `turn_index`。
+- `process_constraints`：`ordered_tools`、`max_calls`、`no_failed_calls` 与 `recover_response(mode="retry")`。
+- `user_script`：助手问题匹配后才交付后续用户回答。
+
+禁止修改、禁止工具、过程违规和未完成澄清分支使总分归零。`program_failure` 非空，或证据包含 `evidence_error`、`cleanup_error` 时，评分无效且总分为零。未知规则、必要证据缺失和必需 judge 不可用同样使评分无效；正式 verifier 返回非零。普通模型证据没有这些执行错误字段时保持正常评分。
+
+当前七题采用确定性规则评分。语义 judge 的参考认证需要注入同一个可用 `judge_runner`。默认参考预检和原生 Oracle 不调用 judge。正式 verifier 使用 `JUDGE_API_BASE_URL`、`JUDGE_API_KEY` 和 `JUDGE_MODEL_ID`；语义任务必须完成正确与错误答案校准。
+
+## 执行证据
+
+Harbor 保存模型轨迹、完整调用、对话、初始与最终快照、状态事件和环境清单。原生 Oracle 保存同样的正式评分证据。可信侧参考目录保存完整预检报告，包含源码、输入和环境摘要，并对凭据脱敏。
+
+## 开发验证
+
+```bash
+.venv/bin/python scripts/sync-task-scorers.py --check
+.venv/bin/python -B -m unittest esa.test_score esa.test_state_score esa.test_verifier esa.test_trajectory esa.test_reference esa.test_reference_agent esa.test_oracle environment.test_reference_fingerprint environment.test_environment
+node --test esa/test-driver.mjs
+(cd runtime && go test ./...)
+.venv/bin/python scripts/test-reference-docker.py
+```
+
+[Docker 参考验证](<../scripts/test-reference-docker.py>)创建独立环境服务和专用 Redis，执行参考与环境测试并清理资源。[离线导航配置](<../configs/jobs/esa-offline-acceptance.yaml>)使用[确定性模型接口](<fake_responses.py>)检查模型驱动链路。各项验收范围见[验证记录](<../docs/esa-validation.md>)。
 
 ## 交互式对话
 
 ```bash
 .venv/bin/python -m esa.cli chat
+.venv/bin/python -m esa.cli chat --task tasks/esa-navi-execute
 ```
 
-入口为 `esa/cli.py`，仅使用 Python 标准库。命令行不执行 ReAct 循环，不直接调用模型，全部经过 runtime，与批量评测走同一实现。多轮对话通过在 `/v1/run` 请求中传递 `transcript` 续接，runtime 无服务端状态。
-
-首次运行自动启动开发服务（Docker 镜像或 `--local` 宿主进程），支持 `/state`、`/events`、`/tools`、`/reset`、`/resume`、`/quit`、`/help` 命令，证据写入 `~/.esa/sessions/<会话标识>/`。思考、工具调用、工具结果、答复四类输出各有符号、颜色与文字属性，答复后打印耗时与 token 用量。参数与行为见 [命令行规范](../docs/esa-agent-cli-spec.md)。
-
-测试：
-
-```bash
-.venv/bin/python -m unittest esa.test_cli -v
-ESA_CLI_INTEGRATION=1 .venv/bin/python -m unittest esa.test_cli_integration esa.test_cli_stacks -v
-```
-
-集成冒烟自行启动假模型接口、Redis、环境服务和 runtime，不消耗模型额度。
-
-## 构建与运行
-在仓库根目录执行：
-
-```bash
-bash scripts/build-esa-local.sh
-# 配置 .env 后加载变量，详情见仓库根README。
-set -a
-source .env
-set +a
-.venv/bin/python scripts/render-job.py --bench esa --harness esa --model stepfun/step-5-preview --output /tmp/esa-job.yaml
-PYTHONPATH="$PWD" .venv/bin/harbor run -c /tmp/esa-job.yaml --job-name esa-local -y
-```
-
-业务工具默认不访问外部服务。Docker daemon 必须可用。五个任务提供样例，用例不控制环境实现。
-
-## 编写题目
-任务初始文件字段：case_id、instruction 或 user_messages、context、initial_state、dataset_version、seed、data_overlays、tool_profile、faults。user_messages 是完整输入序列，取代单条 instruction。答案保存在独立 rubric，由 verifier读取。
-
-rubric 支持：
-- expected_state：字段路径与值的对象，或 {path,op,value,description} 数组。
-- forbidden_changes：业务路径数组，同时检查执行途中修改后恢复。
-- process_constraints：ordered_tools / max_calls / no_failed_calls。
-- tool_use、reply、judge：现有参数、表达和LLM判断。
-- weights：每个评分维度的权重。
-
-状态谓词支持 eq/ne/exists/contains/in/gt/gte/lt/lte。缺失快照评分为0。禁止变化或过程约束失败，状态维度为0。事件截断时不能判定完整过程。
-
-## 试验产物
-Harbor日志包含 driver-result.json、trajectory.json、tool-calls.json、reply.txt、snapshot-initial.json、snapshot-final.json、state-events.json、environment-manifest.json。调用与结果共用 call_id，usage 缺失时标记 coverage。状态变化带路径和版本，不依据成功文案判断任务完成。
-
-## 本地验证
-```bash
-(cd runtime && go test -race -cover ./...)
-node --test esa/test-driver.mjs
-.venv/bin/python -m unittest esa.test_state_score esa.test_trajectory esa.test_verifier -v
-ESA_INTEGRATION=1 node --test esa/test-local-integration.mjs
-```
-
-端到端集成测试需要本地工具服务与runtime已启动（默认`http://127.0.0.1:18003`与`http://127.0.0.1:18080`，可用`ESA_MOCK_URL`、`ESA_RUNTIME_URL`覆盖）；未设置`ESA_INTEGRATION`时该测试跳过。
+[命令行](<cli.py>)复用同一个 runtime 与工具环境，支持状态、事件、工具与会话续接。该入口用于人工对话，不执行任务认证。接口见[命令行规范](<../docs/esa-agent-cli-spec.md>)。

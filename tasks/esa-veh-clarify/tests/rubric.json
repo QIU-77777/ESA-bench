@@ -1,0 +1,56 @@
+{
+  "case_id": "esa-veh-clarify",
+  "weights": {
+    "state": 0.6,
+    "tool_use": 0.2,
+    "reply": 0.2
+  },
+  "expected_state": {
+    "vehicle.ac_temperature": 22,
+    "vehicle.ac_on": true
+  },
+  "forbidden_changes": [
+    "vehicle.windows",
+    "vehicle.doors",
+    "vehicle.volume",
+    "vehicle.seat_heating",
+    "vehicle.adas",
+    "navigation",
+    "addresses",
+    "memory",
+    "media",
+    "map",
+    "schedules",
+    "service_tasks",
+    "chat"
+  ],
+  "tool_checks": [
+    {
+      "id": "control_temperature",
+      "required": true,
+      "tool": "execute_vehicle_control",
+      "arguments_contain": [
+        "22"
+      ]
+    }
+  ],
+  "tool_forbidden": [
+    {
+      "id": "no_control_before_reply",
+      "tool": "execute_vehicle_control",
+      "before_turn": 1
+    }
+  ],
+  "reply_checks": [
+    {
+      "id": "ask_temperature",
+      "pattern": "温度|多少度|几度|度数",
+      "turn_index": 0
+    },
+    {
+      "id": "confirmed_temperature",
+      "pattern": "22\\s*(?:度|℃)",
+      "turn_index": 1
+    }
+  ]
+}

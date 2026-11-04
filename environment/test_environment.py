@@ -195,15 +195,25 @@ class EnvironmentTests(unittest.TestCase):
         self.env.reset(self.sid);self.assertEqual([],self.env.snapshot(self.sid)['state']['memory'])
 
     def test_legacy_benchmark_fixture_compatibility(self):
-        fixtures=list((ROOT.parent/'tasks').glob('esa-*/environment/esa/initial_state.json'))
-        if not fixtures: self.skipTest('benchmark fixture directory unavailable')
-        for p in fixtures:
-            d=json.loads(p.read_text());sid=self.env.create({k:v for k,v in d.items() if k in ('context','initial_state','dataset_version','seed')})['session_id'];snap=self.env.snapshot(sid)
-            self.assertNotIn('vehicle',snap['context']);self.assertIn('lon',snap['context']['location']);self.assertEqual('100001',snap['state']['addresses']['home']['id'])
-            if 'a3' in str(p):
-                stations=self.call('search_charging_station',{'query':'快充桩','sort_type':'distance'},sid=sid)['pois'];self.assertEqual('400003',stations[0]['id'])
-            if 'a4' in str(p): self.assertEqual(12,snap['state']['vehicle']['volume']);self.assertNotIn('volume',snap['state']['media'])
-            if 'b1' in str(p): self.assertEqual(3,len(snap['state']['memory']))
+        payload={'context':{'location':{'poi_id':'100001','longitude':121.445,'latitude':31.21}},
+                 'initial_state':{'vehicle':{'remaining_battery':61},'media':{'volume':12},
+                                  'user_addresses':{'home':{'poi_id':'100001','location_name':'家','longitude':121.445,'latitude':31.21}},
+                                  'memories':[{'content':'兼容性输入'}]}}
+        sid=self.env.create(payload)['session_id'];snap=self.env.snapshot(sid)
+        self.assertNotIn('vehicle',snap['context']);self.assertIn('lon',snap['context']['location'])
+        self.assertEqual('100001',snap['state']['addresses']['home']['id'])
+        self.assertEqual(61,snap['state']['vehicle']['battery']);self.assertEqual(12,snap['state']['vehicle']['volume'])
+        self.assertNotIn('volume',snap['state']['media']);self.assertEqual(1,len(snap['state']['memory']))
+
+    def test_playback_response_loss_idempotency(self):
+        sid=self.env.create({'faults':[{'tool':'play_playlist','kind':'response_lost'}]})['session_id']
+        args={'playlist':[{'name':'晴天','artist':'周杰伦'}]}
+        with self.assertRaises(ResponseLost): self.env.execute(sid,'play_playlist',args,'play-once')
+        committed=self.env.snapshot(sid);events=self.env.events(sid)
+        self.assertEqual(1,len(committed['state']['media']['playlist']))
+        result=self.env.execute(sid,'play_playlist',args,'play-once')
+        self.assertFalse(result['isError']);self.assertTrue(result['structuredContent']['playing'])
+        self.assertEqual(committed,self.env.snapshot(sid));self.assertEqual(events,self.env.events(sid))
 
     def test_active_navigation_and_modeled_traffic(self):
         self.call('plan_navi_route',{'poi_list':[P]})

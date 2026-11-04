@@ -1,0 +1,61 @@
+{
+  "case_id": "esa-chg-select",
+  "weights": {
+    "state": 0.6,
+    "tool_use": 0.2,
+    "reply": 0.2
+  },
+  "expected_state": {
+    "navigation.active": true,
+    "navigation.destination.id": "400003"
+  },
+  "forbidden_changes": [
+    "vehicle",
+    "addresses",
+    "memory",
+    "media",
+    "map",
+    "schedules",
+    "service_tasks",
+    "chat"
+  ],
+  "tool_checks": [
+    {
+      "id": "search_station",
+      "required": true,
+      "tool": "search_charging_station"
+    },
+    {
+      "id": "start_nearest",
+      "required": true,
+      "tool": "start_navi",
+      "arguments_contain": [
+        "400003"
+      ]
+    }
+  ],
+  "process_constraints": [
+    {
+      "type": "ordered_tools",
+      "tools": [
+        "search_charging_station",
+        "start_navi"
+      ]
+    },
+    {
+      "type": "max_calls",
+      "tool": "start_navi",
+      "count": 1
+    }
+  ],
+  "reply_checks": [
+    {
+      "id": "selected_station",
+      "pattern": "宜山路快充站"
+    },
+    {
+      "id": "navigation_started",
+      "pattern": "已.{0,8}(?:开始|启动).*导航|已开始导航"
+    }
+  ]
+}

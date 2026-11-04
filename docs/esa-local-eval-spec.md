@@ -3,7 +3,7 @@
 状态：已批准范围，实施依据。版本：1.0。日期：2026-10-20。
 
 ## 目标与写入范围
-本仓库提供独立最小 Go ReAct runtime、Python 本地车机工具服务、只读 SQLite 数据和 Redis 会话状态。本仓库不依赖其他仓库。Harbor 是调度及评分层。五个现有用例是回归样例，不限定环境能力。
+本仓库提供独立最小 Go ReAct runtime、Python 本地车机工具服务、只读 SQLite 数据和 Redis 会话状态。本仓库不依赖其他仓库。Harbor 是调度及评分层。七个验收任务是回归样例，不限定环境能力。
 
 ## 组件与协议
 - runtime/：独立 Go module，HTTP 8080，GET /v1/health，POST /v1/run。无 Voice/ASR/A2A/VIN/前置分类器。仅标准库及确有需要的依赖。
@@ -32,7 +32,7 @@ Redis是持久化权威：每次Execute在WATCH/MULTI事务中原子提交state/
 正常业务不使用按工具名固定成功文本的override。旧tool_overrides转换为数据及明确fault；如果仍出现则启动报错，防止伪成功。fault支持执行前拒绝、字段缺失、响应丢失（后者已提交事件且可通过call_id查询），匹配工具/参数/次数，确定性。
 
 ## 评分与产物
-ATIF保留每轮user step和每次模型agent step、reasoning、calls/results、tokens/latency/status及汇总。snapshot-initial.json、snapshot-final.json、state-events.json、environment manifest随trial保存。新增代码评分支持点路径/比较谓词、禁止变更和有序过程约束；与现有reply/judge分数独立。无usage时省略，部分usage标记coverage，不将缺失算零成本。参考动作只用于题目验证，可在全新session重放，不污染actual。
+ATIF保留每轮user step和每次模型agent step、reasoning、calls/results、tokens/latency/status及汇总。snapshot-initial.json、snapshot-final.json、state-events.json、environment manifest随trial保存。状态、工具、过程、回复与可选 judge 共用统一 evaluate 入口。禁止修改、禁止工具和过程违规使任务总分归零；必要证据缺失、未知规则和启用的 judge 不可用使评分无效。无usage时省略，部分usage标记coverage，不将缺失算零成本。参考动作只用于题目验证，可在全新session重放，不污染actual。
 
 ## 验收
 1 所有61个schema有实现及独立能力记录；默认启用59。
@@ -40,7 +40,7 @@ ATIF保留每轮user step和每次模型agent step、reasoning、calls/results�
 3 状态失败回滚、调用幂等、未知工具拒绝、权限一致、并发隔离、版本事件一致。
 4 本地假模型测试SSE/多轮/工具错误/上限/超时/usage；不依赖真实API。
 5 SQLite关联校验、固定seed可复现、fault严格匹配；任务目录、文件路径与符号链接逃逸测试。
-6 Harbor五个样例转换，docker compose配置校验，集成独立镜像。真实模型测试仅显式使用用户已有凭据，报告与离线测试分开。
+6 七个验收任务通过 Harbor 原生 Oracle 和统一 verifier 的实际 Docker/Redis 验收。参考、替代解和错误解通过实际 HTTP/MCP 验证。Harbor 离线导航验证模型运行前认证。程序异常和证据错误必须使正式评分无效。真实模型测试仅显式使用用户已有凭据，报告与离线测试分开。
 
 ## 版本与部署
 独立runtime/environment镜像，Redis 7。数据seed和schema/config纳入git，生成SQLite不需联网。依赖固定版本。工具服务和runtime可外置共享，通过session隔离；默认compose仍可自包含。更换环境后旧分数不作直接模型比较。

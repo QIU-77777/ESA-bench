@@ -18,7 +18,8 @@ def build_output(request):
     elif len(calls) == 1:
         previous = json.loads(results[-1]["output"])
         assert not previous["isError"], previous
-        item = {"type": "function_call", "name": "start_navi", "call_id": "offline-navigation", "arguments": json.dumps({"poi_list": ["200001:公司:121.42,31.19"]})}
+        poi = previous["structuredContent"]["pois"][0]
+        item = {"type": "function_call", "name": "start_navi", "call_id": "offline-navigation", "arguments": json.dumps({"poi_list": [f"{poi['id']}:{poi['name']}:{poi['lon']},{poi['lat']}"]})}
     else:
         previous = json.loads(results[-1]["output"])
         assert not previous["isError"], previous

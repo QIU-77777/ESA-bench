@@ -1,0 +1,83 @@
+{
+  "case_id": "esa-med-retry",
+  "weights": {
+    "state": 0.6,
+    "tool_use": 0.2,
+    "reply": 0.2
+  },
+  "expected_state": [
+    {
+      "path": "media.playing",
+      "value": true
+    },
+    {
+      "path": "media.current_track.id",
+      "value": "S10001"
+    },
+    {
+      "path": "media.playlist.0.id",
+      "value": "S10001"
+    },
+    {
+      "path": "media.playlist.1",
+      "op": "exists",
+      "value": false
+    }
+  ],
+  "forbidden_changes": [
+    "vehicle",
+    "navigation",
+    "addresses",
+    "memory",
+    "display",
+    "map",
+    "schedules",
+    "service_tasks",
+    "chat"
+  ],
+  "tool_checks": [
+    {
+      "id": "search_music",
+      "required": true,
+      "tool": "music_search"
+    },
+    {
+      "id": "play_returned_track",
+      "required": true,
+      "tool": "play_playlist",
+      "arguments_contain": [
+        "晴天",
+        "周杰伦"
+      ]
+    }
+  ],
+  "process_constraints": [
+    {
+      "type": "ordered_tools",
+      "tools": [
+        "music_search",
+        "play_playlist"
+      ]
+    },
+    {
+      "type": "max_calls",
+      "tool": "music_search",
+      "count": 2
+    },
+    {
+      "type": "max_calls",
+      "tool": "play_playlist",
+      "count": 1
+    }
+  ],
+  "reply_checks": [
+    {
+      "id": "playing_confirmed",
+      "pattern": "已.{0,8}(?:开始)?播放"
+    },
+    {
+      "id": "song_name",
+      "pattern": "晴天"
+    }
+  ]
+}

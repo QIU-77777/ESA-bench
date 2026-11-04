@@ -1,278 +1,166 @@
-# ESA-bench 任务可解性保证：需求与技术规格（Solvability Spec）
+# ESA 任务参考验证规格
 
-> 版本 v1.0，2026-10-29。需求/技术规格文档。
-> 解决的问题：**模拟环境出题，怎么保证每道题有标准解（可用的工具链路 + 可用的返回结果），让「解不出来」确定是 agent/模型的问题，而不是评测环境的问题。**
-> 上游：[构造原则 P5](esa-benchmark-principles.md)（golden run 前置）在本文细化为可实施合同；执行细节回流 [构造方案 §4](esa-benchmark-plan.md)。
+版本：2.0。日期：2026-11-03。
 
----
+## 目标与保证范围
 
-## 0. 术语
+每题提供独立评分定义、可执行参考程序和错误答案测试。参考程序使用用户输入、模型可见工具定义和实际工具返回完成任务。
 
-| 术语 | 定义 |
+验证通过表示：指定部署环境中有一条合法参考解通过完整评分；已列出的合法替代解通过；已列出的错误解被有效拒绝。指令语义、信息来源和未覆盖的合法路径仍需人工审核。模型失败需要检查实际轨迹，排除工具、环境和评分缺陷后才能归因。
+
+所有活动任务必须兼容 Harbor 原生 `OracleAgent`。新增或修改任务后，必须在实际 Docker 环境中执行原生 Oracle，并确认统一 verifier 通过。参考预检与自定义 Agent 验证不能替代此项验收。
+
+## 标准任务目录
+
+```text
+tasks/<id>/
+  instruction.md
+  task.toml
+  environment/Dockerfile
+  environment/docker-compose.yaml
+  environment/esa/initial_state.json
+  solution/solve.sh
+  solution/reference.py
+  solution/reference_runtime.py
+  solution/runner.py
+  tests/negative_tests.py
+  tests/rubric.json
+  tests/score.py
+  tests/state_score.py
+  tests/test.sh
+```
+
+- [环境初态示例](<../tasks/esa-navi-execute/environment/esa/initial_state.json>)：`case_id`、用户消息、固定上下文、业务初态、数据覆盖、权限、故障与确定性用户应答。
+- [标准入口](<../tasks/esa-navi-execute/solution/solve.sh>)：执行 Python Oracle 运行入口。
+- [参考程序](<../tasks/esa-navi-execute/solution/reference.py>)：导出 `solve(ctx)`，可选 `ALTERNATIVES` 字典保存已知合法解法。
+- [共享参考执行器副本](<../tasks/esa-navi-execute/solution/reference_runtime.py>)与[Oracle 运行入口副本](<../tasks/esa-navi-execute/solution/runner.py>)：分别与[宿主执行器](<../esa/reference.py>)和[宿主运行入口](<../esa/oracle.py>)逐字节一致。
+- [错误答案测试](<../tasks/esa-navi-execute/tests/negative_tests.py>)：导出非空 `CASES`，每个函数正常结束并被统一评分拒绝。
+- [独立 rubric](<../tasks/esa-navi-execute/tests/rubric.json>)：目标状态、工具、回复与安全条件。参考程序不得读取。
+- [正式评分入口](<../tasks/esa-navi-execute/tests/test.sh>)：调用与[统一评分](<../esa/score.py>)及[状态评分](<../esa/state_score.py>)一致的任务副本。
+
+Dockerfile 仅复制初态。Harbor 原生 Oracle 在执行阶段上传 `solution/`，verifier 在评分阶段上传 `tests/`。普通模型运行不接收参考解或评分答案。Oracle 运行入口只读取初态和参考程序，并访问实际环境服务；不读取 rubric，不执行错误答案测试，不调用模型或 judge。
+
+[同步脚本](<../scripts/sync-task-scorers.py>)维护标准入口、参考执行器、Oracle 运行入口与评分副本。更新共享实现后必须同步，并通过 `--check`。任务副本过期或入口缺失时拒绝认证。
+
+Console 生成标准草稿目录，参考函数尚未实现，错误测试为 `CASES = {}`。作者必须完成这两部分。错误测试为空时，预检在创建 HTTP 会话前拒绝认证。
+
+## 参考程序接口
+
+```python
+def solve(ctx):
+    address = ctx.call("get_home_or_company_address", {"poi_type": "company"})
+    assert address["found"]
+    poi = address["poi"]
+    navigation = ctx.call("start_navi", {
+        "poi_list": [f"{poi['id']}:{poi['name']}:{poi['lon']},{poi['lat']}:false"]
+    })
+    assert navigation["active"]
+    ctx.say(f"已启动导航，预计 {navigation['duration_s'] / 60:.0f} 分钟。")
+```
+
+| 接口 | 含义 |
 |---|---|
-| **GT 链路（ground-truth chain）** | 每题附带的标准工具调用序列：具体工具 + 具体参数（绑定 seed 实体 ID）+ 步骤间参数链 + 期望效果。是「该题有解」的机器可验证见证 |
-| **可解性合同（solvability contract）** | GT 链路 + 环境重放证据（golden-run.json）的组合。出厂前置条件 |
-| **工具契约图（tool contract graph）** | 由工具的 reads/writes/requires/参数来源构成的依赖图。对标 CAR-bench 的 API graph |
-| **见证解 vs 唯一解** | GT 链路是**一个**合法解（见证）。评分认终态不认路径（原则 P6），等价链路同样得分——「有标准答案」指「有可达成的期望终态 + 至少一条机器验证过的链路」，不指路径唯一 |
+| `ctx.user_messages` | 已经交付的用户消息，不提前暴露未应答分支 |
+| `ctx.tools` | 本轮实际 `tools/list` 工具定义 |
+| `ctx.call(name, args, expect="success", call_id=None)` | 通过实际 MCP 调用工具，返回 `structuredContent` |
+| `ctx.say(text)` | 记录助手回复 |
+| `ctx.ask(question)` | 匹配声明的澄清分支，交付回答并开始下一轮 |
+| `ctx.next_user()` | 交付固定多轮任务的下一条用户消息 |
 
-## 1. 问题定义
+`expect` 支持 `success`、`error` 和 `response_lost`。响应丢失必须有真实已提交事件证明，不能凭连接错误推断。每次逻辑调用使用唯一 `call_id`，与模型 runtime 约束一致。
 
-模拟环境 benchmark 的归因风险：seed 数据缺实体、工具返回空/错、前置条件（挡位等）不满足、检索排序不稳定、工具契约与 handler 实现不符——这些**环境缺陷全部表现为「模型没做出来」**，与模型能力缺陷不可区分。CAR-bench 论文的对策是构造期保证 + 试跑迭代 + 人工验证，但**没有出厂前的自动可解性证明**（论文 §3.5 依赖 LLM 试跑修正 + manual validation）。
+程序可使用普通 Python 条件、循环、排序、断言，并导入 `math` 或 `re`。源代码检查拒绝常见文件读取、动态执行、其他导入与私有上下文访问。参考程序属于可信代码；该检查用于防止作者误用隐藏输入，不提供恶意代码安全隔离。执行设置期限。
 
-**目标**：
-1. 每道题入库前必须携带机器可验证的可解性证明（GT 链路确定性重放通过）。
-2. 归因协议：GT 链路重放通过的题，模型失败 = agent 责任；重放失败 = 题目/数据/工具问题，该题报废或修复，**不进评测结果**。
-3. 构造期发现的工具/数据缺陷形成反哺清单，驱动 MCP server 模拟返回与工具设计优化。
+关键实体和数值必须来自已提供的用户输入或工具返回。不得使用模型无法取得的目标 ID。人工审核检查信息来源。评分目标由作者独立定义，不从参考终态自动生成答案。
 
-**非目标**：
-- 不保证指令无歧义（归双人互审 + pilot 校准，原则 P12）——重放证明「环境有解」，不证明「话术只有一种理解」。
-- 不强制唯一路径（P6）。
-- 不做自动题目生成器（v1 人工出题，生成器是 v2 演进项）。
+## 实际 MCP 预检
 
-## 2. CAR-bench 机制调研结论
+1. 读取任务输入、程序和评分内容，检查标准入口与共享副本。
+2. 创建独立会话，仅传入环境配置字段，保存初始快照。
+3. 每轮执行 `round` 和 `tools/list`，与 runtime 生命周期一致。
+4. 通过 HTTP JSON-RPC `tools/call` 执行参考函数，保存完整参数、信封、返回和状态。
+5. 保存最终快照、完整事件与对话，调用统一 `evaluate`。
+6. 在独立会话中执行每个已知合法替代解和错误解。
+7. 删除验证会话，保存完整证据。正式模型另建会话。
 
-### 2.1 它怎么做（论文 + 代码双重确认）
+正式 ESAAgent 在可信宿主侧执行预检，通过容器 HTTP 桥接连接本次实际部署环境，不上传参考程序。宿主任务输入必须与模型容器读取的输入相同。
 
-**构造期（论文 §3.5）**：三层——
-1. **API graph**：「linking all tools through their parameters, accessed states, and state changes, incorporating interdependencies such as parameter chaining and policy-based triggers」。边 = 参数链式依赖 + 读写状态 + 策略触发。
-2. **从图采样轨迹**：在 API graph 上采样 multi-step 轨迹（1–9 actions），独立均匀生成初态，**LLM agent 反向生成导向该轨迹的用户指令**，再用 LLM agent 在环境里试跑、修正 GT 的可行性与自然度。
-3. **人工验证**：歧义措辞、指令完整性、动作正确性、执行可行性、**唯一终态**。迭代测试修正「任务规格错误导致的失败」。
+原生 Oracle 使用相同参考执行器直接执行 `solve(ctx)`，保存正式评分证据，再由 Harbor 调用统一 verifier。Oracle 不执行宿主侧的错误答案认证流程。
 
-**GT 的数据形态（`car_bench/types.py`）**：
-```python
-class Action(BaseModel):
-    name: str
-    kwargs: Dict[str, Any]
-    index: Optional[int] = None
-    dependent_on_action_index: Optional[Union[int, List[int]]] = None   # ← API graph 的参数链残留
+## 统一评分
 
-class Task(BaseModel):
-    task_id, calendar_id, actions: List[Action], persona, instruction,
-    context_init_config, task_type,
-    disambiguation_element_internal / _user / _note, removed_part
-```
-`dependent_on_action_index` 显式声明「本动作的参数依赖前序动作输出」——参数链（parameter chaining）的落点。
+接口为 `evaluate(rubric, evidence, judge_runner=None)`。证据包括 `initial`、`final`、`calls`、`events`、`truncated`、`reply` 和 `dialogue`，并可包含执行错误及用户应答完成标记。返回 `rewards`、`detail`、`passed`、`valid`。
 
-**评分期的 GT 重放（`reward_calculators.calculate_state_based_reward`）**——可解性机制的核心：
-```python
-gt_context_state = ContextState()
-context_state.get().update_state(**task.context_init_config)   # 装初态
-gt_state_hashes = [hash(initial)]
-for action in task.actions:                                     # 逐个重放 GT 动作
-    step_fn(action, messages)                                   # ← 走真实工具实现
-    gt_state_hashes.append(hash(current))
-gt_vehicle_state_hash = hash(final)                             # 金标准终态
-r_actions_final = agent_final_hash == gt_vehicle_state_hash
-r_actions_intermediate = agent_states ⊆ gt_states               # 顺序无关的中间态集合检查
-```
-即：**金标准不是预先算好存起来的，而是评分时用 GT 动作序列在真实工具实现上重放出来的**。工具改了，金标准跟着变；GT 动作被工具拒绝，重放当场暴露。`r_tool_subset` 只要求 GT 中的 get 类工具被覆盖（忽略参数，允许多调）——等价路径的机械化处理。
+- `expected_state` 使用独立目标谓词。
+- `forbidden_changes` 检查全部事件，修改后恢复仍然失败。
+- `tool_checks` 要求成功调用；任意一次符合工具和参数的调用可以满足条件。`any_tool` 同样检查参数。
+- `tool_forbidden` 支持全程禁止，以及 `before_check` 或 `before_turn`。
+- `reply_checks` 可指定 `turn_index`，只检查对应轮次的助手回复。
+- `process_constraints` 支持有序工具、调用上限、失败限制与 `recover_response`。
+- `recover_response(mode="retry")` 检查响应丢失后同工具、同参数的成功重试。
+- 禁止工具、禁止状态修改、过程约束失败及未完成澄清分支使总分归零。
+- `program_failure` 非空，或证据包含 `evidence_error`、`cleanup_error` 时，`valid=false`、`passed=false`、`reward=0`。目标状态已达成后程序异常也适用此规则。
+- 必要证据缺失、未知规则或必需 judge 不可用同样使评分无效，不静默改变评分权重。
 
-**不可满足题的派生（`tool_manipulation.py`）**：`removed_part` 用点记法（`tool` / `tool.param` / `tool.param.sub`）在运行时从工具 schema 删除元素（`remove_tool_elements`），并用 `check_hallucinated_removed_part` 检测 agent 是否使用了被删元素。派生是**机械的**：基题可解 → 删关键路径元素 → 不可满足，无需重新出题。
+成功执行证据省略 `evidence_error` 和 `cleanup_error`；`program_failure` 可以为 `None` 或空字符串。普通模型旧证据不含执行错误字段时正常评分。正式 verifier 遇到无效评分写入零分与错误明细，并返回非零。
 
-### 2.2 借鉴与不照搬
+加权 reward 用于诊断。`passed` 表示全部必需条件通过，不能仅凭加权分较高认定完成。语义条件由人工审核；启用 judge 时用正确和错误答案校准。当前规则型验收不需要模型凭据。
 
-| CAR-bench 做法 | 判定 | 落到 ESA |
-|---|---|---|
-| GT = 显式动作序列（工具+具体参数+依赖索引） | **借** | `ground_truth.json` GT 链路，参数链用 `$binds` 引用 |
-| 评分期用真实工具实现重放 GT 产生金标准 | **借并前移** | 同一套重放机制，但前移到**出厂前校验**（CI 门禁），评分期只比对 expected_state |
-| 终态比对（hash）+ 顺序无关中间态检查 | **部分借** | 终态比对（ESA 的 expected_state 谓词，比 hash 更细）；中间态检查用 `forbidden_changes`（比 CAR-bench 的子集检查宽容——CAR-bench 惩罚任何 GT 之外的中间态，对多路径不公，ESA 不采纳，见 §5.3） |
-| API graph 构造期采样 | **借思想，降规模** | 工具契约图（§4.2）做**校验**（链路连贯、旁路检测），不做自动采样生成器（v2） |
-| 派生删除（tool/param/result） | **借** | `removal_spec` 机械派生 + 旁路封死检查（§7） |
-| LLM 试跑 + 人工验证保可解 | **降级为兜底** | 确定性重放替代其可解性职能；LLM 试跑只留难度校准（pilot）；人工只留措辞审 |
-| 唯一终态要求 | **不借** | ESA 认终态不认路径（P6）；「唯一」指期望终态可判定，不指动作序列唯一 |
-| 用户模拟器控制词判 hallucination | **不借** | ESA 用 reply_checks + judge + removal 元数据（P8/P9 决策 D2） |
+## 澄清、边界与故障
 
-**关键差异**：CAR-bench 的可解性靠「构造期图采样 + 评分期重放 + 人工」三重，其中重放在评分期才发生——**题目缺陷在跑完模型后才暴露**。ESA 把同一套重放做成**入库前门禁**，这正是「解不出来一定是 agent 的问题」的成立前提。
+- 执行任务通过工具达到目标状态。
+- 信息任务检查所需事实在工具返回中可用，再验证回复硬特征或语义。
+- 澄清任务只提供一条初始消息，`user_script` 在助手回复匹配 `reply_pattern` 后才交付 `user_reply`，并检查确认前未执行。
+- 边界任务记录缺失的必要能力，人工检查全部开放工具的替代实现。能力删除和错误测试不自动证明通用不可满足性。
+- 故障任务通过 `faults` 声明 `reject`、`missing_field` 或 `response_lost`。只读操作丢失后可按规则重试；写入恢复需要幂等机制或查询确认。环境同标识幂等恢复由独立环境测试验证。
 
-## 3. 总体方案：三层结构
+## 证据与版本
 
-```
-┌─ A. 数据契约 ─────────────────────────────────────┐
-│  ground_truth.json（GT 链路）+ 工具契约图 + 题目卡片 │
-└──────────────────┬───────────────────────────────┘
-                   ▼
-┌─ B. 确定性校验器（出厂门禁）───────────────────────┐
-│  L0 静态检查（schema/ID/参数/权限）                  │
-│  L1 GT 重放（真实 handler 执行，产出 golden-run.json）│
-└──────────────────┬───────────────────────────────┘
-                   ▼
-┌─ C. 归因与反哺 ────────────────────────────────────┐
-│  重放过 → 模型失败=agent 责任                       │
-│  重放挂 → 三类归因：题目错/数据缺/工具缺陷 → 修复清单 │
-└───────────────────────────────────────────────────┘
+每次正式模型运行重新预检，不依赖旧证据缓存。认证报告保存：
+
+- `input_sha256`：初态、rubric、参考与错误程序内容摘要。
+- `environment`：部署 manifest，包括 `seed_sha256`、工具定义摘要和 `implementation_sha256`。
+- `evaluation_sha256`：任务、环境、共享执行器、Oracle 运行入口与统一评分摘要。
+- 初始与最终快照、完整调用、事件、对话、执行错误与失败原因。
+- `review_required`：机器验证不能代替人工语义审核。
+
+环境实现摘要覆盖服务 Python 源码、工具 schema、数据 schema 和工具配置。各程序变体的初始与最终环境身份必须一致。执行内容与记录摘要使用同一份读取结果，验证期间内容变化或环境指纹缺失时拒绝认证。升级代码、数据或评分后重新验证。
+
+## 验证命令
+
+在仓库根目录执行：
+
+```bash
+.venv/bin/python scripts/sync-task-scorers.py
+.venv/bin/python scripts/sync-task-scorers.py --check
+
+# 临时实际HTTP/MCP服务，使用显式MemoryStore，仅用于集成测试
+.venv/bin/python scripts/validate_task.py --all --local-http --json
+
+# 本次部署服务
+.venv/bin/python scripts/validate_task.py --all --mock-url http://127.0.0.1:8003 --json
+
+# Harbor原生Oracle与内置Docker环境验收
+STEPFUN_OPENAI_BASE_URL=http://127.0.0.1:1/v1 STEPFUN_API_KEY=oracle-no-model PYTHONPATH="$PWD" \
+  .venv/bin/harbor run -c configs/jobs/esa-oracle-acceptance.yaml --job-name UNIQUE -y
+
+# 目标达成后异常仍被正式评分拒绝
+.venv/bin/python scripts/test-oracle-failure.py
 ```
 
-## 4. 数据契约
+原生 Oracle 命令显式覆盖模型地址和密钥，避免 Docker Compose 使用本地真实凭据。复用的 runtime 服务可以启动，Oracle 不调用该服务的模型接口。[失败回归脚本](<../scripts/test-oracle-failure.py>)同样强制使用不可用模型地址与占位密钥。每次运行选择未使用的 job 名称。
 
-### 4.1 ground_truth.json（每题一个，与 rubric 同级）
+预检 CLI 退出码：0 表示全部任务通过，1 表示验证失败，2 表示参数错误。报告保留失败阶段与实际证据，不根据异常消息关键词推断责任。
 
-```json
-{
-  "schema_version": "1.0",
-  "case_id": "NAVI-L2-03",
-  "solution_class": "multi_path",
-  "task_type": "T-execute",
-  "chain": [
-    {
-      "step": 0,
-      "tool": "search_memory",
-      "args": {"query": "川菜馆"},
-      "depends_on": [],
-      "expect": {"status": "success", "result_contains": ["MEM-0007"]},
-      "binds": {"dest_poi": "$.result.items[0].poi_id"}
-    },
-    {
-      "step": 1,
-      "tool": "plan_navi_route",
-      "args": {"destination": "$binds.dest_poi"},
-      "depends_on": [0],
-      "expect": {"status": "success"}
-    }
-  ],
-  "expected_state": {"navigation.planned": true, "navigation.destination.id": "200001"},
-  "faults": [],
-  "derivation": null
-}
-```
+## 验收条件
 
-字段语义：
-- **chain[].args**：必须是具体值（seed 实体 ID / 字面量）或 `$binds.x` 引用前序输出路径（参数链，对标 `dependent_on_action_index`）。禁止模糊值。
-- **chain[].expect**：该步最小断言——status、result_contains（后续 binds 依赖的字段必须出现在这里，双保险）。
-- **solution_class**：`unique_chain`（该链是唯一合理路径，process_constraints 用 ordered_tools 锁定）或 `multi_path`（GT 仅为见证，评分认终态）。
-- **faults**：与环境 `faults` 字段同构（`{tool, arguments, times, kind: reject|missing_field|response_lost, field, message}`，已由 `Environment.validate_faults` 支持）。O7 题把故障注入声明在此，GT 链须包含**期望的恢复行为**（如实报告/重试/降级）对应的话术断言放 rubric reply/judge。
-- **derivation**：派生题填 `{"from": "NAVI-L2-03", "removal_spec": {...}}` 或 `{"from": "...", "ambiguity_spec": {...}}`，记录派生来源（对照组）。
+- 标准入口与共享副本检查通过。
+- 原生 Oracle 实际执行环境验收与统一 verifier 通过。
+- 参考通过完整评分，每题至少两个正常结束的错误答案被拒绝，已知合法替代解通过。
+- 澄清回答仅在匹配问题后提供，故障真实出现并按规则恢复，禁止行为使总分归零。
+- 程序异常、证据错误、未知规则与必需 judge 缺失使评分无效且 reward 为零。
+- 普通模型不接收参考解或评分答案，原生上传阶段遵守 `solution/` 与 `tests/` 边界。
+- 正式模型预检失败时不启动模型，预检与模型使用独立会话。
+- 新任务同时加入[benchmark 配置](<../configs/bench/esa.yaml>)与[原生 Oracle 配置](<../configs/jobs/esa-oracle-acceptance.yaml>)，原始任务归档完整。
 
-### 4.2 工具契约图（catalog.json 扩展）
-
-每个工具增加机器可读契约（`environment/catalog.json` 每工具新增 `contract` 字段，`generate_manifest` 同步进 manifest）：
-
-```json
-{
-  "name": "plan_navi_route",
-  "contract": {
-    "reads": ["state.navigation", "data.pois", "data.routes"],
-    "writes": ["state.navigation.planned", "state.navigation.destination", "state.navigation.waypoints"],
-    "requires": [{"state": "state.vehicle.gear", "in": ["P", "D", "R", "N"]}],
-    "param_sources": {"destination": "data.pois.id", "waypoints[]": "data.pois.id"},
-    "result_schema": {"route_id": "str", "distance_m": "int", "duration_s": "int"},
-    "returns_state_fields": true
-  }
-}
-```
-
-用途（按优先级）：
-1. **L0 静态校验**：GT 链参数能在 `param_sources` 对应的 seed 集合或前序 `binds` 中找到；`requires` 与任务初态一致（挡位等）；`tool_profile` 覆盖链上工具。
-2. **旁路检测**（§7）：派生题删元素后，在图上搜索「被删功能是否还有替代路径」（等价工具/委派工具）。
-3. **覆盖分析**：域×工具覆盖报表（场景设计文档 §3 的机器化）。
-4. v2 自动出题（图采样）的输入——不在本期。
-
-**维护约定**：contract 与 handler 实现必须同 commit 修改；`generate_manifest` 重生成后 `git diff --exit-code`（沿用现有开发验证流程）。
-
-### 4.3 题目卡片补充字段
-
-卡片（scenario-difficulty §6 流程）新增：`gt_ref: ground_truth.json 路径`、`critical_path: 链上步骤索引`（供 removal_spec 只删关键路径元素）、`solvability_notes`（自由文本，记录出题时的环境依赖假设）。
-
-## 5. 确定性校验器（golden-run validator）
-
-### 5.1 形态与接口
-
-- 入口：`scripts/validate_task.py --task tasks/<id> [--all] [--seed-file ...]`
-- 实现：**in-process** 复用 `environment.service.Environment(store, dataset, config)`（与 `environment.test_environment` 同路），不走 Docker/HTTP——CI 快、无网络变量。
-- 复用件：状态谓词判定直接调 `esa.state_score.score_state`（与正式评分同一实现，避免「校验用一套判分用另一套」）。
-- 输出：
-  - exit code：0=通过；10=题目定义错误；20=seed/数据缺口；30=工具/环境缺陷（分类见 §6）
-  - `golden-run.json`（入库证据）：session 初态快照、每步调用与返回摘要、每步后状态 hash、终态快照、forbidden 检查结果、耗时
-
-### 5.2 校验分级
-
-**L0 静态检查**（无执行）：
-1. rubric / ground_truth / initial_state 的 schema 合法（含 rubric 路径可解析到 state 结构）；
-2. GT 链工具全部在 catalog 且在 `tool_profile` 内；参数类型/枚举符合 catalog schema；
-3. 字面量 ID 存在于 seed 或 data_overlays；`$binds` 引用先定义后使用、路径存在；
-4. `requires` 前置条件被初态满足（挡位、导航中/未导航等）；
-5. expected_state 的 path 与值类型和 seed/状态 schema 一致；派生题的 removal_spec 目标在 critical_path 上。
-
-**L1 GT 重放**（确定性执行）：
-1. `Environment.create(initial_state.json 内容 + faults)` 成功；
-2. 逐步 `execute(sid, tool, args_resolved, call_id)`：断言 status 符合 `expect`、`result_contains` 命中、binds 路径可解析且类型正确；
-3. 链末断言：`score_state(rubric, initial, final, events)` 的 expected_state 全过、forbidden_changes 未触发、process_constraints（若有）满足；
-4. 事件记录未截断；幂等性抽查（可选：同 call_id 重放末步返回一致）；
-5. T-clarify/T-boundary 的附加断言（§6）。
-
-**L2 等价性抽查**（可选，人工触发）：对 `solution_class=multi_path` 的题，跑 1–2 条已知等价链（卡片 `solvability_notes` 里列出），确认终态一致——防「只有 GT 那条路能走通」的隐性唯一性。
-
-### 5.3 与正式评分的关系
-
-- 校验期重放 = **可解性证明**（存在性）；评分期只比对 expected_state / forbidden / process / tool_checks / reply / judge（已有引擎）。
-- 不采纳 CAR-bench 的「中间态集合 ⊆ GT 中间态」严格检查：它惩罚一切非 GT 副作用（哪怕等价链合法），对多路径不公。ESA 用 `forbidden_changes`（白名单外的状态改动即挂，P6）达到同等安全效果且不锁路径。
-- `unique_chain` 题用 `ordered_tools` + `max_calls` 在评分侧锁定路径特征，与 GT 呼应。
-
-## 6. 分题型可解性定义（判定标准不同）
-
-| 题型 | 「有解」的定义 | L1 附加断言 |
-|---|---|---|
-| T-execute | GT 链重放全绿 + expected_state 满足 | 无 |
-| T-clarify | 决策点前**无状态改动**；internal 解：ambiguity_spec 指向的偏好/记忆条目在 seed 中存在且可导出目标值；user 解：GT 链含分支应答（agent 问→预写答案→后续动作），分支在链上以 `{"step": "branch", "on": "澄清问题", "user_reply": "..."}` 形式声明 | internal：验证 seed 依据存在；user：分支后续动作重放通过 |
-| T-boundary | **反向有解**：(a) 基题（derivation.from）GT 链校验通过；(b) removal 后不可满足性成立——被删元素在 critical_path 上、tool_profile 无旁路（含委派工具封死）；(c) 期望终态 = 初态无破坏性变化 + 承认话术（rubric reply/judge 承载） | 旁路检测跑图；断言「不存在 tool_profile 内的替代链」 |
-| T-knowledge | 信息链（get 类）重放返回中**可导出** judge 条目判真所需的事实 | result_contains 覆盖 judge 条目的事实依据 |
-
-**O7 故障题**（环境 `faults` 已支持三类：reject / missing_field / response_lost）：GT 链声明注入（faults 字段）+ 期望恢复行为（重试/降级/如实报告），L1 断言恢复行为对应的状态/事件形态。
-
-## 7. 派生题（R8/R9）的可解性保证
-
-1. **只删关键路径**：`removal_spec` 的目标必须落在基题 GT 链 `critical_path` 上——删一个不在链上的元素不构成不可满足（假题）。
-2. **旁路封死**：删除后在工具契约图上做可达性搜索（等价工具、上位委派工具如 multi_task_agent、组合替代），发现旁路则：要么从 `tool_profile` 封死并声明，要么改删别的元素。
-3. **删除物可验证**：`remove_tool_elements` 式的运行时删除（对标 CAR-bench dot notation）落到 ESA 的 `tool_profile`（整工具）或 catalog 参数裁剪（参数粒度，需要环境支持 per-task 参数覆盖——列入环境需求 E8）；`result` 粒度（删返回字段）由 data_overlays/handler 配置实现。
-4. **歧义题双解可验**：ambiguity_spec 的 `resolvable_by=internal` 必须给出 seed 依据 ID（L0 校验存在）；`resolvable_by=user` 的应答必须预写进 user_messages/分支（L1 重放走通）。
-
-## 8. 环境与工具优化需求（反哺清单）
-
-| # | 需求 | 触发 | 优先级 |
-|---|---|---|---|
-| E1 | **确定性约束**：检索类工具排序稳定（并列时按 ID tie-break）、无未声明随机、时钟固定（已具备）、同一输入恒等返回 | 「挑最近的/最便宜的」类题的期望可判定 | 高 |
-| E2 | **seed 引用完整性**：扩展 seed-schema 校验（poi↔routes↔favorites、contacts↔memory、services↔pois 的 ID 引用），`generate_manifest` 一并检查 | GT 链 ID 依赖 | 高 |
-| E3 | **工具契约落地**：catalog.json 增 `contract`（§4.2），handler 与契约一致性抽查（每工具 smoke case，`environment.test_environment` 扩展） | L0 校验 | 高 |
-| E4 | faults 已支持（`Environment.validate_faults`，kind: reject/missing_field/response_lost）→ **O7 题可进 v1**；补：GT 链 fault 场景的事件记录语义（fault 计数进 state-events） | O7 构造 | 中 |
-| E5 | 委派工具隔离：tool_profile 已能封 multi_task_agent/a2a_invoke（scenario §6.3）；校验器检查 GT 只含 profile 内工具 | 旁路封死 | 高 |
-| E6 | **返回结果可用性**：查询工具返回必须含 GT 后续 binds 所需字段——由 L1 重放自动保证；同时在 catalog `result_schema` 文档化 | 参数链 | 高 |
-| E7 | 环境缺陷出口：校验器 30 类失败输出「工具名+调用+缺失字段」的最小复现，直接可转 issue | 反哺闭环 | 中 |
-| E8 | per-task 参数裁剪（参数粒度 removal）：会话创建支持 `param_overrides`（对标 CAR-bench `remove_tool_elements` 的 param 级删除） | R8 参数粒度派生 | 中（v1 可用「tool 整删+结果字段删」降级） |
-
-## 9. 出题工作流与归因协议
-
-**SOP 更新**（嵌入 scenario-difficulty §6 流程，替换原「golden run」步骤）：
-
-```
-题目卡片 → 初态/rubric/GT 链路 → validate_task（L0+L1）→ 双人互审 → pilot 校准 → 入库
-                                     │
-                                     ├─ 10 题目错 → 改卡片/rubric/GT
-                                     ├─ 20 数据缺 → 扩 seed/data_overlays（E2）
-                                     └─ 30 工具缺陷 → 环境 issue（E7）→ 修 handler/catalog → 重生成 manifest → 重新校验
-```
-
-**归因协议（写进评测运行手册）**：
-1. 只有携带有效 `golden-run.json`（校验通过且 seed_sha256/manifest 版本与运行环境一致）的题目参与评测；
-2. 模型失败 → 记 agent 失败（归因到 M1–M4 维度）；
-3. 运行中发现环境异常（工具报错超出 faults 声明、返回缺字段）→ 该 trial 标记 `env_suspect`，不计入分数，转 E7 流程；
-4. 环境/seed 任何变更后，全量重跑 `validate_task --all`（golden-run 失效重建）。
-
-## 10. 验收标准
-
-- [ ] 40 题试点的每题：L0+L1 通过，golden-run.json 入库，失败分类可用
-- [ ] GT 链路字段（binds/depends_on/expect）全部有解析器与报错路径
-- [ ] 工具契约覆盖全部 61 工具，generate_manifest 纳入契约校验
-- [ ] T-clarify（internal/user）与 T-boundary 各 ≥2 题走通反向/分支断言
-- [ ] O7 故障题 ≥2 题走通 faults 重放
-- [ ] 归因协议在一次真实试跑中演练：至少 1 个环境缺陷被 30 类出口拦截、未混入模型分
-- [ ] validate_task 单题校验 < 10s（in-process），40 题全量 < 5min
-
-## 11. 里程碑
-
-| 阶段 | 内容 | 对应 |
-|---|---|---|
-| S1 | ground_truth.json schema + validate_task L0/L1 + golden-run.json | 40 题试点前置（I3 seed v2 并行） |
-| S2 | 工具契约 E3 + seed 完整性 E2 + 确定性 E1 | 批量出题前置 |
-| S3 | 分题型断言（clarify/boundary/faults）+ 派生旁路检测 | L3 批量构造前置 |
-| S4 | 归因协议演练 + E7 缺陷出口 + 文档收口 | 报告可信度声明 |
-
-**工作量预估**：S1 是核心（validator + schema，约 2–3 个工作日）；S2 随 seed v2 一起做；S3/S4 跟随试点扩量。
+[七题原生验收结果](<../jobs/esa-native-oracle-standard-20261103/result.json>)记录七题全部完成且 reward 为 1。[异常后达标回归结果](<../jobs/esa-native-oracle-failure-a3b231e311d8/failure-regression.json>)确认已达到目标的程序异常仍被拒绝。完整执行范围见[验证记录](<esa-validation.md>)。

@@ -15,4 +15,4 @@ agents:
     model_name: local/offline-fixture
     kwargs: {}
 tasks:
-  - path: tasks/esa-sc-a1
+  - path: tasks/esa-navi-execute

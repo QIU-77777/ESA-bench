@@ -1,0 +1,33 @@
+{
+  "case_id": "esa-med-retry",
+  "dataset_version": "esa-local-v1",
+  "seed": 0,
+  "user_messages": [
+    "播放周杰伦的《晴天》原版。遇到暂时查询失败时重试一次，确认查询成功后再播放。"
+  ],
+  "initial_state": {
+    "media": {
+      "playlist": [],
+      "current_track": null,
+      "playing": false
+    }
+  },
+  "tool_profile": [
+    "music_search",
+    "play_playlist"
+  ],
+  "faults": [
+    {
+      "tool": "music_search",
+      "times": 1,
+      "kind": "reject",
+      "message": "暂时查询失败，请重试一次"
+    }
+  ],
+  "metadata": {
+    "domain": "med",
+    "acceptance": true,
+    "title": "查询拒绝后重试并播放",
+    "semantic_review": "代码评分仅检查明确的状态、过程、工具参数和回复硬特征；完整语义需人工审查。"
+  }
+}

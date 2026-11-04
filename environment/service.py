@@ -64,6 +64,10 @@ class Environment:
                 enabled.append(name)
         if seen!=set(self.tools): raise ValueError('config must list every catalog tool name')
         self.enabled=enabled
+        sources={p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in ROOT.glob('*.py') if not p.name.startswith('test_')}
+        sources.update({name:hashlib.sha256((ROOT/name).read_bytes()).hexdigest() for name in ('catalog.json','catalog-schema.json','seed-schema.json')})
+        sources['tools_config']=hashlib.sha256(pathlib.Path(config_path or ROOT.parent/'configs/tools.json').read_bytes()).hexdigest()
+        self.implementation_sha256=hashlib.sha256(json.dumps(sources,sort_keys=True).encode()).hexdigest()
         self.validators={name:Draft202012Validator(t['inputSchema']) for name,t in self.tools.items()}
         for t in self.tools.values(): Draft202012Validator.check_schema(t['inputSchema'])
 
@@ -135,7 +139,7 @@ class Environment:
 
     def snapshot(self,sid):
         r=self.store.read(sid)
-        return {**{k:r[k] for k in ('session_id','context','state','initial_state','dataset_version','seed','tool_profile','state_version')},'environment_version':'1.0.0','source_sha256':self.source_sha256,'seed_sha256':self.dataset.seed_sha256,'manifest':self.manifest()}
+        return {**{k:r[k] for k in ('session_id','context','state','initial_state','dataset_version','seed','tool_profile','state_version')},'environment_version':'1.0.0','implementation_sha256':self.implementation_sha256,'source_sha256':self.source_sha256,'seed_sha256':self.dataset.seed_sha256,'manifest':self.manifest()}
 
     def events(self,sid,after=0,call_id=None):
         r=self.store.read(sid)
@@ -147,7 +151,7 @@ class Environment:
         return {'tools':[{k:self.tools[n][k] for k in ('name','description','inputSchema')} for n in r['tool_profile']]}
 
     def manifest(self):
-        return {'environment_version':'1.0.0','dataset_version':self.dataset.version,'seed_sha256':self.dataset.seed_sha256,'source_sha256':self.source_sha256,'tools':[{ 'name':name,'enabled':name in self.enabled, 'availability':'implemented', **CAPABILITIES[name]} for name in self.tools]}
+        return {'environment_version':'1.0.0','implementation_sha256':self.implementation_sha256,'dataset_version':self.dataset.version,'seed_sha256':self.dataset.seed_sha256,'source_sha256':self.source_sha256,'tools':[{ 'name':name,'enabled':name in self.enabled, 'availability':'implemented', **CAPABILITIES[name]} for name in self.tools]}
 
     def lifecycle(self,sid,action):
         def transaction(r):

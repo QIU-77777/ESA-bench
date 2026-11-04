@@ -1,0 +1,28 @@
+schema_version = "1.4"
+artifacts = []
+[task]
+name = "esa/esa-med-retry"
+version = "1.0.0"
+[agent]
+timeout_sec = 900.0
+[verifier]
+timeout_sec = 300.0
+collect = []
+[environment]
+network_mode = "public"
+build_timeout_sec = 600.0
+os = "linux"
+mcp_servers = []
+[environment.env]
+ESA_CASE_ID = "esa-med-retry"
+ESA_MOCK_URL = "http://mock-system:8003"
+ESA_AGENT_API_URL = "http://agent-api:8080"
+ESA_EVAL_PREFIX = "/eval"
+ESA_TURN_TIMEOUT_SEC = "240"
+[environment.healthcheck]
+command = "curl -sf http://mock-system:8003/health && curl -sf http://agent-api:8080/v1/health"
+interval_sec = 5.0
+timeout_sec = 10.0
+start_period_sec = 10.0
+retries = 12
+[solution.env]

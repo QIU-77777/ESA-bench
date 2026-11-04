@@ -34,7 +34,7 @@
 
 ESA-bench 使用 Harbor 调度评测试验，在本地模拟座舱环境中运行 Agent，并记录模型轨迹、工具调用和业务状态。框架提供独立的 Go ReAct runtime、Python 工具服务、SQLite 固定数据和 Redis 会话状态。
 
-用户可以配置待测模型、构建自己的任务集，并通过最终状态与执行过程判定任务是否完成。现有五个任务是使用样例和回归用例，环境能力由工具目录及数据定义。
+用户可以配置待测模型并构建任务集。当前包含七个验收任务，覆盖导航、充电筛选、车辆澄清、信息查询、能力边界、错误重试和响应丢失。每题提供标准 `solution/solve.sh` 入口、Python 参考程序、独立评分答案和错误答案测试。所有活动任务必须通过 Harbor 原生 Oracle 在实际 Docker 环境中的验收。正式模型运行前，在本次部署环境执行参考预检，通过后创建独立模型会话。
 
 ## 评测能力
 
@@ -45,7 +45,7 @@ ESA-bench 使用 Harbor 调度评测试验，在本地模拟座舱环境中运�
 - **多维评分**：最终状态、禁止变化、工具顺序、调用次数、工具参数、回复文本和可选模型评审。
 - **完整证据**：输出Harbor结果、ATIF格式轨迹、初始与最终快照、工具事件和环境能力清单。
 
-路线、天气、视觉、知识和外部服务使用本地模拟资料。环境不控制真实车辆，也不执行真实预订、交易或救援。具体限制见[工具能力清单](environment/manifest.json)。
+路线、天气、视觉、知识和外部服务使用本地模拟资料。环境不控制真实车辆，也不执行真实预订、交易或救援。具体限制见[工具能力清单](<environment/manifest.json>)。
 
 ## 评测工作台（Console）
 
@@ -69,13 +69,14 @@ nohup .venv/bin/python -m uvicorn console.app.main:app --host 127.0.0.1 --port 8
 | Review | 标记存疑进入复核队列；结构化打分（维度 1-5 分、总体判定、备注）与变更历史 |
 | Loop-Assistant | 独立的 coding agent 分析失败任务，产出失败归类、改进方案与数据集草案，草案可合并回数据集 |
 
-实验支持两类运行环境：座舱任务使用 `esa` harness；通用编码任务使用 `pi`、`opencode`、`claude-code` 等 harness，经 `scripts/run.sh` 调度，评分由 Console 生成的评分器配置在 Harbor verifier 内执行。命令行也可直接运行：
+Console 生成的 ESA 草稿包含标准 `solution/solve.sh` 入口、未实现的参考函数和空的 `CASES`。作者必须完成参考程序、错误答案测试、环境配置与独立 rubric，并同步共享执行器和评分副本。错误测试为空时，预检在创建 HTTP 会话前拒绝认证。新增任务同时加入 benchmark 和原生 Oracle 验收配置，实际 Docker 验收通过后才能用于正式评测。正式模型运行使用以下流程：
 
 ```bash
-scripts/run.sh --bench hello --harness pi --model deepseek/deepseek-flash
+.venv/bin/python scripts/render-job.py --bench esa --harness esa --model stepfun/step-5-preview --output /tmp/esa-job.yaml
+PYTHONPATH="$PWD" .venv/bin/harbor run -c /tmp/esa-job.yaml --job-name esa-model-run -y
 ```
 
-Console 的实现与接口约定见 [console/docs/requirements.md](console/docs/requirements.md)、[console/docs/development.md](console/docs/development.md) 与 [console/docs/design-spec.md](console/docs/design-spec.md)。
+Console 的实现与接口约定见 [console/docs/requirements.md](<console/docs/requirements.md>)、[console/docs/development.md](<console/docs/development.md>) 与 [console/docs/design-spec.md](<console/docs/design-spec.md>)。
 
 ## 组件与目录
 
@@ -92,17 +93,17 @@ Harbor trial
 
 | 位置 | 内容 |
 |---|---|
-| [runtime](runtime/README.md) | 独立Go ReAct HTTP服务 |
-| [environment](environment/README.md) | 工具服务、61项schema、能力清单与版本化数据 |
-| [esa](esa/README.md) | Harbor Agent、驱动、轨迹转换和评分 |
-| [工具配置](configs/tools.json) | 默认工具启用状态 |
-| [任务集合](configs/bench/esa.yaml) | 参与评测的任务路径 |
-| [模型配置](configs/models/stepfun/step-5-preview.yaml) | 模型名称与连接变量映射 |
-| [任务样例](tasks/esa-sc-a1/task.toml) | 导航到公司等五个座舱任务 |
-| [环境规范](docs/esa-local-eval-spec.md) | 接口、状态、故障与验收契约 |
-| [题目编写指南](docs/esa-task-authoring.md) | 初始数据、多轮输入、权限和评分 |
-| [console](console/README.md) | 评测工作台：页面、服务与接口约定 |
-| [Console 设计规范](console/docs/design-spec.md) | 样式 token、组件规则与对话轨迹规范 |
+| [runtime](<runtime/README.md>) | 独立Go ReAct HTTP服务 |
+| [environment](<environment/README.md>) | 工具服务、61项schema、能力清单与版本化数据 |
+| [esa](<esa/README.md>) | Harbor Agent、驱动、轨迹转换和评分 |
+| [工具配置](<configs/tools.json>) | 默认工具启用状态 |
+| [任务集合](<configs/bench/esa.yaml>) | 参与评测的任务路径 |
+| [模型配置](<configs/models/stepfun/step-5-preview.yaml>) | 模型名称与连接变量映射 |
+| [任务样例](<tasks/esa-navi-execute/solution/reference.py>) | 七个座舱验收任务，每题提供参考和错误程序 |
+| [环境规范](<docs/esa-local-eval-spec.md>) | 接口、状态、故障与验收契约 |
+| [题目编写指南](<docs/esa-task-authoring.md>) | 初始数据、多轮输入、权限和评分 |
+| [console](<console/README.md>) | 评测工作台：页面、服务与接口约定 |
+| [Console 设计规范](<console/docs/design-spec.md>) | 样式 token、组件规则与对话轨迹规范 |
 
 ## 快速开始
 
@@ -129,7 +130,7 @@ bash scripts/build-esa-local.sh
 脚本生成两个镜像：
 
 - `esa-react-runtime:1.0.0`：Go ReAct runtime。
-- `esa-local-environment:1.0.0`：Python工具服务与数据。
+- `esa-local-environment:2.0.0`：Python工具服务与数据。
 
 任务还使用 `redis:7-alpine` 和 `node:22-alpine`。Harbor自动构建任务容器并启动Compose服务，无需手动启动Redis或工具服务。
 
@@ -137,29 +138,55 @@ bash scripts/build-esa-local.sh
 
 ### 3. 配置待测模型
 
-复制[环境变量示例](.env.example)，填写支持OpenAI **Responses API** 的模型端点和密钥：
+复制[环境变量示例](<.env.example>)，填写支持OpenAI **Responses API** 的模型端点和密钥：
 
 ```bash
 cp .env.example .env
 chmod 600 .env
 ```
 
-当前ESA任务Compose读取以下变量。示例采用[step-5-preview模型配置](configs/models/stepfun/step-5-preview.yaml)：
+当前ESA任务Compose读取以下变量。示例采用[step-5-preview模型配置](<configs/models/stepfun/step-5-preview.yaml>)：
 
 ```bash
 STEPFUN_OPENAI_MODEL_ID=step-5-preview
 STEPFUN_OPENAI_BASE_URL=https://your-model-endpoint.example/v1
 STEPFUN_API_KEY=your-api-key
-STEPFUN_JUDGE_MODEL_ID=step-3.5-flash
+# 仅启用语义评审时需要，变量名与 esa/score.py 一致
+JUDGE_API_BASE_URL=https://your-judge-endpoint.example/v1
+JUDGE_API_KEY=your-judge-api-key
+JUDGE_MODEL_ID=step-3.5-flash
 ```
 
-`STEPFUN_OPENAI_MODEL_ID` 应与运行命令中的模型名称一致。更换模型名称时，增加对应模型配置，并将运行命令的 `--model` 改为该配置标识。当前任务的模型连接仍读取上述 `STEPFUN_*` 变量；变量前缀不限制实际服务提供方。
+`STEPFUN_OPENAI_MODEL_ID` 应与运行命令中的模型名称一致。更换模型名称时，增加对应模型配置，并将运行命令的 `--model` 改为该配置标识。当前任务的模型连接仍读取上述 `STEPFUN_*` 变量；`JUDGE_*` 只在 rubric 声明 `judge_criteria` 且 judge 权重非零时读取。变量前缀不限制实际服务提供方。
 
-默认样例会使用同一个端点与密钥进行可选模型评审。待测Agent使用Responses API，评审使用Chat Completions API。若端点不支持评审模型或接口，评审维度会显示未执行，其余可用维度重新归一化。仅使用规则评分时，将题目评分文件中的 `judge` 权重设为0，并移除 `judge_criteria`。
+七个验收任务使用规则评分，不调用 judge。需要语义评审时，在独立 rubric 中声明 judge_criteria 和非零 judge 权重。待测 Agent 使用 Responses API，judge 使用 Chat Completions API。启用的 judge 不可用时，评分标记无效，参考认证失败，不启动模型。
 
 密钥仅保存在本地 `.env`；该文件已被Git忽略。不要提交密钥或公开含凭据的运行配置。
 
-### 4. 运行五个样例
+### 4. 验证任务
+
+```bash
+.venv/bin/python scripts/sync-task-scorers.py
+.venv/bin/python scripts/sync-task-scorers.py --check
+.venv/bin/python -m environment.generate_manifest
+.venv/bin/python scripts/validate_task.py --all --local-http --json
+.venv/bin/python scripts/test-reference-docker.py
+
+# Harbor原生Oracle与内置Docker环境实际验收
+STEPFUN_OPENAI_BASE_URL=http://127.0.0.1:1/v1 STEPFUN_API_KEY=oracle-no-model PYTHONPATH="$PWD" \
+  .venv/bin/harbor run -c configs/jobs/esa-oracle-acceptance.yaml --job-name UNIQUE -y
+.venv/bin/python scripts/test-oracle-failure.py
+```
+
+[原生 Oracle 验收配置](<configs/jobs/esa-oracle-acceptance.yaml>)执行标准参考入口。命令显式覆盖模型地址和密钥，避免 Docker Compose 使用本地真实凭据。Oracle 使用实际工具服务和 Redis，不调用模型或 judge，无需执行凭据加载命令。每次选择未使用的 job 名称。
+
+Oracle 在执行阶段接收 `solution/`。运行入口只读取初态与参考程序，并访问实际 MCP。verifier 在评分阶段接收 `tests/`；普通模型不接收参考解或评分答案。共享参考执行器、Oracle 运行入口和评分副本由[同步脚本](<scripts/sync-task-scorers.py>)维护，并使用 `--check` 强制检查一致性。
+
+[失败回归脚本](<scripts/test-oracle-failure.py>)检查程序达到目标状态后发生异常仍然得到 `reward=0`、`valid=false`。程序异常、证据收集或清理错误、必要证据缺失使正式评分无效，并返回非零。
+
+临时 HTTP 预检使用显式 `MemoryStore`，只用于集成测试。[Docker 参考预检](<scripts/test-reference-docker.py>)执行参考、合法替代解、错误解和环境规则，使用独立服务与 Redis，退出时清理测试资源。该流程与自定义 Agent 验证不能替代原生 Oracle 实际环境验收。完整合同见[参考验证规格](<docs/esa-solvability-spec.md>)。
+
+### 5. 运行七个验收任务
 
 在仓库根目录加载变量并生成Harbor job配置：
 
@@ -180,9 +207,9 @@ PYTHONPATH="$PWD" .venv/bin/harbor run \
   -y
 ```
 
-每次使用不同的job名称，名称不要包含 `/` 或 `:`。[任务集合配置](configs/bench/esa.yaml)决定运行哪些任务。需要修改并发数或重复次数时，在生成的Harbor配置中设置 顶层 `n_concurrent_trials` 和 `n_attempts`，再运行该配置。
+每次使用不同的job名称，名称不要包含 `/` 或 `:`。[任务集合配置](<configs/bench/esa.yaml>)决定运行哪些任务。需要修改并发数或重复次数时，在生成的Harbor配置中设置 顶层 `n_concurrent_trials` 和 `n_attempts`，再运行该配置。
 
-ESA使用上述 `render-job.py + harbor run` 流程；[通用运行脚本](scripts/run.sh)用于仓库保留的编码Agent示例，其镜像挂载预检不适用于ESA。
+也可以执行 `scripts/run.sh --bench esa --harness esa --model stepfun/step-5-preview`。该分支检查可信任务材料并直接调用 Harbor。正式模型调用前，ESAAgent 仍会在实际部署环境重新执行完整参考验证。
 
 ## 交互式对话
 除了批量评测，可以直接与车载 Agent 对话，用于人工体验和问题发现。Console 的 Chat 页面（`http://127.0.0.1:8899/chat`）与命令行使用同一 Agent 实现、工具集和环境数据，网页版额外提供会话管理、轨迹查看与逐会话参数覆盖；未启动座舱服务时页面给出一键启动。命令行入口：
@@ -204,7 +231,7 @@ ESA使用上述 `render-job.py + harbor run` 流程；[通用运行脚本](scrip
 </div>
 <br>
 
-命令与批量评测使用同一 Agent 实现、工具集和环境数据。首次运行时自动启动开发服务：Docker 拉起 `esa-react-runtime:1.0.0` 与 `esa-local-environment:1.0.0` 两个镜像加 Redis，端口 8003 与 18080 绑定本机。退出时服务保持运行，下次启动更快；`--ephemeral` 在退出时销毁。
+命令与批量评测使用同一 Agent 实现、工具集和环境数据。首次运行时自动启动开发服务：Docker 拉起 `esa-react-runtime:1.0.0` 与 `esa-local-environment:2.0.0` 两个镜像加 Redis，端口 8003 与 18080 绑定本机。退出时服务保持运行，下次启动更快；`--ephemeral` 在退出时销毁。
 
 对话中的车辆状态跨轮保留，模型对话历史跨轮保留，Agent 能引用前文。等待模型期间按 `Ctrl+C` 取消当前轮，会话保留。
 
@@ -248,7 +275,7 @@ total: 4.7s | tokens: ↑1240  ↓320  ↺960(77.4%)
 
 ```bash
 # 加载某个任务的初态，并以该任务的首条指令开始对话
-.venv/bin/python -m esa.cli chat --task tasks/esa-sc-a1
+.venv/bin/python -m esa.cli chat --task tasks/esa-navi-execute
 
 # 使用宿主进程（宿主 Redis、环境服务、go run）而非 Docker 镜像
 .venv/bin/python -m esa.cli chat --local
@@ -323,11 +350,22 @@ result.json                              # job汇总、评分与异常数量
 
 检查状态快照和工具事件可以确认操作是否真正改变业务状态。模型回复文本与状态评分独立。
 
+`tool-calls.json` 的 `program_failure` 非空表示驱动层执行失败（runtime 报错或轮次未完成），verifier 直接判 `valid=false`、`reward=0`；模型答错是 `valid=true`、`passed=false`，两者不要混为一谈。
+
 也可以在 [Console](#评测工作台console) 中查看：实验详情与 Trace 页内嵌 Harbor view，Console 启动时自动拉起该服务。
+
+### 本地排障
+
+只读检查镜像、compose 服务状态与重启次数、日志尾部、宿主端口占用和最近 job 结果，不启动也不删除任何资源：
+
+```bash
+bash scripts/diagnose.sh                          # 检查全部 compose 项目
+bash scripts/diagnose.sh -p <project> --no-logs   # 只看指定项目状态
+```
 
 `trajectory.json` 采用Harbor的ATIF（Agent Trajectory Interchange Format）标准格式，记录每次ReAct迭代的推理、工具调用与工具结果，并附带token用量和延迟。`steps`按交互顺序排列，`source`区分`user`与`agent`，用户指令是第一个step。
 
-若Harbor0.24.0/LiteLLM1.105.0的Viewer出现 `KeyError: 'litellm'` 日志异常，可应用[版本限定的日志修复](scripts/fix-litellm-viewer.py)，然后重启Viewer：
+若Harbor0.24.0/LiteLLM1.105.0的Viewer出现 `KeyError: 'litellm'` 日志异常，可应用[版本限定的日志修复](<scripts/fix-litellm-viewer.py>)，然后重启Viewer：
 
 ```bash
 .venv/bin/python scripts/fix-litellm-viewer.py
@@ -340,17 +378,21 @@ result.json                              # job汇总、评分与异常数量
 ### 1. 复制任务模板
 
 ```bash
-cp -R tasks/esa-sc-a1 tasks/esa-my-case
+cp -R tasks/esa-navi-execute tasks/esa-my-case
 ```
 
 修改新目录中的文件：
 
 | 模板位置 | 修改内容 |
 |---|---|
-| [task.toml](tasks/esa-sc-a1/task.toml) | 任务名称、ESA_CASE_ID、超时及评审变量 |
-| [instruction.md](tasks/esa-sc-a1/instruction.md) | 单轮用户指令 |
-| [initial_state.json](tasks/esa-sc-a1/environment/esa/initial_state.json) | case_id、context、initial_state、数据覆盖、工具权限与多轮输入 |
-| [rubric.json](tasks/esa-sc-a1/environment/esa/rubric.json) | 状态、工具、回复、过程约束及权重 |
+| [task.toml](<tasks/esa-navi-execute/task.toml>) | 任务名称、ESA_CASE_ID、超时及评审变量 |
+| [instruction.md](<tasks/esa-navi-execute/instruction.md>) | 单轮用户指令 |
+| [initial_state.json](<tasks/esa-navi-execute/environment/esa/initial_state.json>) | case_id、context、initial_state、数据覆盖、工具权限与多轮输入 |
+| [rubric.json](<tasks/esa-navi-execute/tests/rubric.json>) | 独立定义状态、工具、回复、过程约束及权重 |
+| [solve.sh](<tasks/esa-navi-execute/solution/solve.sh>) | Harbor 原生 Oracle 标准入口 |
+| [reference.py](<tasks/esa-navi-execute/solution/reference.py>) | 使用用户输入与实际工具返回完成任务 |
+| [negative_tests.py](<tasks/esa-navi-execute/tests/negative_tests.py>) | 正常结束且必须被评分拒绝的错误解 |
+| [reference_runtime.py](<tasks/esa-navi-execute/solution/reference_runtime.py>)、[runner.py](<tasks/esa-navi-execute/solution/runner.py>) | 与共享实现一致，由同步脚本维护 |
 
 Harbor单轮输入优先使用任务的 `instruction.md`。多轮输入在初始数据中设置 `user_messages`，取代单轮指令；每轮保留同一会话与对话历史。
 
@@ -385,20 +427,22 @@ Harbor单轮输入优先使用任务的 `instruction.md`。多轮输入在初始
 }
 ```
 
-目标状态和评分条件仅由verifier读取，不进入模型初始数据。导航启动遵循工具契约，需要D/R挡位。工具参数、数据ID和状态字段应以[工具目录](environment/catalog.json)、[能力清单](environment/manifest.json)和[seed资料](environment/seed-v1.json)为准。
+目标状态和评分条件仅由verifier读取，不进入模型初始数据。导航启动遵循工具契约，需要D/R挡位。工具参数、数据ID和状态字段应以[工具目录](<environment/catalog.json>)、[能力清单](<environment/manifest.json>)和[seed资料](<environment/seed-v1.json>)为准。
 
-`data_overlays` 只能覆盖现有资料的已知ID与字段。增加实体时，准备符合[数据schema](environment/seed-schema.json)的新seed，并通过工具环境的 `--seed-file` 或 `ESA_SEED_FILE` 配置分发它。故障注入和完整评分格式见[题目编写指南](docs/esa-task-authoring.md)。
+`data_overlays` 只能覆盖现有资料的已知ID与字段。增加实体时，准备符合[数据schema](<environment/seed-schema.json>)的新seed，并通过工具环境的 `--seed-file` 或 `ESA_SEED_FILE` 配置分发它。故障注入和完整评分格式见[题目编写指南](<docs/esa-task-authoring.md>)。
 
 ### 3. 加入任务集合
 
-修改[任务集合配置](configs/bench/esa.yaml)，将新任务加入 `tasks`：
+修改[任务集合配置](<configs/bench/esa.yaml>)和[原生 Oracle 验收配置](<configs/jobs/esa-oracle-acceptance.yaml>)，将新任务加入各自的 `tasks`：
 
 ```yaml
 tasks:
   - path: tasks/esa-my-case
 ```
 
-重新执行生成配置与Harbor运行命令。题目输入、评分和任务Dockerfile由Harbor构建；只修改题目时无需重建公共runtime与工具服务镜像。修改公共代码、工具定义、工具配置或seed后，应重新执行镜像构建脚本。
+共享代码更新后，运行同步与 `--check`，再执行原生 Oracle 验收。新增或修改任务必须通过实际 Docker 验收。题目输入、评分和任务 Dockerfile 由 Harbor 使用；只修改题目时无需重建公共 runtime 与工具服务镜像。修改公共代码、工具定义、工具配置或 seed 后，重新构建公共镜像。
+
+原生验收结果保留在本地 `jobs/` 目录（该目录不随仓库分发）：`jobs/esa-native-oracle-standard-20261103/result.json` 为七题完成记录，`jobs/esa-native-oracle-failure-a3b231e311d8/failure-regression.json` 为程序异常后达标回归。完整范围见[验证记录](<docs/esa-validation.md>)。
 
 ## 开发验证
 
@@ -413,4 +457,4 @@ ESA_INTEGRATION=1 node --test esa/test-local-integration.mjs
 (cd runtime && go test -race -cover ./... && go vet ./...)
 ```
 
-默认环境测试使用显式内存测试存储，Redis集成测试会跳过。端到端集成测试需要本地工具服务与 runtime 已启动（默认 `http://127.0.0.1:18003` 与 `http://127.0.0.1:18080`，可用 `ESA_MOCK_URL`、`ESA_RUNTIME_URL` 覆盖）；未设置 `ESA_INTEGRATION` 时该测试跳过。验证Redis事务与隔离时，设置 `ESA_TEST_REDIS_URL` 指向专用测试Redis；测试会创建、过期和删除会话，请勿指向业务数据库。[验证记录](docs/esa-validation.md)说明已执行的测试和容器验收范围。真实模型表现需使用实际模型配置独立评测。
+默认环境测试使用显式内存测试存储，Redis集成测试会跳过。端到端集成测试需要本地工具服务与 runtime 已启动（默认 `http://127.0.0.1:18003` 与 `http://127.0.0.1:18080`，可用 `ESA_MOCK_URL`、`ESA_RUNTIME_URL` 覆盖）；未设置 `ESA_INTEGRATION` 时该测试跳过。验证Redis事务与隔离时，设置 `ESA_TEST_REDIS_URL` 指向专用测试Redis；测试会创建、过期和删除会话，请勿指向业务数据库。[验证记录](<docs/esa-validation.md>)说明已执行的测试和容器验收范围。真实模型表现需使用实际模型配置独立评测。

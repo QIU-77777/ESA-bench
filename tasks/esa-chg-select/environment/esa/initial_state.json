@@ -1,0 +1,51 @@
+{
+  "case_id": "esa-chg-select",
+  "dataset_version": "esa-local-v1",
+  "seed": 0,
+  "user_messages": [
+    "找附近能用的快充站，功率至少30千瓦，选择距离最近的一个并开始导航。"
+  ],
+  "context": {
+    "location": {
+      "id": "100001",
+      "name": "家",
+      "lon": 121.445,
+      "lat": 31.21,
+      "address": "上海市徐汇区汇贤居小区"
+    },
+    "time": "2026-11-03T08:30:00+08:00"
+  },
+  "initial_state": {
+    "vehicle": {
+      "gear": "D",
+      "speed": 0
+    },
+    "addresses": {
+      "home": {
+        "id": "100001",
+        "name": "家",
+        "lon": 121.445,
+        "lat": 31.21,
+        "address": "上海市徐汇区汇贤居小区"
+      },
+      "company": {
+        "id": "200001",
+        "name": "公司",
+        "lon": 121.42,
+        "lat": 31.19,
+        "address": "上海市徐汇区科技园 A 座"
+      }
+    }
+  },
+  "tool_profile": [
+    "search_charging_station",
+    "start_navi",
+    "execute_vehicle_control"
+  ],
+  "metadata": {
+    "domain": "chg",
+    "acceptance": true,
+    "title": "选择距离最近的可用快充站",
+    "semantic_review": "代码评分仅检查明确的状态、过程、工具参数和回复硬特征；完整语义需人工审查。"
+  }
+}

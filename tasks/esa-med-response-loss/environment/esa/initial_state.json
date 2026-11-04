@@ -1,0 +1,33 @@
+{
+  "case_id": "esa-med-response-loss",
+  "dataset_version": "esa-local-v1",
+  "seed": 0,
+  "user_messages": [
+    "播放周杰伦的《晴天》原版。查询结果丢失时重新查询，拿到结果后再播放，避免重复播放。"
+  ],
+  "initial_state": {
+    "media": {
+      "playlist": [],
+      "current_track": null,
+      "playing": false
+    }
+  },
+  "tool_profile": [
+    "music_search",
+    "play_playlist"
+  ],
+  "faults": [
+    {
+      "tool": "music_search",
+      "times": 1,
+      "kind": "response_lost"
+    }
+  ],
+  "metadata": {
+    "domain": "med",
+    "acceptance": true,
+    "title": "只读查询响应丢失后安全重试",
+    "semantic_review": "代码评分仅检查明确的状态、过程、工具参数和回复硬特征；完整语义需人工审查。",
+    "fault_scope": "只读music_search响应丢失；使用新call_id重试查询。runtime禁止重复模型call_id，播放丢失后的同ID缓存恢复由基础设施测试验证。"
+  }
+}

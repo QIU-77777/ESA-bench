@@ -1,0 +1,25 @@
+{
+  "case_id": "esa-inf-knowledge",
+  "dataset_version": "esa-local-v1",
+  "seed": 0,
+  "user_messages": [
+    "查询现在剩余电量和续航，用实际查询数值告诉我。"
+  ],
+  "initial_state": {
+    "vehicle": {
+      "battery": 61,
+      "range_km": 278,
+      "volume": 40
+    }
+  },
+  "tool_profile": [
+    "get_vehicle_status",
+    "execute_vehicle_control"
+  ],
+  "metadata": {
+    "domain": "inf",
+    "acceptance": true,
+    "title": "按实际返回回答电量与续航",
+    "semantic_review": "代码评分仅检查明确的状态、过程、工具参数和回复硬特征；完整语义需人工审查。"
+  }
+}

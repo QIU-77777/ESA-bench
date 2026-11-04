@@ -1,0 +1,41 @@
+{
+  "case_id": "esa-inf-knowledge",
+  "weights": {
+    "state": 0.2,
+    "tool_use": 0.3,
+    "reply": 0.5
+  },
+  "forbidden_changes": [
+    "vehicle",
+    "navigation",
+    "addresses",
+    "memory",
+    "media",
+    "display",
+    "map",
+    "schedules",
+    "service_tasks",
+    "chat"
+  ],
+  "tool_checks": [
+    {
+      "id": "battery_and_range",
+      "required": true,
+      "tool": "get_vehicle_status",
+      "arguments_contain": [
+        "REMAINING_BATTERY",
+        "REMAINING_RANGE"
+      ]
+    }
+  ],
+  "reply_checks": [
+    {
+      "id": "battery_value",
+      "pattern": "(?<![\\d.])61\\s*%|百分之\\s*61(?![\\d.])"
+    },
+    {
+      "id": "range_value",
+      "pattern": "(?<![\\d.])278\\s*(?:公里|千米|km)"
+    }
+  ]
+}

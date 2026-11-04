@@ -1,0 +1,21 @@
+job_name: esa-oracle-acceptance
+jobs_dir: jobs
+n_attempts: 1
+orchestrator:
+  type: local
+  n_concurrent_trials: 2
+environment:
+  type: docker
+  force_build: true
+  delete: true
+agents:
+  - name: oracle
+    kwargs: {}
+tasks:
+  - path: tasks/esa-navi-execute
+  - path: tasks/esa-chg-select
+  - path: tasks/esa-veh-clarify
+  - path: tasks/esa-inf-knowledge
+  - path: tasks/esa-veh-boundary
+  - path: tasks/esa-med-retry
+  - path: tasks/esa-med-response-loss

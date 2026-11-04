@@ -1,8 +1,10 @@
 id: esa
 
 tasks:
-  - path: tasks/esa-sc-a1
-  - path: tasks/esa-sc-b1
-  - path: tasks/esa-sc-a3
-  - path: tasks/esa-sc-a4
-  - path: tasks/esa-sc-c3
+  - path: tasks/esa-navi-execute
+  - path: tasks/esa-chg-select
+  - path: tasks/esa-veh-clarify
+  - path: tasks/esa-inf-knowledge
+  - path: tasks/esa-veh-boundary
+  - path: tasks/esa-med-retry
+  - path: tasks/esa-med-response-loss

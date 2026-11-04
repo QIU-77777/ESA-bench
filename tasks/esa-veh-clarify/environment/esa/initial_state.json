@@ -1,0 +1,31 @@
+{
+  "case_id": "esa-veh-clarify",
+  "dataset_version": "esa-local-v1",
+  "seed": 0,
+  "user_messages": [
+    "帮我调整空调温度。温度还没有确定，请先问我。"
+  ],
+  "initial_state": {
+    "vehicle": {
+      "ac_on": true,
+      "ac_temperature": 24,
+      "volume": 40
+    }
+  },
+  "tool_profile": [
+    "get_vehicle_status",
+    "execute_vehicle_control"
+  ],
+  "user_script": [
+    {
+      "reply_pattern": "温度|多少度|几度|度数",
+      "user_reply": "调到22度。"
+    }
+  ],
+  "metadata": {
+    "domain": "veh",
+    "acceptance": true,
+    "title": "询问温度后控制空调",
+    "semantic_review": "代码评分仅检查明确的状态、过程、工具参数和回复硬特征；完整语义需人工审查。"
+  }
+}

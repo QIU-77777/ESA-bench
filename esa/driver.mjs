@@ -13,10 +13,32 @@ async function json(url, {method = "GET", body, timeoutMs = 30000} = {}) {
   const response = await fetch(url, {method, headers: {"Content-Type": "application/json"},
     body: body === undefined ? undefined : JSON.stringify(body), signal: AbortSignal.timeout(timeoutMs)});
   const text = await response.text();
-  if (!response.ok) throw new Error(method + " " + url + " -> " + response.status + ": " + text.slice(0, 500));
+  if (!response.ok) throw new Error(method + " " + url + " -> " + response.status);
   return text ? JSON.parse(text) : {};
 }
+function scriptFor(config) {
+  const script = config.userScript ?? config.user_script;
+  if (script === undefined || script === null) return null;
+  if (!Array.isArray(script)) throw new Error("user_script must be an array");
+  return script.map((entry) => {
+    if (!entry || typeof entry.reply_pattern !== "string" || typeof entry.user_reply !== "string") {
+      throw new Error("user_script entries require reply_pattern and user_reply strings");
+    }
+    return {...entry, pattern: new RegExp(entry.reply_pattern, "u")};
+  });
+}
+function callsFrom(output, turnIndex) {
+  const iterations = output.iterations ?? [];
+  const calls = output.toolCalls ?? iterations.flatMap(item => item.toolCalls ?? []);
+  const indexes = new Map(iterations.flatMap(item => (item.toolCalls ?? []).map(call =>
+    [call.callId ?? call.call_id, item.turnIndex ?? 0])));
+  return calls.map(call => {
+    const index = turnIndex ?? call.turnIndex ?? indexes.get(call.callId ?? call.call_id) ?? 0;
+    return {...call, turnIndex: index, turn_index: index, call_id: call.callId ?? call.call_id};
+  });
+}
 export async function run(config) {
+  const script = scriptFor(config);
   const mock = (config.mockSystemUrl ?? "http://mock-system:8003").replace(/\/$/, "");
   const internal = (config.mockSystemInternalUrl ?? mock).replace(/\/$/, "");
   const runtime = (config.agentApiUrl ?? "http://agent-api:8080").replace(/\/$/, "");
@@ -32,30 +54,93 @@ export async function run(config) {
   const evidence = mock + "/api/v1/rl/sessions/" + encodeURIComponent(sessionId);
   const initialSnapshot = await json(evidence + "/snapshot");
   const agent = config.agentPayload ?? (config.agentPayloadPath ? JSON.parse(readFileSync(config.agentPayloadPath, "utf8")) : {});
-  let output = {}; const errors = [];
+  const baseRequest = {agent, mockSystemUrl: internal, sessionId, toolProfile: config.toolProfile,
+    maxIterations: config.maxIterations ?? 12, turnTimeoutSec: config.turnTimeoutSec ?? 240};
+  let output = {}; const errors = []; const dialogue = [];
+  let userScriptComplete = script === null ? null : false;
+  let scriptFailure = null;
+  let actualMessages = config.userMessages?.length ? [...config.userMessages] : [config.instruction ?? ""];
   try {
-    output = await json(runtime + "/v1/run", {method: "POST", timeoutMs: ((config.turnTimeoutSec ?? 240) * Math.max(1, config.userMessages?.length ?? 1) + 30) * 1000,
-      body: {agent, instruction: config.instruction ?? "", user_messages: config.userMessages,
-        mockSystemUrl: internal, sessionId, toolProfile: config.toolProfile,
-        maxIterations: config.maxIterations ?? 12, turnTimeoutSec: config.turnTimeoutSec ?? 240}});
-    if (output.error) errors.push(output.error);
+    if (script === null) {
+      // Fixed user_messages keep their original single-request runtime path.
+      output = await json(runtime + "/v1/run", {method: "POST",
+        timeoutMs: ((config.turnTimeoutSec ?? 240) * Math.max(1, actualMessages.length) + 30) * 1000,
+        body: {...baseRequest, instruction: config.instruction ?? "", user_messages: config.userMessages}});
+      if (output.error) errors.push(output.error);
+      for (let i = 0; i < actualMessages.length; i++) {
+        const turn = output.turns?.[i];
+        if (i > 0 && !turn && !output.iterations?.some(item => item.turnIndex === i)) break;
+        dialogue.push({role: "user", content: actualMessages[i], turn_index: i});
+        const reply = turn?.reply ?? (i === 0 && actualMessages.length === 1 ? output.reply : undefined);
+        if (typeof reply === "string") dialogue.push({role: "assistant", content: reply, turn_index: i});
+      }
+      actualMessages = dialogue.filter(item => item.role === "user").map(item => item.content);
+      output.toolCalls = callsFrom(output);
+    } else {
+      if (actualMessages.length !== 1) throw new Error("user_script requires exactly one initial user message");
+      let transcript = [];
+      let message = actualMessages[0];
+      const iterations = [], toolCalls = [], turns = [];
+      actualMessages = [];
+      output = {status: "completed", iterations, toolCalls, turns, reply: ""};
+      for (let turnIndex = 0; turnIndex <= script.length; turnIndex++) {
+        actualMessages.push(message);
+        dialogue.push({role: "user", content: message, turn_index: turnIndex});
+        const turnOutput = await json(runtime + "/v1/run", {method: "POST",
+          timeoutMs: ((config.turnTimeoutSec ?? 240) + 30) * 1000,
+          body: {...baseRequest, user_messages: [message], transcript}});
+        const turnIterations = (turnOutput.iterations ?? []).map(item => ({...item, turnIndex,
+          toolCalls: (item.toolCalls ?? []).map(call => ({...call, turnIndex, turn_index: turnIndex, call_id: call.callId ?? call.call_id}))}));
+        iterations.push(...turnIterations);
+        toolCalls.push(...callsFrom(turnOutput, turnIndex));
+        turns.push({...turnOutput.turns?.[0], instruction: message, reply: turnOutput.reply ?? "", turnIndex,
+          status: turnOutput.status ?? "completed", iterations: turnIterations});
+        output.reply = turnOutput.reply ?? "";
+        output.runtimeVersion = turnOutput.runtimeVersion;
+        dialogue.push({role: "assistant", content: output.reply, turn_index: turnIndex});
+        if (turnOutput.error || turnOutput.status !== "completed") {
+          errors.push(turnOutput.error || "runtime turn did not complete");
+          output.status = "failed";
+          break;
+        }
+        if (turnIndex === script.length) {
+          userScriptComplete = true;
+          break;
+        }
+        const branch = script[turnIndex];
+        if (!branch.pattern.test(output.reply)) {
+          scriptFailure = "user_script reply_pattern did not match at turn " + turnIndex;
+          break;
+        }
+        if (!Array.isArray(turnOutput.transcript)) {
+          errors.push("runtime did not return transcript for scripted continuation");
+          output.status = "failed";
+          break;
+        }
+        transcript = turnOutput.transcript;
+        message = branch.user_reply;
+      }
+    }
   } catch (error) { errors.push(String(error)); }
-  // 状态证据读取失败必须使试验失败，避免将不完整证据用作正常评分。
   const finalSnapshot = await json(evidence + "/snapshot");
   const eventData = await json(evidence + "/events");
   const iterations = output.iterations ?? [];
-  const toolCalls = output.toolCalls ?? iterations.flatMap(item => item.toolCalls ?? []);
+  const toolCalls = output.toolCalls ?? [];
+  const callTurns = new Map(toolCalls.map(call => [call.call_id, call.turn_index]));
+  const toolEvents = (eventData.events ?? []).map(event => ({...event,
+    ...(callTurns.has(event.call_id) ? {turn_index: callTurns.get(event.call_id)} : {})}));
   const result = {caseId: config.caseId ?? null, sessionId, startedAt, finishedAt: new Date().toISOString(),
-    instruction: config.instruction ?? "", userMessages: config.userMessages,
+    instruction: config.instruction ?? "", userMessages: actualMessages, dialogue,
+    user_script_complete: userScriptComplete, script_failure: scriptFailure,
     reply: output.reply ?? "", turns: output.turns ?? [], turnStatus: errors.length ? "failed" : (output.status ?? "completed"),
-    iterations, toolCalls, toolEvents: eventData.events ?? [], initialSnapshot, finalSnapshot,
-    eventMetadata: {truncated: eventData.truncated ?? false}, eventEvidence: eventData, errors,
+    iterations, toolCalls, toolEvents, initialSnapshot, finalSnapshot,
+    eventMetadata: {truncated: eventData.truncated ?? false}, eventEvidence: {...eventData, events: toolEvents}, errors,
     manifest: {runtime: output.runtimeVersion, environment: finalSnapshot.manifest ?? created.manifest}};
   const outputPath = config.outputPath ?? "/logs/agent/driver-result.json";
   mkdirSync(dirname(outputPath), {recursive: true});
   writeFileSync(outputPath, JSON.stringify(result, null, 2));
   for (const [name, payload] of [["snapshot-initial.json", initialSnapshot], ["snapshot-final.json", finalSnapshot],
-    ["state-events.json", eventData], ["environment-manifest.json", result.manifest]]) {
+    ["state-events.json", result.eventEvidence], ["environment-manifest.json", result.manifest], ["dialogue.json", dialogue]]) {
     writeFileSync(resolve(dirname(outputPath), name), JSON.stringify(payload, null, 2));
   }
   log("driver_done", {outputPath, sessionId, iterations: iterations.length, status: result.turnStatus});

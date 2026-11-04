@@ -62,7 +62,7 @@
 
 `docker-compose.dev.yaml` 位于仓库根目录，项目名 `esa-dev`：
 
-- `mock-system`：镜像 `${MOCK_SYSTEM_IMAGE:-esa-local-environment:1.0.0}`，端口绑定 `127.0.0.1:8003`，依赖 Redis 健康。
+- `mock-system`：镜像 `${MOCK_SYSTEM_IMAGE:-esa-local-environment:2.0.0}`，端口绑定 `127.0.0.1:8003`，依赖 Redis 健康。
 - `agent-api`：镜像 `${AGENT_API_IMAGE:-esa-react-runtime:1.0.0}`，端口绑定 `127.0.0.1:18080`（容器内 8080），依赖环境服务健康。环境变量 `RESPONSES_API_BASE_URL` 与 `RESPONSES_API_KEY` 由宿主环境传入。
 - `redis`：镜像 `redis:7-alpine`，不发布端口。
 
