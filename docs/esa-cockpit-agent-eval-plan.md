@@ -343,11 +343,17 @@ retries = 12
 3. `console/app/services/chat_service.py` 增加座舱服务组合分支：`STACK_FILE` 切换到 `docker-compose.cockpit.yaml`，就绪检查改查 recorder 与 agent 的健康地址，逐轮驱动逻辑与 CLI 同一实现。
 4. `console/app/services/capability_registry.py` 的环境列表增加 `esa-cockpit`，卡片内容读取 recorder 与 MCP server 的运行期信息；harness 列表经 `configs/harnesses/esa-cockpit.yaml` 自动出现，参数说明写入 `param_docs`。
 
-### 4.11 构建脚本
+### 4.11 脚本与构建
 
 `scripts/build-esa-local.sh` 增加三个镜像构建：recorder、默认座舱 agent、默认 MCP。recorder 由本仓库 `cockpit/Dockerfile` 构建；默认 agent 镜像 `esa-cockpit-agent:1.0.0` 由 `cockpit/Dockerfile.agent` 构建，内容为 `cockpit/fake_agent.py`；默认 MCP 镜像 `esa-cockpit-mcp:1.0.0` 由 `cockpit/Dockerfile.mcp` 构建，内容为 `cockpit/fake_mcp.py`。用户资产就绪后，以 `COCKPIT_AGENT_IMAGE` 与 `COCKPIT_MCP_IMAGE` 指向用户构建的镜像即可覆盖，不需要改任务配置。`scripts/diagnose.sh` 的期望服务列表需要扩展：esa 任务为 main、agent-api、mock-system、redis；座舱任务为 main、mock-system、cockpit-agent、cockpit-mcp、redis。`scripts/cleanup.sh` 按 `hb__` 前缀清理容器与任务镜像，与 harness 无关，无需改动。
 
-`scripts/validate_task.py` 的任务选择增加 `--bench <slug>` 参数，读取 `configs/bench/<slug>.yaml` 的 tasks 列表。这一步是必须的：现在的 `--all` 对 `tasks/` 全量 glob（`validate_task.py:54`），座舱任务落到 `tasks/` 下就会被选中，而 `--local-http` 起的是写死 ESA 十域环境的服务（`validate_task.py:17-31`），既没有 recorder 转发，也没有用户 MCP server 的工具集合与状态结构，座舱任务在会话创建阶段就会因 tool_profile 不在启用集合里被判错，报错指向参考解而非环境。`--all` 因此收敛为读取 esa bench 配置（七题全集，语义不变），座舱任务用 `--bench esa-cockpit` 选择。
+`scripts/validate_task.py` 与 `scripts/test-reference-docker.py` 共用同一套任务选择逻辑，两个脚本都要改：
+
+1. 增加 `--bench <slug>` 参数，读取 `configs/bench/<slug>.yaml` 的 tasks 列表。这一步是必须的：两个脚本现在都对 `tasks/` 全量 glob（`validate_task.py:54`、`test-reference-docker.py:48`），座舱任务落到 `tasks/` 下就会被选中，然后对着 ESA 环境服务验证——`--local-http` 起的是写死 ESA 十域环境的服务（`validate_task.py:17-31`），Docker 版起的是 `esa-local-environment` 容器（`test-reference-docker.py:33-38`），座舱任务在会话创建阶段就会因 tool_profile 不在启用集合里被判错，报错指向参考解而非环境。
+2. `--all` 保留全量发现的兜底语义，加两道检查：发现的任务必须登记在至少一个 bench 配置里，否则失败并列出未登记任务；发现的任务必须同属一个 bench，否则失败并提示改用 `--bench` 逐集合执行。仓库只有 esa 一个集合时，`--all` 行为与现在一致；存在座舱集合后，`--all` 快速失败并给出改用 `--bench` 的提示，不再静默跳过，也不会在中途报出指向参考解的错。
+3. `test-reference-docker.py` 增加 `--mock-url` 模式：不起 Docker 网络、Redis 与 ESA 环境容器，直接对给定地址验证，并跳过 ESA 环境服务的 Redis 契约测试（座舱的 Redis 契约由 `cockpit/recorder_test.py` 在阶段一覆盖）。ESA 侧沿用隔离 Docker 资源与 Redis 测试，行为不变。
+
+`scripts/test-oracle-failure.py` 增加 `--task` 与 `--goal-path` 参数，默认值为 `tasks/esa-navi-execute` 与 `navigation.active`，行为与现在一致。现在它写死复制 ESA 导航任务（`test-oracle-failure.py:22`），达标断言也写死导航状态（`test-oracle-failure.py:45`），座舱 bench 的「达标后异常仍被拒绝」没有被覆盖；座舱侧传座舱任务与对应目标路径即可。
 
 ## 5. 示例任务
 
@@ -376,21 +382,27 @@ ESA_TEST_REDIS_URL=redis://127.0.0.1:6379/0 .venv/bin/python -m unittest cockpit
 
 ```bash
 bash scripts/build-esa-local.sh                       # 构建 recorder、默认 agent 与默认 MCP 镜像
+.venv/bin/python scripts/sync-task-scorers.py          # 先同步共享副本，再验证
+.venv/bin/python scripts/sync-task-scorers.py --check
 # 座舱链路服务：recorder 指向假 MCP server，单进程内存存储，无需 Redis
 .venv/bin/python -m cockpit.fake_mcp --port 18091 &
 .venv/bin/python -m cockpit.recorder --port 18093 --mcp-url http://127.0.0.1:18091 --store memory-test &
 .venv/bin/python -m cockpit.fake_agent --port 18090 &  # 先跑通假 agent 本身
-# ESA 七题走本地临时 HTTP 服务，座舱任务走 recorder 加假 MCP server
+# ESA 七题：本地临时 HTTP 服务加隔离 Docker 资源
 .venv/bin/python scripts/validate_task.py --bench esa --local-http --json
+.venv/bin/python scripts/test-reference-docker.py --bench esa
+# 座舱任务：recorder 加假 MCP server
 .venv/bin/python scripts/validate_task.py --bench esa-cockpit --mock-url http://127.0.0.1:18093 --json
-.venv/bin/python scripts/sync-task-scorers.py
-.venv/bin/python scripts/sync-task-scorers.py --check
-.venv/bin/python scripts/test-reference-docker.py
+.venv/bin/python scripts/test-reference-docker.py --bench esa-cockpit --mock-url http://127.0.0.1:18093
+# 座舱原生 Oracle 验收，以及异常后达标回归（两个 bench 各一遍）
 PYTHONPATH="$PWD" .venv/bin/harbor run -c configs/jobs/esa-cockpit-oracle-acceptance.yaml --job-name UNIQUE -y
 .venv/bin/python scripts/test-oracle-failure.py
+.venv/bin/python scripts/test-oracle-failure.py --task tasks/esa-cockpit-navi --goal-path navigation.active
 ```
 
-检查项：假 agent 与假 MCP server 各自先跑通；ESA 七题预检保持通过；座舱任务的参考、替代解、错误答案在 recorder 加假 MCP server 上全部符合现有判定；Oracle 实际 Docker 验收通过；异常后达标被拒绝。座舱任务不进入 ESA 侧的 `--bench esa` 选择范围，ESA 环境服务也不接待座舱任务。
+顺序不能反：`validate_task` 的 `load_task` 逐字节比对 `tests/score.py`、`tests/state_score.py`、`solution/reference_runtime.py`、`solution/runner.py` 与 `esa/` 下的 canonical 副本（`esa/reference.py:127`），不一致直接报 stale，所以同步必须排在验证之前。
+
+检查项：假 agent 与假 MCP server 各自先跑通；ESA 七题预检与 Docker 参考验证保持通过；座舱任务的参考、替代解、错误答案在 recorder 加假 MCP server 上全部符合现有判定；座舱 Oracle 实际 Docker 验收通过；两个 bench 各自验证「达标后异常仍被拒绝」。座舱任务不进入 ESA 侧的选择范围，ESA 环境服务也不接待座舱任务。ESA 七题的原生 Oracle 验收命令不变，见 README 快速开始第 4 步。
 
 阶段三，座舱 agent 接入（用户镜像就绪后）：
 
@@ -440,3 +452,5 @@ scripts/run.sh --bench esa-cockpit --harness esa-cockpit --model <provider/model
 2026-11-04 第三版：按 PR 评审意见修订。阻塞一：`scripts/run.sh` 第 135 行快通道条件改为同时接受 `esa-cockpit`，否则落到第 296 行编码 agent 白名单直接 fail；`COCKPIT_AGENT_MODEL_ID` 的导出放进该分支 `harbor run` 之前。阻塞二：compose 的模型地址与密钥改读 provider 前缀变量 `${STEPFUN_OPENAI_BASE_URL}` 与 `${STEPFUN_API_KEY}`，与现有七个任务一致，自造无生产者的变量名恒为空串。口径三：CockpitAgent 只覆写 `_write_driver_config`（`esa_agent.py:337`）删键与加协议，模型比对下放驱动，在第一轮对话前 GET `/v1/health`，不一致记错误并结束，未经任何模型调用即判评分无效，`ESAAgent.run` 不重写。口径四：manifest 的 tools 按 name 排序、序列化用 `sort_keys=True`，`source_sha256` 用同一份规范化序列化，避免 tools 顺序不稳定误报环境身份不一致。口径五：`seed_sha256 := data_sha256`、`dataset_version := data_version` 写死，data_sha256 必须是裸 64 位小写十六进制。
 
 2026-11-04 第四版：按 PR 第二轮评审修订。问题一：`validate_task.py --all` 对 `tasks/` 全量 glob，座舱任务会被扫进 ESA 环境服务并必挂；任务选择增加 `--bench <slug>` 参数读取任务集合配置，`--all` 收敛为 esa bench，阶段二拆成 ESA 与座舱两条命令；阶段二命令清单补上 recorder 与假 MCP server 的启动步骤，并新增 `cockpit/fake_mcp.py` 作为默认 MCP 镜像（按 4.4 六项能力实现，供无用户 server 时的验收）。问题二：4.6 第 3 步的 iteration 改为显式字段映射，补齐 `turnIndex`、`receivedAt`、`usage` 与每条调用的 `turn_index`；turn_index 缺失会使带轮次规则与 before_turn 的评分直接判无效，usage 不搬则 token 指标恒空，receivedAt 缺失则轨迹无时间轴。
+
+2026-11-04 第五版：按 PR 第三轮评审修订。`test-reference-docker.py` 与 `validate_task.py` 共用同一套任务选择：`--bench <slug>` 按集合配置选任务，`--all` 保留全量发现并加登记检查与单集合检查两道守卫（未登记任务列出，跨集合时提示改用 `--bench`）；`test-reference-docker.py` 增加 `--mock-url` 模式，座舱侧直接对 recorder 验证并跳过 ESA 的 Redis 契约测试。`test-oracle-failure.py` 增加 `--task` 与 `--goal-path` 参数，座舱侧传座舱任务与目标路径，失败回归从此覆盖两个 bench。阶段二命令顺序改正：同步共享副本排在验证之前（`load_task` 逐字节比对 canonical 副本，顺序反了必然先失败）。
