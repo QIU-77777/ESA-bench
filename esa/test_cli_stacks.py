@@ -123,7 +123,7 @@ class StackChatTests(unittest.TestCase):
     def test_docker_stack_chat(self):
         if shutil.which("docker") is None:
             self.skipTest("缺少 docker 可执行文件")
-        for image in ("esa-react-runtime:1.0.0", "esa-local-environment:1.0.0"):
+        for image in ("esa-react-runtime:1.0.0", "esa-local-environment:2.0.0"):
             inspect = subprocess.run(["docker", "image", "inspect", image], capture_output=True)
             if inspect.returncode != 0:
                 self.skipTest("缺少镜像 " + image)

@@ -4,7 +4,7 @@ name: esa-dev
 
 services:
   mock-system:
-    image: ${MOCK_SYSTEM_IMAGE:-esa-local-environment:1.0.0}
+    image: ${MOCK_SYSTEM_IMAGE:-esa-local-environment:2.0.0}
     environment:
       REDIS_URL: redis://redis:6379/0
     ports:

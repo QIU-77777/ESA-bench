@@ -11,8 +11,14 @@
 
 from __future__ import annotations
 
+import asyncio
+import base64
 import json
+import os
+import re
+import shlex
 from pathlib import Path
+from urllib.parse import urlsplit
 from typing import Any, override
 
 from harbor.agents.base import BaseAgent
@@ -45,6 +51,83 @@ USAGE_TO_METRICS = {
     "output_tokens": "completion_tokens",
     "cached_tokens": "cached_tokens",
 }
+
+
+def driver_program_failure(driver_output: dict[str, Any]) -> str | None:
+    """把驱动层的执行失败映射成评分失效标记，字段名与 Oracle 证据一致。
+
+    只覆盖真正的执行异常：runtime 返回错误或轮次未完成。``user_script``
+    正则不匹配属于模型回答不符合预期，由 ``user_script_complete`` 走模型
+    失败路径，不能算执行无效，因此不在此处标记。
+    """
+    errors = driver_output.get("errors") or []
+    if errors:
+        return f"driver execution failed ({len(errors)} error(s))"
+    status = driver_output.get("turnStatus")
+    if status != "completed":
+        return f"driver turn did not complete: {status}"
+    return None
+
+
+# This bridge executes only HTTP requests. Reference code and grading files stay
+# in the host process; neither is interpolated into this script.
+HTTP_BRIDGE = """import base64,json,sys,urllib.request,urllib.error
+packet=json.loads(base64.b64decode(sys.argv[1]))
+data=None if packet['body'] is None else json.dumps(packet['body'],ensure_ascii=False,allow_nan=False).encode()
+request=urllib.request.Request(packet['url'],data=data,method=packet['method'],headers={'Content-Type':'application/json'})
+try:
+    with urllib.request.urlopen(request,timeout=30) as response:
+        raw=response.read().decode('utf-8')
+        if raw:
+            json.loads(raw)
+            print(raw)
+        else:
+            print('{}')
+except urllib.error.HTTPError as error:
+    print('HTTP bridge failed: status='+str(error.code),file=sys.stderr)
+    sys.exit(1)
+except Exception:
+    print('HTTP bridge failed',file=sys.stderr)
+    sys.exit(1)
+"""
+
+
+class PreflightError(RuntimeError):
+    """A local, non-secret task contract error."""
+
+
+class EnvironmentTransport:
+    """Synchronous transport used from the reference worker thread."""
+
+    def __init__(self, environment: BaseEnvironment, loop, base_url: str):
+        parsed = urlsplit(base_url)
+        if parsed.scheme not in {"http", "https"} or not parsed.hostname or parsed.username or parsed.password:
+            raise ValueError("参考验证需要无凭据的 HTTP 服务地址")
+        self.environment = environment
+        self.loop = loop
+        self.base_url = base_url.rstrip("/")
+
+    def request(self, method: str, path: str, body=None):
+        if method not in {"GET", "POST", "DELETE"} or not path.startswith("/") or path.startswith("//"):
+            raise ValueError("参考 HTTP 请求的 method/path 不合法")
+        packet = {"method": method, "url": self.base_url + path, "body": body}
+        encoded = base64.b64encode(json.dumps(packet, ensure_ascii=False, allow_nan=False).encode()).decode()
+        command = "python3 -c " + shlex.quote(HTTP_BRIDGE) + " " + shlex.quote(encoded)
+        future = asyncio.run_coroutine_threadsafe(
+            self.environment.exec(command=command, timeout_sec=45), self.loop
+        )
+        try:
+            result = future.result(timeout=60)
+        except Exception:
+            future.cancel()
+            raise RuntimeError("参考 HTTP 桥接执行失败") from None
+        if result.return_code != 0:
+            # Never embed raw stderr, response bodies or command parameters in errors.
+            raise RuntimeError("参考 HTTP 桥接请求失败")
+        try:
+            return json.loads(result.stdout or "")
+        except (TypeError, json.JSONDecodeError):
+            raise RuntimeError("参考 HTTP 桥接返回了非法 JSON") from None
 
 
 class ESAAgent(BaseAgent):
@@ -88,10 +171,12 @@ class ESAAgent(BaseAgent):
         context: AgentContext,
     ) -> None:
         task_state = await self._load_task_state(environment)
+        effective_instruction = (instruction or "").strip() or (task_state.get("instruction") or "")
+        await self._reference_preflight(environment, task_state, effective_instruction)
         config = {
             "caseId": task_state.get("case_id") or self._case_id(),
-            "instruction": (instruction or "").strip() or (task_state.get("instruction") or ""),
-            "initialContext": task_state.get("context") or {},
+            "instruction": effective_instruction,
+            "initialContext": task_state.get("initial_context", task_state.get("context", {})) or {},
             "initialState": task_state.get("initial_state") or {},
             "dataOverlays": task_state.get("data_overlays") or {},
             "toolProfile": task_state.get("tool_profile"),
@@ -99,6 +184,7 @@ class ESAAgent(BaseAgent):
             "seed": task_state.get("seed", 0),
             "datasetVersion": task_state.get("dataset_version"),
             "userMessages": task_state.get("user_messages"),
+            "userScript": task_state.get("user_script"),
             "mockSystemUrl": self._env_or("ESA_MOCK_URL", DEFAULT_MOCK_SYSTEM_URL),
             "mockSystemInternalUrl": self._env_or(
                 "ESA_MOCK_INTERNAL_URL", self._env_or("ESA_MOCK_URL", DEFAULT_MOCK_SYSTEM_URL)
@@ -114,7 +200,9 @@ class ESAAgent(BaseAgent):
         await self._exec(environment, f"mkdir -p {WORK_DIR}")
         await environment.upload_file(self._write_driver_config(config), CONFIG_PATH)
 
-        timeout = int(config["turnTimeoutSec"]) * max(1, len(config.get("userMessages") or [])) + 120
+        turn_count = (len(config["userScript"]) + 1 if config["userScript"] is not None
+                      else max(1, len(config.get("userMessages") or [])))
+        timeout = int(config["turnTimeoutSec"]) * turn_count + 120
         result = await environment.exec(
             command=f"node {DRIVER_PATH} --config {CONFIG_PATH}",
             timeout_sec=timeout,
@@ -126,6 +214,81 @@ class ESAAgent(BaseAgent):
         self._populate_context(context, driver_output)
         if driver_output.get("errors") or driver_output.get("turnStatus") != "completed":
             raise RuntimeError(f"ESA 执行失败：{driver_output.get("errors") or driver_output.get("turnStatus")}")
+
+    async def _reference_preflight(self, environment, task_state, instruction):
+        """Validate trusted host material before a model session is created."""
+        output_dir = self._logs_dir().parent / "reference"
+        output_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            from esa.reference import validate_task
+
+            environment_dir = getattr(environment, "environment_dir", None)
+            if environment_dir is None:
+                raise PreflightError("环境缺少宿主 environment_dir，无法认证任务")
+            task_path = Path(environment_dir).resolve().parent
+            required = ("solution/solve.sh", "solution/reference.py", "solution/reference_runtime.py", "solution/runner.py", "tests/negative_tests.py", "tests/rubric.json",
+                        "environment/esa/initial_state.json")
+            if any(not (task_path / name).is_file() for name in required):
+                raise PreflightError("正式 ESA 任务缺少可信参考程序、错误答案测试或评分标准")
+            host_initial = json.loads((task_path / required[-1]).read_text("utf8"))
+            if host_initial != task_state:
+                raise PreflightError("宿主任务初态与当前容器加载的初态不一致")
+            if not task_state.get("user_messages") and instruction != (task_state.get("instruction") or ""):
+                raise PreflightError("模型指令与参考任务指令不一致")
+            transport = EnvironmentTransport(environment, asyncio.get_running_loop(),
+                self._env_or("ESA_MOCK_URL", DEFAULT_MOCK_SYSTEM_URL))
+            report = await asyncio.to_thread(validate_task, task_path, transport, output_dir=output_dir)
+            if not isinstance(report, dict):
+                raise RuntimeError("参考验证没有返回结构化报告")
+            if report.get("task_input_sha256"):
+                from esa.reference import digest
+                if report["task_input_sha256"] != digest(task_state):
+                    raise PreflightError("参考验证使用的任务输入与模型初态不一致")
+        except Exception as error:
+            # Exception text may include tool data or credentials. Preserve a
+            # supplied structured report; unexpected errors get a generic label.
+            report = getattr(error, "report", None)
+            if not isinstance(report, dict):
+                report = {"status": "failed", "passed": False,
+                          "failure": str(error) if isinstance(error, PreflightError) else "参考验证失败",
+                          "error_type": type(error).__name__}
+            report = self._redact_reference_report(report)
+            self._save_reference_report(output_dir, report)
+            raise RuntimeError("ESA 参考验证失败，模型未执行") from None
+        report = self._redact_reference_report(report)
+        self._save_reference_report(output_dir, report)
+        if report.get("status") != "pass" or report.get("passed") is not True:
+            raise RuntimeError("ESA 参考验证未通过，模型未执行")
+
+    def _save_reference_report(self, output_dir, report):
+        golden = output_dir / "golden-run.json"
+        if golden.is_file():
+            try:
+                contents = self._redact_reference_report(json.loads(golden.read_text("utf8")))
+            except (OSError, ValueError):
+                contents = {"status": "failed", "passed": False, "failure": "参考证据无法解析"}
+            golden.write_text(json.dumps(contents, ensure_ascii=False, indent=2), "utf8")
+        (output_dir / "report.json").write_text(json.dumps(self._redact_reference_report(report), ensure_ascii=False, indent=2), "utf8")
+
+    def _redact_reference_report(self, value):
+        def sensitive(key):
+            name = str(key).lower()
+            return name in {"api_key", "secret", "password", "authorization", "access_token"} or name.endswith(("_api_key", "_secret", "_token", "_password"))
+
+        secrets = [item for key, item in {**os.environ, **getattr(self, "_extra_env", {})}.items()
+                   if sensitive(key) and isinstance(item, str) and len(item) >= 4]
+
+        def redact(item):
+            if isinstance(item, dict):
+                return {key: "<redacted>" if sensitive(key) else redact(child) for key, child in item.items()}
+            if isinstance(item, list):
+                return [redact(child) for child in item]
+            if isinstance(item, str):
+                for secret in secrets:
+                    item = item.replace(secret, "<redacted>")
+                return re.sub(r"\b(?:sk|pk)-[A-Za-z0-9_-]{6,}", "<redacted>", item)
+            return item
+        return redact(value)
 
     # ---- 文件与配置 ----
 
@@ -224,6 +387,10 @@ class ESAAgent(BaseAgent):
                     "calls": driver_output.get("toolCalls", []),
                     "events": driver_output.get("toolEvents", []),
                     "truncated": (driver_output.get("eventMetadata") or {}).get("truncated", False),
+                    "dialogue": driver_output.get("dialogue", []),
+                    "user_script_complete": driver_output.get("user_script_complete"),
+                    "turn_status": driver_output.get("turnStatus"),
+                    "program_failure": driver_program_failure(driver_output),
                 },
                 ensure_ascii=False,
                 indent=2,
@@ -231,6 +398,7 @@ class ESAAgent(BaseAgent):
             "utf8",
         )
         (logs / "reply.txt").write_text(driver_output.get("reply") or "", "utf8")
+        (logs / "dialogue.json").write_text(json.dumps(driver_output.get("dialogue", []), ensure_ascii=False, indent=2), "utf8")
         for name, key in [("snapshot-initial.json", "initialSnapshot"), ("snapshot-final.json", "finalSnapshot"),
                           ("state-events.json", "eventEvidence"), ("environment-manifest.json", "manifest")]:
             (logs / name).write_text(json.dumps(driver_output.get(key), ensure_ascii=False, indent=2), "utf8")
@@ -246,7 +414,9 @@ class ESAAgent(BaseAgent):
         用户指令是第一个 step。
         """
         iterations = driver_output.get("iterations") or []
-        messages = driver_output.get("userMessages") or [driver_output.get("instruction") or ""]
+        user_dialogue = [item for item in driver_output.get("dialogue", []) if item.get("role") == "user"]
+        messages = ([item["content"] for item in user_dialogue] if user_dialogue else
+                    driver_output.get("userMessages") or [driver_output.get("instruction") or ""])
         steps: list[dict[str, Any]] = [
             {
                 "step_id": 1,
@@ -256,6 +426,7 @@ class ESAAgent(BaseAgent):
                 "extra": {
                     "case_id": driver_output.get("caseId"),
                     "session_id": driver_output.get("sessionId"),
+                    "turn_index": 0,
                 },
             }
         ]
@@ -266,7 +437,8 @@ class ESAAgent(BaseAgent):
             while current_turn < turn_index:
                 current_turn += 1
                 steps.append({"step_id": len(steps) + 1, "timestamp": iteration.get("receivedAt"),
-                              "source": "user", "message": messages[current_turn] if current_turn < len(messages) else ""})
+                              "source": "user", "message": messages[current_turn] if current_turn < len(messages) else "",
+                              "extra": {"turn_index": current_turn}})
             steps.append(self._iteration_step(len(steps) + 1, iteration))
 
         trajectory: dict[str, Any] = {
