@@ -2,8 +2,10 @@
 """Validate references and Redis contracts in isolated Docker resources.
 
 ``--mock-url`` validates against an already running service (the cockpit
-recorder) without creating Docker resources, and skips the ESA environment
-Redis contract tests, which the recorder covers in cockpit/recorder_test.py.
+recorder). In that mode the ESA environment Redis contract test is replaced by
+the recorder integration tests against an isolated Docker Redis, so the
+cockpit RedisStore keeps acceptance coverage; the compose orchestration itself
+is covered by the native Oracle acceptance job.
 """
 from pathlib import Path
 import argparse
@@ -17,7 +19,7 @@ import urllib.request
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from esa.bench_selection import select_tasks
+from esa.bench_selection import select_tasks, uses_cockpit_recorder
 from esa.reference import HttpTransport, validate_task
 
 
@@ -34,13 +36,32 @@ def run_references(paths, transport, output):
     return reports, summary
 
 
+def run_recorder_redis_tests(output):
+    """座舱 RedisStore 契约：独立 Redis 容器加 recorder 集成测试。"""
+    prefix = "esa-cockpit-recorder-" + uuid.uuid4().hex[:12]
+    redis = prefix + "-redis"
+    try:
+        docker("run", "-d", "--name", redis, "-p", "127.0.0.1::6379", "redis:7-alpine")
+        port = int(docker("port", redis, "6379/tcp").rsplit(":", 1)[1])
+        env = {**os.environ, "ESA_TEST_REDIS_URL": f"redis://127.0.0.1:{port}/0"}
+        with (output / "recorder-redis-tests.log").open("w") as log:
+            result = subprocess.run([sys.executable, "-B", "-m", "unittest", "cockpit.recorder_test"],
+                                    cwd=ROOT, env=env, stdout=log, stderr=subprocess.STDOUT)
+        return result.returncode
+    finally:
+        try:
+            docker("rm", "-f", redis)
+        except subprocess.CalledProcessError:
+            print(f"failed to clean isolated Docker resource {redis}", file=sys.stderr)
+
+
 def main():
     parser = argparse.ArgumentParser(description="执行参考程序、合法替代解和错误答案测试")
     tasks = parser.add_mutually_exclusive_group()
     tasks.add_argument("--bench", help="按 configs/bench/<slug>.yaml 选择任务集合")
     tasks.add_argument("--all", action="store_true", help="全量发现任务，带登记与单集合两道守卫")
     tasks.add_argument("--task", type=Path)
-    parser.add_argument("--mock-url", help="直接对给定地址验证；跳过 Docker 资源与 ESA Redis 契约测试")
+    parser.add_argument("--mock-url", help="直接对给定地址验证；跳过 ESA 环境容器，改跑 recorder Redis 契约测试")
     parser.add_argument("--job-name", default=None, help="结果目录名，默认按前缀加随机串生成")
     args = parser.parse_args()
     try:
@@ -54,6 +75,9 @@ def main():
         parser.error(str(error))
     if not paths:
         parser.error("没有可验证的参考任务")
+    if uses_cockpit_recorder(paths) and not args.mock_url:
+        parser.error("座舱任务的环境服务是记录代理，ESA 环境容器不接待座舱会话；"
+                     "请先启动 recorder 并用 --mock-url 指向它")
 
     if args.mock_url:
         name = args.job_name or ("esa-reference-mock-" + uuid.uuid4().hex[:12])
@@ -61,6 +85,9 @@ def main():
         output.mkdir(parents=True)
         _, summary = run_references(paths, HttpTransport(args.mock_url), output)
         summary["mock_url"] = args.mock_url
+        recorder_exit = run_recorder_redis_tests(output)
+        summary["passed"] = summary["passed"] and recorder_exit == 0
+        summary["recorder_redis_tests_exit"] = recorder_exit
         (output / "summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2) + "\n")
         print(json.dumps(summary, ensure_ascii=False, indent=2))
         return 0 if summary["passed"] else 1

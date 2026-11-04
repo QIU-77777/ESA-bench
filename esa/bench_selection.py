@@ -55,6 +55,19 @@ def discover_tasks() -> list[pathlib.Path]:
     return sorted(path.parents[1] for path in (ROOT / "tasks").glob("*/solution/reference.py"))
 
 
+def uses_cockpit_recorder(paths: list[pathlib.Path]) -> bool:
+    """任务是否跑在座舱记录代理上：compose 里有 cockpit-mcp 服务。
+
+    座舱任务的环境服务是 recorder，ESA 环境服务不接待座舱会话，验证脚本必须
+    对这类任务走 ``--mock-url``，否则会在会话创建阶段报出指向参考解的错。
+    """
+    for task in paths:
+        compose = task / "environment" / "docker-compose.yaml"
+        if compose.is_file() and "cockpit-mcp" in compose.read_text("utf-8"):
+            return True
+    return False
+
+
 def select_tasks(bench: str | None = None, use_all: bool = False) -> list[pathlib.Path]:
     """按集合选任务，或全量发现并执行登记与单集合两道守卫。"""
     if bench:

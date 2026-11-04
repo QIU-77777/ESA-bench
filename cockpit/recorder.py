@@ -278,6 +278,10 @@ class CockpitRecorder:
             self.server.tools, sort_keys=True, ensure_ascii=False, allow_nan=False).encode()).hexdigest()
         self.call_counts = {}
         self.counts_lock = threading.Lock()
+        # Redis 的 WATCH/MULTI 在冲突后重跑整个 fn，而座舱的 fn 里含远程调用，
+        # 重放会在用户座舱上重复执行工具。按会话串行化，避免重放。
+        self.session_locks = {}
+        self.session_locks_guard = threading.Lock()
 
     # ── 会话 ──
 
@@ -328,6 +332,7 @@ class CockpitRecorder:
         self.server.read_state(sid)  # 注入立即生效，否则会话创建失败，不留孤儿会话
         record = {"session_id": sid, "context": context, "initial_state": copy.deepcopy(initial_state),
                   "dataset_version": version, "seed": seed, "tool_profile": list(profile),
+                  "data_overlays": copy.deepcopy(request.get("data_overlays", {}) or {}),
                   "state_version": 0, "faults": copy.deepcopy(faults), "fault_counts": {},
                   "events": [], "event_sequence": 0, "events_truncated": False, "idempotency": {}}
         self.store.create(sid, record)
@@ -394,6 +399,7 @@ class CockpitRecorder:
         self.server.delete_session(sid)
         self.server.inject_initial_state(sid, {
             "type": "car", "context": record["context"], "initial_state": record["initial_state"],
+            "data_overlays": copy.deepcopy(record.get("data_overlays") or {}),
             "tool_profile": list(record["tool_profile"]), "seed": record["seed"],
             "dataset_version": record["dataset_version"],
         })
@@ -414,7 +420,8 @@ class CockpitRecorder:
             current["fault_counts"] = {}
             self.trim(current)
             return result
-        return self.store.transact(sid, transaction)
+        with self.session_lock(sid):
+            return self.store.transact(sid, transaction)
 
     def delete(self, sid):
         self.server.delete_session(sid)
@@ -426,6 +433,14 @@ class CockpitRecorder:
         if len(record["events"]) > self.event_limit:
             record["events"] = record["events"][-self.event_limit:]
             record["events_truncated"] = True
+
+    def session_lock(self, sid):
+        """同一会话的锁：串行化含远程调用的事务，避免 Redis 重放重复执行工具。"""
+        with self.session_locks_guard:
+            lock = self.session_locks.get(sid)
+            if lock is None:
+                lock = self.session_locks[sid] = threading.RLock()
+            return lock
 
     def execute(self, sid, name, args, call_id=None):
         arguments = copy.deepcopy(args)
@@ -499,7 +514,11 @@ class CockpitRecorder:
                 result = {"error": {"code": code, "message": str(error) or type(error).__name__}}
                 output = {"content": [{"type": "text", "text": json.dumps(result, ensure_ascii=False)}],
                           "structuredContent": result, "isError": True}
-            delta = changes(before_state, after_state)
+            # 只有前后两次状态都读到时才计算差异。任一次读取失败（超时、5xx、坏 JSON）
+            # 时状态未知，不能把 changes(None) 的 path "/" 写进事件：空路径会命中每一条
+            # forbidden_changes 规则，把一次 server 故障变成硬违规并虚增 state_version。
+            delta = (changes(before_state, after_state)
+                     if isinstance(before_state, dict) and isinstance(after_state, dict) else [])
             before_version = record["state_version"]
             if delta:
                 record["state_version"] += 1
@@ -516,7 +535,8 @@ class CockpitRecorder:
                     self.call_counts[name] = self.call_counts.get(name, 0) + 1
             return {"result": output, "lost": lost}
 
-        committed = self.store.transact(sid, transaction)
+        with self.session_lock(sid):
+            committed = self.store.transact(sid, transaction)
         if committed["lost"]:
             raise ResponseLost("injected response loss after committed call " + call_id)
         return committed["result"]

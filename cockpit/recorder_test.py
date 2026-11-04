@@ -274,6 +274,58 @@ class RecorderTests(unittest.TestCase):
             self.assertEqual(payload["result"]["isError"], index == 0)
         self.assertTrue(self.harness.fake.state(sid)["navigation"]["active"])
 
+    # ── 状态读取失败不得伪造差异 ──
+
+    def test_state_read_failure_after_call_records_no_changes(self):
+        """P0 回归：after 状态读取失败时不得写出 path "/" 的差异。
+
+        ``changes(dict, None)`` 会产出 ``path: "/"``，而 ``state_score`` 的
+        ``intersects`` 对空路径恒真，一次 server 超时就会命中每条
+        ``forbidden_changes`` 并把 ``state_version`` 虚增。
+        """
+        server = self.harness.server
+        original = server.read_state
+        reads = []
+
+        def flaky(sid):
+            reads.append(sid)
+            if len(reads) == 2:  # 第一次是调用前读取，第二次是调用后读取
+                raise ServerError("state read failed after the call")
+            return original(sid)
+
+        server.read_state = flaky
+        self.addCleanup(lambda: setattr(server, "read_state", original))
+        status, payload = self.call("start_navi", {"poi_list": [COMPANY_POI]}, call_id="c1")
+        self.assertEqual(status, 200)
+        self.assertTrue(payload["result"]["isError"])
+        self.assertEqual(payload["result"]["structuredContent"]["error"]["code"], "server_error")
+        events = self.events()
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0]["status"], "error")
+        self.assertEqual(events[0]["changes"], [])
+        self.assertEqual(events[0]["before_version"], 0)
+        self.assertEqual(events[0]["after_version"], 0)
+        self.assertEqual(self.snapshot()["state_version"], 0)
+
+    def test_tool_call_failure_after_before_read_records_no_changes(self):
+        """P0 回归：调用前读到状态、转发失败时同样不得写出差异。"""
+        server = self.harness.server
+        original = server.call_tool
+
+        def failing(sid, name, arguments):
+            raise ServerError("MCP server tools/call failed")
+
+        server.call_tool = failing
+        self.addCleanup(lambda: setattr(server, "call_tool", original))
+        status, payload = self.call("start_navi", {"poi_list": [COMPANY_POI]}, call_id="c1")
+        self.assertEqual(status, 200)
+        self.assertTrue(payload["result"]["isError"])
+        events = self.events()
+        self.assertEqual(events[0]["status"], "error")
+        self.assertEqual(events[0]["changes"], [])
+        self.assertEqual(self.snapshot()["state_version"], 0)
+        self.assertFalse(self.harness.fake.state(self.sid)["navigation"]["active"])
+
     # ── 生命周期 ──
 
     def test_round_event_does_not_change_state(self):
@@ -302,6 +354,27 @@ class RecorderTests(unittest.TestCase):
         self.assertFalse(payload["result"]["isError"])
         self.assertEqual(len([event for event in self.events() if event["call_id"] == "c1"]), 2)
 
+    def test_reset_reinjects_the_same_data_overlays(self):
+        """P1 回归：reset 用同一份初态重建，data_overlays 必须一起带回。"""
+        overlays = {"pois": [{"id": "900001", "name": "临时点", "lon": 120.5, "lat": 30.5}]}
+        injected = []
+        server = self.harness.server
+        original = server.inject_initial_state
+
+        def capture(sid, fields):
+            injected.append(copy.deepcopy(fields))
+            return original(sid, fields)
+
+        server.inject_initial_state = capture
+        self.addCleanup(lambda: setattr(server, "inject_initial_state", original))
+        sid = self.harness.create(data_overlays=overlays)
+        self.assertEqual(injected[0]["data_overlays"], overlays)
+        self.call("start_navi", {"poi_list": [COMPANY_POI]}, call_id="c1", sid=sid)
+        status, _ = http_json(self.harness.url + "/eval/api/v1/sessions/" + sid + "/reset", "POST", {})
+        self.assertEqual(status, 200)
+        self.assertEqual(injected[-1]["data_overlays"], overlays)
+        self.assertEqual(injected[-1]["initial_state"], NAVI_STATE)
+
     def test_delete_removes_recorder_and_server_sessions(self):
         status, payload = http_json(self.harness.url + "/eval/api/v1/sessions/" + self.sid, "DELETE")
         self.assertEqual(status, 200)
@@ -310,6 +383,43 @@ class RecorderTests(unittest.TestCase):
             self.harness.fake.state(self.sid)
         status, _ = http_json(self.harness.url + "/api/v1/rl/sessions/" + self.sid + "/snapshot")
         self.assertEqual(status, 404)
+
+    def test_same_session_tool_calls_are_serialized(self):
+        """P1 回归：同一会话的调用串行执行，避免 Redis 重放重复执行工具。"""
+        server = self.harness.server
+        original = server.call_tool
+        counter = threading.Lock()
+        depth = {"now": 0, "max": 0}
+
+        def slow_call(sid, name, arguments):
+            with counter:
+                depth["now"] += 1
+                depth["max"] = max(depth["max"], depth["now"])
+            try:
+                time.sleep(0.05)
+                return original(sid, name, arguments)
+            finally:
+                with counter:
+                    depth["now"] -= 1
+
+        server.call_tool = slow_call
+        self.addCleanup(lambda: setattr(server, "call_tool", original))
+        errors = []
+
+        def worker(index):
+            try:
+                self.call("start_navi", {"poi_list": [COMPANY_POI]}, call_id="c" + str(index))
+            except Exception as error:  # 并发调用不应把异常抛给线程
+                errors.append(error)
+
+        threads = [threading.Thread(target=worker, args=(index,)) for index in range(2)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=15)
+        self.assertEqual(errors, [])
+        self.assertEqual(depth["max"], 1)
+        self.assertEqual(len([event for event in self.events() if event["call_id"]]), 2)
 
     # ── 快照指纹 ──
 
