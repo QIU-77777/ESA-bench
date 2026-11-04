@@ -150,7 +150,7 @@ docs/
 docker-compose.cockpit.yaml        # 开发服务组合：recorder、agent、mcp、redis
 ```
 
-`esa/driver.mjs` 增加座舱分支，不拆文件。`esa/esa_agent.py` 与 `esa/reference.py` 不改；`esa/cockpit_agent.py` 以继承方式复用 `ESAAgent` 的产物逻辑，任务的 `agent` 字段只作任务元数据，不参与会话创建（`reference.py:266` 只取 SESSION_FIELDS 九个键，多余键被忽略）。
+`esa/driver.mjs` 增加座舱分支，不拆文件。`esa/esa_agent.py` 与 `esa/reference.py` 不改；`esa/cockpit_agent.py` 以继承方式复用 `ESAAgent` 的产物逻辑。任务初态文件不放 agent 字段，会话创建只取 SESSION_FIELDS 九个键（`reference.py:266`），座舱 agent 地址经 `task.toml` 的环境变量传给驱动。
 
 recorder 的实现边界：复用 `environment/store.py`（82 行，Redis 事务与记录结构）与 `environment/service.py` 的 `changes()` 差异函数；其余为平行实现。`Environment` 类不能复用：它写死了 ESA 十域状态模板（`service.py:105`）、`validate_state` 硬校验车辆字段（`service.py:120-130`）、catalog 与 handler 覆盖一致检查（`service.py:54-55`）、round 改写 display 焦点（`service.py:162`），这些都与座舱模式无关。排期按平行实现估，不按薄代理估。
 
@@ -163,12 +163,12 @@ recorder 在座舱模式中替代 environment 服务：对外实现与 `environm
 | `GET /health` | 健康状态，返回 dataset_version 与启用工具数 | 启用工具数取自用户 MCP server 的 tools/list |
 | `POST /eval/api/v1/sessions` | 创建会话，接收 type、context、initial_state、data_overlays、tool_profile、faults、seed、dataset_version | 把 initial_state 等字段转发给用户 MCP server 的会话创建接口（4.4）；tool_profile 对照 server 工具集合校验，未知工具名直接拒绝；拒绝携带 expected、tool_overrides 等评分字段，与现服务一致 |
 | `POST /eval/mcp/{sid}` | MCP JSON-RPC：initialize、tools/list、tools/call | tools/list 由 recorder 按会话 tool_profile 过滤后返回（不透传全量）；tools/call 先匹配 faults，会话外工具判 permission_denied，再转发，结果写入 Redis 事件 |
-| `GET /api/v1/rl/sessions/{sid}/snapshot` | 快照：context、state、initial_state、版本、manifest | state 取自用户 MCP server 的状态读取能力（4.4）；manifest 的 source_sha256 取 server tools/list 序列化哈希，并增加 server_version 与 server_commit 两个指纹字段 |
+| `GET /api/v1/rl/sessions/{sid}/snapshot` | 快照：context、state、initial_state、版本、manifest | state 取自用户 MCP server 的状态读取能力（4.4）；manifest 只放静态字段，与现服务 `manifest()` 同构：environment_version、implementation_sha256（recorder 实现哈希）、source_sha256（server tools/list 规范化序列化哈希）、seed_sha256（server 的 data_sha256）、dataset_version（server 的 data_version）、tools 名单，外加 server_version 与 server_commit。manifest 不得包含调用统计等动态字段 |
 | `GET /api/v1/rl/sessions/{sid}/events` | 事件列表，支持 after 与 call_id | 事件由 recorder 自己记录，字段与现服务一致：sequence、call_id、tool、完整参数、结果、status、前后 state_version、逐条 JSON Pointer changes |
 | `POST /eval/api/v1/sessions/{sid}/round` | 开始新轮次 | 记录轮次事件，不要求用户 MCP server 有对应接口 |
-| `POST /eval/api/v1/sessions/{sid}/reset` | 恢复初态 | 调用户 MCP server 的初态重置能力，清空幂等缓存与故障计数 |
-| `DELETE /eval/api/v1/sessions/{sid}` | 删除会话 | 同时删除用户 MCP server 侧会话 |
-| `GET /eval/api/v1/manifest` | 能力清单 | 由 tools/list 与调用统计生成，记录工具名、参数 schema、调用次数 |
+| `POST /eval/api/v1/sessions/{sid}/reset` | 恢复初态 | recorder 自己管生命周期：initial_state 存在 recorder 的会话记录里，reset = 删除 server 侧会话并用同一份初态重建，同时清空幂等缓存与故障计数；不依赖 server 的重置能力 |
+| `DELETE /eval/api/v1/sessions/{sid}` | 删除会话 | 删除 recorder 会话记录与 server 侧会话（4.4 第七项能力） |
+| `GET /eval/api/v1/manifest` | 能力清单 | 由 tools/list 与调用统计生成，记录工具名、参数 schema、调用次数；调用统计只出现在这个路由的响应里，不进快照 manifest |
 
 语义逐条对照 `environment/README.md` 与 `docs/esa-local-eval-spec.md`：
 
@@ -177,13 +177,13 @@ recorder 在座舱模式中替代 environment 服务：对外实现与 `environm
 3. 故障注入。faults 支持 reject（执行前拒绝并返回错误）、missing_field（结果删除指定点路径字段）、response_lost（提交成功后断开连接），匹配工具、参数与次数，语义与现服务一致。故障在 recorder 层执行，对待测 agent 与用户 MCP server 透明。
 4. 工具权限。recorder 持有会话 tool_profile：tools/list 只返回profile 内工具；tools/call 命中 profile 外工具时返回 permission_denied 错误事件，不改状态。权限判定照搬 `service.py:197` 的分支，不要求用户 MCP server 理解 profile。
 5. 逐事件差异。每次转发的 tools/call 前后各读一次座舱状态，计算该事件的 changes 与 state_version；状态没有变化时不增加版本。内部状态读取不写入事件流，不产生额外工具事件。代价是每次调用两次状态读取；这是 `forbidden_changes` 能发现修改后恢复的前提（`state_score.py:119`），不做初终态粗比。
-6. 指纹。snapshot 的 manifest 包含 implementation_sha256（recorder 实现哈希）、source_sha256（server tools/list 规范化序列化哈希）、seed_sha256（server 上报的 data_sha256）、dataset_version（server 上报的 data_version），以及 server_version 与 server_commit（server 实现版本与提交号）。映射写死：`seed_sha256 := data_sha256`，`dataset_version := data_version`；data_sha256 必须是裸 64 位小写十六进制，不带 `sha256:` 前缀，不能是提交号或版本号字符串，否则 `reference.py:350` 的指纹校验判评分无效。manifest 的 tools 数组按 name 排序，序列化用 `sort_keys=True`，source_sha256 用同一份规范化序列化计算：`reference.py:352` 对整个 manifest 做 digest，tools 顺序不稳定会使正例、替代解、负例三次 digest 不同，误报环境身份不一致。server_version 与 server_commit 用于区分工具 schema 相同但行为不同的 server 版本；`validate_task` 的三个必检指纹保持 64 位十六进制，新字段并入变体一致性比对。
+6. 指纹。snapshot 的 manifest 只放静态字段，与现服务 `manifest()` 同构：environment_version、implementation_sha256（recorder 实现哈希）、source_sha256（server tools/list 规范化序列化哈希）、seed_sha256（server 上报的 data_sha256）、dataset_version（server 上报的 data_version）、tools 名单，以及 server_version 与 server_commit（server 实现版本与提交号）。映射写死：`seed_sha256 := data_sha256`，`dataset_version := data_version`；data_sha256 必须是裸 64 位小写十六进制，不带 `sha256:` 前缀，不能是提交号或版本号字符串，否则 `reference.py:350` 的指纹校验判评分无效。manifest 不得包含调用统计等动态字段：`reference.py:344-353` 对每个变体的 initial 与 final 两个快照 manifest 做 digest 并要求全集合只有一个值，initial 是 0 次调用、final 是 n 次，动态字段必然触发「reference variants used different environment identities」，且报错看起来像环境身份漂移。manifest 的 tools 数组按 name 排序，序列化用 `sort_keys=True`，source_sha256 用同一份规范化序列化计算：tools 顺序不稳定会使正例、替代解、负例三次 digest 不同。server_version 与 server_commit 用于区分工具 schema 相同但行为不同的 server 版本；`validate_task` 的三个必检指纹保持 64 位十六进制，新字段并入变体一致性比对。
 
 recorder 配置经环境变量注入：`COCKPIT_MCP_URL`（用户 MCP server 地址）、`REDIS_URL`、`COCKPIT_STATE_TOOL`（状态查询工具名，默认 get_vehicle_state）、`COCKPIT_STATE_URL`（HTTP 状态端点，默认空即不用）。
 
 ### 4.4 座舱状态与会话契约（对用户 MCP server 的要求）
 
-用户的 MCP server 需要提供六项能力：
+用户的 MCP server 需要提供七项能力：
 
 | 能力 | 要求 | 说明 |
 |---|---|---|
@@ -193,6 +193,7 @@ recorder 配置经环境变量注入：`COCKPIT_MCP_URL`（用户 MCP server 地
 | 会话隔离 | 按 session_id 隔离座舱状态，session_id 出现在 MCP 端点路径或调用参数中 | 并发 trial 的状态互不污染 |
 | 初态注入 | 会话创建时接收座舱初态。两种形态任选其一：HTTP `POST /sessions` 接收 initial_state 等字段；或 MCP initialize 参数带初态 | recorder 按接入时约定的形态转发，两种形态各对应一个转发分支 |
 | 状态读取 | 二者之一：状态查询工具（默认名 get_vehicle_state，可配置）；或 HTTP 状态端点 `GET /state`，按会话区分 | 快照与逐事件差异的数据来源，每次工具调用前后各读一次 |
+| 会话删除 | 按 session_id 删除 server 侧会话 | recorder 的 reset 与 DELETE 都靠它实现；参考验证的会话清理也走 DELETE，缺失时参考预检记 cleanup_error、评分无效 |
 
 工具权限不要求 server 实现：recorder 按会话 tool_profile 过滤 tools/list 并判定 tools/call 权限（4.3 第 4 条）。server 的 tools/list 返回全量工具即可。
 
@@ -234,13 +235,13 @@ server 不提供状态读取能力时：`expected_state` 与 `forbidden_changes`
                    toolCalls: <本轮调用逐条映射>, usage: <turn.usage>, status: "completed"}
       每条 toolCall 映射：{callId 与 call_id, name, arguments, output, status,
                            turnIndex 与 turn_index: <驱动按轮次补齐>}
-   d. dialogue 追加 user 与 assistant 两条；user_script 分支匹配逻辑原样复用
+   d. dialogue 追加两条，每条带 turn_index：{role: "user", content: <消息>, turn_index: <轮次>} 与 {role: "assistant", content: <回复>, turn_index: <轮次>}，写法与 react 分支一致（esa/driver.mjs:88、:100）；user_script 分支匹配逻辑原样复用
 4. GET snapshot 得终态，GET events 得全量事件
 5. 组装 driver-result.json，字段与 Go runtime 的 RunResult 同构：
    iterations、toolCalls、turns、reply、status、dialogue、user_script_complete
 ```
 
-三个字段的后果是确定的，不能省。`turnIndex` 与每条调用的 `turn_index`：`_build_trajectory` 按 `iteration.get("turnIndex", 0)` 插入用户 step（`esa/esa_agent.py:436-441`），缺失时多轮轨迹全部挤在轮次 0；更严重的是评分侧，带 `turn_index` 的工具规则在调用的 `turn_index` 为空时直接抛错（`esa/score.py:152-155`），`before_turn` 同理（`esa/score.py:181-184`），`evaluate` 把该错误兜成 `valid=false`、reward=0（`esa/score.py:396`）。示例任务 `esa-cockpit-climate` 使用 `tool_forbidden` 加 `before_turn`，字段缺失时这类任务每次判无效，不判对错。MCP 事件里没有轮次归属，`turn_index` 只能由驱动按轮次补齐。`usage`：`_step_metrics` 与 `_final_metrics` 从 `iteration["usage"]` 读（`esa/esa_agent.py:525-528`、`esa/esa_agent.py:545-556`），不把 `/v1/turn` 返回的 usage 搬进来，token 指标恒空。`receivedAt`：ATIF step 的时间戳取自该字段（`esa/esa_agent.py:496`），缺失时整条轨迹没有时间轴。
+三个字段的后果是确定的，不能省。`turnIndex` 与每条调用的 `turn_index`：`_build_trajectory` 按 `iteration.get("turnIndex", 0)` 插入用户 step（`esa/esa_agent.py:436-441`），缺失时多轮轨迹全部挤在轮次 0；更严重的是评分侧，带 `turn_index` 的工具规则在调用的 `turn_index` 为空时直接抛错（`esa/score.py:152-155`），`before_turn` 同理（`esa/score.py:181-184`），`evaluate` 把该错误兜成 `valid=false`、reward=0（`esa/score.py:396`）。示例任务 `esa-cockpit-climate` 使用 `tool_forbidden` 加 `before_turn`，字段缺失时这类任务每次判无效，不判对错。MCP 事件里没有轮次归属，`turn_index` 只能由驱动按轮次补齐。`usage`：`_step_metrics` 与 `_final_metrics` 从 `iteration["usage"]` 读（`esa/esa_agent.py:525-528`、`esa/esa_agent.py:545-556`），不把 `/v1/turn` 返回的 usage 搬进来，token 指标恒空。`receivedAt`：ATIF step 的时间戳取自该字段（`esa/esa_agent.py:496`），缺失时整条轨迹没有时间轴。dialogue 的 `turn_index` 同样不能省：`evaluate` 无条件调用 `_dialogue`（`esa/score.py:339`），其中强校验每条对话的 turn_index 为非负整数（`esa/score.py:227`），缺失即抛错并兜成 `valid=false`、reward=0，与有没有配置 `reply_checks` 无关。
 
 `esa/cockpit_agent.py` 定义 `CockpitAgent(ESAAgent)`。`ESAAgent.run` 内联构造驱动配置且没有钩子（`esa/esa_agent.py:176-198`），因此不改写 `run`，只覆写 `_write_driver_config`（`esa/esa_agent.py:337`）：删掉 `agentPayloadPath` 键、增加 `agentProtocol: "turn"` 与 `expectedModelId`（取 job 的模型标识）。删键是必须的：`driver.mjs:56` 无条件读取该路径，键在而文件不在会直接抛 ENOENT，首次运行即失败。
 
@@ -267,7 +268,7 @@ harness 无 manifest 字段，不走镜像挂载，与现有 esa harness 一致�
 
 ### 4.7 任务定义扩展
 
-`environment/esa/initial_state.json` 只新增 `agent` 一个字段；`initial_state` 的内容按用户 MCP server 的座舱状态结构编写，经会话创建注入；`dataset_version` 必填，与 server 上报的数据版本一致：
+`environment/esa/initial_state.json` 不再放 agent 字段；`initial_state` 的内容按用户 MCP server 的座舱状态结构编写，经会话创建注入；`dataset_version` 必填，与 server 上报的数据版本一致。座舱 agent 地址只有一份来源：`task.toml` 的 `[environment.env] ESA_AGENT_API_URL`，驱动只读这一处，避免两份拷贝漂移：
 
 ```json
 {
@@ -275,7 +276,6 @@ harness 无 manifest 字段，不走镜像挂载，与现有 esa harness 一致�
   "dataset_version": "esa-cockpit-v1",
   "seed": 0,
   "user_messages": ["导航去公司。"],
-  "agent": {"endpoint": "http://cockpit-agent:8090", "protocol": "http-turn"},
   "initial_state": {"vehicle": {"gear": "D"}, "navigation": {"active": false}},
   "tool_profile": ["get_favorite_poi", "start_navi"],
   "metadata": {"domain": "navi", "acceptance": true, "title": "查询公司地址并启动导航"}
@@ -306,18 +306,18 @@ services:
 
 模型连接按现有七个任务的写法直接读 provider 前缀变量：`AGENT_MODEL_BASE_URL: ${STEPFUN_OPENAI_BASE_URL}`、`AGENT_MODEL_API_KEY: ${STEPFUN_API_KEY}`。`run.sh` 的 ESA 快通道不做 provider 前缀解析（前缀映射在编码 agent 路径里），自造 `COCKPIT_AGENT_MODEL_BASE_URL` 之类没有生产者的变量会恒为空串，agent 拿不到模型地址与密钥。更换 provider 时和 ESA 任务一样只动 compose 这两行。模型标识单独一路：`COCKPIT_AGENT_MODEL_ID` 由 run.sh 导出（4.6）。
 
-`task.toml` 的 `[environment.env]` 增加 `ESA_AGENT_API_URL=http://cockpit-agent:8090`，驱动经该地址找到座舱 agent；`ESA_MOCK_URL` 保持 `http://mock-system:8003`，指向 recorder。`[environment.healthcheck]` 是单条命令、在主容器内执行，写为一条链式检查（主镜像 node:22-alpine 已装 curl）：
+`task.toml` 的 `[environment.env]` 设置 `ESA_AGENT_API_URL=http://cockpit-agent:8090`，驱动经该地址找到座舱 agent；`ESA_MOCK_URL` 保持 `http://mock-system:8003`，指向 recorder。`[environment.healthcheck]` 是单条命令、在主容器内执行，是 trial 唯一的就绪闸门，三个服务全查，写为一条链式检查（主镜像 node:22-alpine 已装 curl）：
 
 ```toml
 [environment.healthcheck]
-command = "curl -sf http://mock-system:8003/health && curl -sf http://cockpit-mcp:8091/health"
+command = "curl -sf http://mock-system:8003/health && curl -sf http://cockpit-mcp:8091/health && curl -sf http://cockpit-agent:8090/v1/health"
 interval_sec = 5.0
 timeout_sec = 10.0
 start_period_sec = 10.0
 retries = 12
 ```
 
-座舱 agent 不参与 Oracle 执行，不进入健康检查。`[environment] network_mode` 保持 public，模型 API 访问经 Harbor 任务网络配置管理。
+座舱 agent 必须进入健康检查。compose 启动完成不等于 agent 的 HTTP 服务已监听；4.6 第 0 步的 `GET /v1/health` 遇到连接拒绝会记执行错误并使整场试验判无效，在 benchmark 里表现为随机无效试验，且看不出是环境问题。Oracle 执行不调用 agent，但 Oracle 试验同样等 agent 就绪，默认 fake agent 镜像由本仓库构建，不增加额外依赖。`[environment] network_mode` 保持 public，模型 API 访问经 Harbor 任务网络配置管理。
 
 `tests/rubric.json` 结构不变：`expected_state` 的点路径指向用户 MCP server 的座舱状态，例如 `navigation.active`、`navigation.destination.id`；`forbidden_changes`、`tool_checks`、`process_constraints`、`reply_checks`、`user_script`、`faults` 全部沿用现有语义。
 
@@ -439,7 +439,7 @@ scripts/run.sh --bench esa-cockpit --harness esa-cockpit --model <provider/model
 1. 状态可读性依赖用户 MCP server。server 不提供状态查询工具或端点时，`expected_state` 与 `forbidden_changes` 维度不可用；需要终态评分的任务要么推动 server 补充该能力，要么注册任务级状态投影规则并接受评审。
 2. 逐事件差异有确定成本。每次工具调用前后各读一次状态，调用密集的任务状态读取量约为调用数的两倍；这是修改后恢复可被判出的前提，不做初终态粗比。
 3. 模型标识依赖 agent 如实上报。`/v1/health` 的 model_id 由 agent 自报，驱动只比对不验证；需要更强约束时在 agent 镜像构建期固定模型并随镜像指纹记录。
-4. 会话隔离依赖用户 MCP server。批量路径每个 trial 独立容器，天然隔离；开发服务组合与 Console 多会话共享实例时，server 没有会话概念则只能单会话串行。
+4. 会话生命周期依赖用户 MCP server。批量路径每个 trial 独立容器，天然隔离；开发服务组合与 Console 多会话共享实例时，server 没有会话概念则只能单会话串行。server 不提供按 session_id 删除会话的能力时，reset 与 DELETE 均不可用：DELETE 是参考验证清理的必经路径，缺失会使参考预检记 cleanup_error、评分无效，因此该项能力为强制；reset 不可用只影响 CLI 与 Console 的状态重置，批量评测不受影响。
 5. 模型用量指标依赖 agent 透传。驱动把 `/v1/turn` 返回的 usage 搬进 iteration（4.6 第 3 步）；agent 不回传 usage 时，ATIF 轨迹省略用量字段，成本对比维度在座舱 bench 中不可用，其余维度不受影响。
 6. 工具定义的静态校验不适用于座舱模式。`environment/catalog.json` 与 `configs/tools.json` 的一致性检查只服务 esa harness；座舱工具集合以运行时 tools/list 为准，manifest 的 source_sha256 记录该次 schema 指纹。
 7. 故障注入覆盖 recorder 层。reject、missing_field、response_lost 三类故障在 recorder 执行，不要求用户 MCP server 改造；超出三类的故障需要扩展 recorder 与任务 faults 定义。
@@ -454,3 +454,5 @@ scripts/run.sh --bench esa-cockpit --harness esa-cockpit --model <provider/model
 2026-11-04 第四版：按 PR 第二轮评审修订。问题一：`validate_task.py --all` 对 `tasks/` 全量 glob，座舱任务会被扫进 ESA 环境服务并必挂；任务选择增加 `--bench <slug>` 参数读取任务集合配置，`--all` 收敛为 esa bench，阶段二拆成 ESA 与座舱两条命令；阶段二命令清单补上 recorder 与假 MCP server 的启动步骤，并新增 `cockpit/fake_mcp.py` 作为默认 MCP 镜像（按 4.4 六项能力实现，供无用户 server 时的验收）。问题二：4.6 第 3 步的 iteration 改为显式字段映射，补齐 `turnIndex`、`receivedAt`、`usage` 与每条调用的 `turn_index`；turn_index 缺失会使带轮次规则与 before_turn 的评分直接判无效，usage 不搬则 token 指标恒空，receivedAt 缺失则轨迹无时间轴。
 
 2026-11-04 第五版：按 PR 第三轮评审修订。`test-reference-docker.py` 与 `validate_task.py` 共用同一套任务选择：`--bench <slug>` 按集合配置选任务，`--all` 保留全量发现并加登记检查与单集合检查两道守卫（未登记任务列出，跨集合时提示改用 `--bench`）；`test-reference-docker.py` 增加 `--mock-url` 模式，座舱侧直接对 recorder 验证并跳过 ESA 的 Redis 契约测试。`test-oracle-failure.py` 增加 `--task` 与 `--goal-path` 参数，座舱侧传座舱任务与目标路径，失败回归从此覆盖两个 bench。阶段二命令顺序改正：同步共享副本排在验证之前（`load_task` 逐字节比对 canonical 副本，顺序反了必然先失败）。
+
+2026-11-04 第六版：按 PR 第四轮评审修订。快照 manifest 限定为静态字段（与现服务 `manifest()` 同构），调用统计只出现在 `/eval/api/v1/manifest` 路由响应里——`reference.py:344-353` 对每个变体的 initial 与 final 快照 manifest 做 digest 并要求全集合一致，动态字段必然误报环境身份不一致。dialogue 每条显式带 `turn_index`（`evaluate` 无条件校验，缺失即判无效）。座舱 agent 进入健康检查链式命令，消除第 0 步连接拒绝竞态。reset 与 DELETE 改由 recorder 管理生命周期（初态存于 recorder 会话记录，reset = 删 server 侧会话并用同一份初态重建），4.4 契约新增第七项「按 session_id 删除会话」；`initial_state.json` 的 `agent` 字段删除，agent 地址只保留 `task.toml` 的 `ESA_AGENT_API_URL` 一份来源。
