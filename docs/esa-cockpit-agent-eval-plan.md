@@ -175,7 +175,7 @@ recorder 在座舱模式中替代 environment 服务：对外实现与 `environm
 3. 故障注入。faults 支持 reject（执行前拒绝并返回错误）、missing_field（结果删除指定点路径字段）、response_lost（提交成功后断开连接），匹配工具、参数与次数，语义与现服务一致。故障在 recorder 层执行，对待测 agent 与用户 MCP server 透明。
 4. 工具权限。recorder 持有会话 tool_profile：tools/list 只返回profile 内工具；tools/call 命中 profile 外工具时返回 permission_denied 错误事件，不改状态。权限判定照搬 `service.py:197` 的分支，不要求用户 MCP server 理解 profile。
 5. 逐事件差异。每次转发的 tools/call 前后各读一次座舱状态，计算该事件的 changes 与 state_version；状态没有变化时不增加版本。内部状态读取不写入事件流，不产生额外工具事件。代价是每次调用两次状态读取；这是 `forbidden_changes` 能发现修改后恢复的前提（`state_score.py:119`），不做初终态粗比。
-6. 指纹。snapshot 的 manifest 包含 implementation_sha256（recorder 实现哈希）、source_sha256（server tools/list 哈希）、seed_sha256（server 数据指纹）、dataset_version（server 数据版本），以及 server_version 与 server_commit（server 实现版本与提交号）。后两个字段用于区分工具 schema 相同但行为不同的 server 版本；`validate_task` 的三个必检指纹保持 64 位十六进制，新字段并入变体一致性比对。
+6. 指纹。snapshot 的 manifest 包含 implementation_sha256（recorder 实现哈希）、source_sha256（server tools/list 规范化序列化哈希）、seed_sha256（server 上报的 data_sha256）、dataset_version（server 上报的 data_version），以及 server_version 与 server_commit（server 实现版本与提交号）。映射写死：`seed_sha256 := data_sha256`，`dataset_version := data_version`；data_sha256 必须是裸 64 位小写十六进制，不带 `sha256:` 前缀，不能是提交号或版本号字符串，否则 `reference.py:350` 的指纹校验判评分无效。manifest 的 tools 数组按 name 排序，序列化用 `sort_keys=True`，source_sha256 用同一份规范化序列化计算：`reference.py:352` 对整个 manifest 做 digest，tools 顺序不稳定会使正例、替代解、负例三次 digest 不同，误报环境身份不一致。server_version 与 server_commit 用于区分工具 schema 相同但行为不同的 server 版本；`validate_task` 的三个必检指纹保持 64 位十六进制，新字段并入变体一致性比对。
 
 recorder 配置经环境变量注入：`COCKPIT_MCP_URL`（用户 MCP server 地址）、`REDIS_URL`、`COCKPIT_STATE_TOOL`（状态查询工具名，默认 get_vehicle_state）、`COCKPIT_STATE_URL`（HTTP 状态端点，默认空即不用）。
 
@@ -187,7 +187,7 @@ recorder 配置经环境变量注入：`COCKPIT_MCP_URL`（用户 MCP server 地
 |---|---|---|
 | MCP 工具服务 | 标准 MCP JSON-RPC，tools/list 与 tools/call，HTTP 传输 | recorder 经 `/eval/mcp/{sid}` 接收调用后转发 |
 | 健康检查 | `GET /health` 返回 200，并上报 version 与 commit | 任务 compose 就绪检查使用；version 与 commit 进入 manifest 指纹 |
-| 数据版本 | `/health` 或 `/manifest` 上报 data_version 与 data_sha256 | 缺失时会话创建失败，与现服务拒绝未知 dataset_version 的严格性一致；任务 initial_state.json 的 dataset_version 必填并与此匹配 |
+| 数据版本 | `/health` 或 `/manifest` 上报 data_version 与 data_sha256；data_sha256 为裸 64 位小写十六进制 | 缺失时会话创建失败，与现服务拒绝未知 dataset_version 的严格性一致；任务 initial_state.json 的 dataset_version 必填并与此匹配；recorder 按 `dataset_version := data_version`、`seed_sha256 := data_sha256` 填写 manifest |
 | 会话隔离 | 按 session_id 隔离座舱状态，session_id 出现在 MCP 端点路径或调用参数中 | 并发 trial 的状态互不污染 |
 | 初态注入 | 会话创建时接收座舱初态。两种形态任选其一：HTTP `POST /sessions` 接收 initial_state 等字段；或 MCP initialize 参数带初态 | recorder 按接入时约定的形态转发，两种形态各对应一个转发分支 |
 | 状态读取 | 二者之一：状态查询工具（默认名 get_vehicle_state，可配置）；或 HTTP 状态端点 `GET /state`，按会话区分 | 快照与逐事件差异的数据来源，每次工具调用前后各读一次 |
@@ -221,6 +221,7 @@ server 不提供状态读取能力时：`expected_state` 与 `forbidden_changes`
 `esa/driver.mjs` 增加座舱分支，由配置字段 `agentProtocol` 选择，取值 react（现有行为）与 turn（座舱）。座舱分支流程：
 
 ```text
+0. GET agent /v1/health：model_id 与 expectedModelId 不一致时记错误并结束，不发起对话
 1. POST recorder /eval/api/v1/sessions，body 与现分支一致
 2. GET snapshot 得初态
 3. 逐轮循环（固定 user_messages 或 user_script 分支，逻辑与现分支相同）：
@@ -233,13 +234,14 @@ server 不提供状态读取能力时：`expected_state` 与 `forbidden_changes`
    iterations、toolCalls、turns、reply、status、dialogue、user_script_complete
 ```
 
-`esa/cockpit_agent.py` 定义 `CockpitAgent(ESAAgent)`，相对 `ESAAgent` 有三处改动：
+`esa/cockpit_agent.py` 定义 `CockpitAgent(ESAAgent)`。`ESAAgent.run` 内联构造驱动配置且没有钩子（`esa/esa_agent.py:176-198`），因此不改写 `run`，只覆写 `_write_driver_config`（`esa/esa_agent.py:337`）：删掉 `agentPayloadPath` 键、增加 `agentProtocol: "turn"` 与 `expectedModelId`（取 job 的模型标识）。删键是必须的：`driver.mjs:56` 无条件读取该路径，键在而文件不在会直接抛 ENOENT，首次运行即失败。
 
-1. `name()` 返回 `esa-cockpit`。
-2. setup 只上传 driver.mjs，不上传 agent.json；run 写配置时删掉 `agentPayloadPath` 键。这一步是必须的：`driver.mjs:56` 无条件读取该路径，键在而文件不在会直接抛 ENOENT，首次运行即失败。
-3. run 的配置增加 `agentProtocol: "turn"`；预检通过后调用 agent 的 `/v1/health`，把返回的 model_id 与 job 的模型名比对：两者都已知且不一致时拒绝开跑，记为执行失败、评分无效；agent 不上报时把 job 模型名与 agent 上报值（可为空）都写入证据，供人工核对。agent 上报的 model_id 同时写入 ATIF 轨迹的 agent.extra。
+模型比对下放给驱动，不插入 `run`：座舱分支在发起第一轮对话之前 GET agent 的 `/v1/health`，把上报的 model_id 与 `expectedModelId` 比对；两者都已知且不一致时记错误并结束运行，此时尚未发生任何模型调用，评分由 `program_failure` 判无效；agent 不上报 model_id 时，把 job 模型标识与 agent 上报值都写入证据供人工核对。`name()` 返回 `esa-cockpit`；setup 只上传 driver.mjs，不上传 agent.json；其余产物逻辑（ATIF 组装、证据文件、参考预检）全部继承。
 
-模型标识的传递链：`scripts/run.sh` 已解析出完整模型标识（MODEL_SLUG），增加一行 `export COCKPIT_AGENT_MODEL_ID="$MODEL_SLUG"`；任务 compose 以 `COCKPIT_AGENT_MODEL_ID: ${COCKPIT_AGENT_MODEL_ID:-}` 注入 agent 服务。`scripts/render-job.py` 不改，它继续校验模型连接变量并记录模型身份。
+`scripts/run.sh` 有两处改动，否则 `--harness esa-cockpit` 跑不起来：
+
+1. 第 135 行的快通道条件由 `[ "$HARNESS_SLUG" = "esa" ]` 改为同时接受 `esa-cockpit`。`esa-cockpit` 会整段跳过快通道，落到第 296 行的编码 agent 白名单（opencode、pi、claude-code 三对），匹配不到任何分支直接 fail，阶段三第一次执行即停在这里。
+2. 在该分支的 `harbor run` 之前（`exit 0` 之前）导出模型标识：`export COCKPIT_AGENT_MODEL_ID="$MODEL_SLUG"`。`MODEL_SLUG` 在快通道之前已解析，`--job` 与手动选择两条路径都有值。任务 compose 以 `COCKPIT_AGENT_MODEL_ID: ${COCKPIT_AGENT_MODEL_ID:-}` 注入 agent 服务。
 
 `configs/harnesses/esa-cockpit.yaml` 内容：
 
@@ -286,13 +288,15 @@ services:
     environment:
       ESA_MOCK_URL: http://mock-system:8003
       COCKPIT_AGENT_MODEL_ID: ${COCKPIT_AGENT_MODEL_ID:-}
-      AGENT_MODEL_BASE_URL: ${COCKPIT_AGENT_MODEL_BASE_URL:-}
-      AGENT_MODEL_API_KEY: ${COCKPIT_AGENT_MODEL_API_KEY:-}
+      AGENT_MODEL_BASE_URL: ${STEPFUN_OPENAI_BASE_URL}
+      AGENT_MODEL_API_KEY: ${STEPFUN_API_KEY}
   cockpit-mcp:                 # 用户 MCP server：工具与座舱状态
     image: ${COCKPIT_MCP_IMAGE:-esa-cockpit-mcp:1.0.0}
   redis:
     image: redis:7-alpine
 ```
+
+模型连接按现有七个任务的写法直接读 provider 前缀变量：`AGENT_MODEL_BASE_URL: ${STEPFUN_OPENAI_BASE_URL}`、`AGENT_MODEL_API_KEY: ${STEPFUN_API_KEY}`。`run.sh` 的 ESA 快通道不做 provider 前缀解析（前缀映射在编码 agent 路径里），自造 `COCKPIT_AGENT_MODEL_BASE_URL` 之类没有生产者的变量会恒为空串，agent 拿不到模型地址与密钥。更换 provider 时和 ESA 任务一样只动 compose 这两行。模型标识单独一路：`COCKPIT_AGENT_MODEL_ID` 由 run.sh 导出（4.6）。
 
 `task.toml` 的 `[environment.env]` 增加 `ESA_AGENT_API_URL=http://cockpit-agent:8090`，驱动经该地址找到座舱 agent；`ESA_MOCK_URL` 保持 `http://mock-system:8003`，指向 recorder。`[environment.healthcheck]` 是单条命令、在主容器内执行，写为一条链式检查（主镜像 node:22-alpine 已装 curl）：
 
@@ -377,19 +381,19 @@ PYTHONPATH="$PWD" .venv/bin/harbor run -c configs/jobs/esa-cockpit-oracle-accept
 
 ```bash
 COCKPIT_AGENT_IMAGE=<用户 agent 镜像> bash scripts/build-esa-local.sh
+scripts/run.sh --bench esa-cockpit --harness esa-cockpit --model <provider/model-id> --dry-run
 COCKPIT_AGENT_MODEL_ID=<provider/model-id> .venv/bin/python -m esa.cli chat --cockpit
 ```
 
-检查项：模型标识从 job 到 agent 全链一致；agent 经 recorder 调用 MCP 成功；证据文件与批量评测一致。
+检查项：run.sh 快通道接受 esa-cockpit（第 135 行条件已改）；模型标识从 job 到 agent 全链一致；agent 经 recorder 调用 MCP 成功；证据文件与批量评测一致。
 
 阶段四，正式模型运行：
 
 ```bash
-.venv/bin/python scripts/render-job.py --bench esa-cockpit --harness esa-cockpit --model <provider/model-id> --output /tmp/esa-cockpit-job.yaml
-PYTHONPATH="$PWD" .venv/bin/harbor run -c /tmp/esa-cockpit-job.yaml --job-name UNIQUE -y
+scripts/run.sh --bench esa-cockpit --harness esa-cockpit --model <provider/model-id> --job-name UNIQUE
 ```
 
-检查项：试验完成、证据完整、评分有效；agent 上报模型与 job 模型一致。
+检查项：试验完成、证据完整、评分有效；agent 上报模型与 job 模型一致。直接 `harbor run -c` 的路径同样可用，此时 `COCKPIT_AGENT_MODEL_ID` 没有导出方，agent 自报模型与 job 模型双写证据供人工核对。
 
 回归要求：现有测试全部保持通过，命令与 README 的开发验证一节一致；座舱改动不触发 `environment/`、`runtime/`、`esa/score.py`、`esa/state_score.py` 的行为变化。
 
@@ -407,7 +411,7 @@ PYTHONPATH="$PWD" .venv/bin/harbor run -c /tmp/esa-cockpit-job.yaml --job-name U
 
 1. 状态可读性依赖用户 MCP server。server 不提供状态查询工具或端点时，`expected_state` 与 `forbidden_changes` 维度不可用；需要终态评分的任务要么推动 server 补充该能力，要么注册任务级状态投影规则并接受评审。
 2. 逐事件差异有确定成本。每次工具调用前后各读一次状态，调用密集的任务状态读取量约为调用数的两倍；这是修改后恢复可被判出的前提，不做初终态粗比。
-3. 模型标识依赖 agent 如实上报。`/v1/health` 的 model_id 由 agent 自报，CockpitAgent 只比对不验证；需要更强约束时在 agent 镜像构建期固定模型并随镜像指纹记录。
+3. 模型标识依赖 agent 如实上报。`/v1/health` 的 model_id 由 agent 自报，驱动只比对不验证；需要更强约束时在 agent 镜像构建期固定模型并随镜像指纹记录。
 4. 会话隔离依赖用户 MCP server。批量路径每个 trial 独立容器，天然隔离；开发服务组合与 Console 多会话共享实例时，server 没有会话概念则只能单会话串行。
 5. 模型用量指标依赖 agent 透传。agent 不回传 usage 时，ATIF 轨迹省略用量字段，成本对比维度在座舱 bench 中不可用，其余维度不受影响。
 6. 工具定义的静态校验不适用于座舱模式。`environment/catalog.json` 与 `configs/tools.json` 的一致性检查只服务 esa harness；座舱工具集合以运行时 tools/list 为准，manifest 的 source_sha256 记录该次 schema 指纹。
@@ -417,3 +421,5 @@ PYTHONPATH="$PWD" .venv/bin/harbor run -c /tmp/esa-cockpit-job.yaml --job-name U
 ## 9. 修订记录
 
 2026-11-04 第二版：按外部评审意见修订。P0 三条全部落入文档：CockpitAgent 删除 `agentPayloadPath` 配置键（否则 `driver.mjs:56` ENOENT）；工具权限改由 recorder 执行（过滤 tools/list、profile 外判 permission_denied），接入契约删除对 server 的要求；模型标识经 run.sh 导出 `COCKPIT_AGENT_MODEL_ID` 注入 compose，agent 在 `/v1/health` 上报 model_id，CockpitAgent 比对后开跑。P1 两条落入：manifest 增加 server_version 与 server_commit 指纹、dataset_version 改必填；逐事件差异明确为每次调用前后各读一次状态。P2 三条落入：并发表述改为批量路径按 trial 天然隔离、共享实例才需串行；recorder 实现边界改为复用 store 与 diff、其余平行实现；healthcheck 写成单条链式命令；CLI 与 Console 后置为第 5 阶段。实施顺序调整：先跑通假 agent，再做 Oracle 验收。
+
+2026-11-04 第三版：按 PR 评审意见修订。阻塞一：`scripts/run.sh` 第 135 行快通道条件改为同时接受 `esa-cockpit`，否则落到第 296 行编码 agent 白名单直接 fail；`COCKPIT_AGENT_MODEL_ID` 的导出放进该分支 `harbor run` 之前。阻塞二：compose 的模型地址与密钥改读 provider 前缀变量 `${STEPFUN_OPENAI_BASE_URL}` 与 `${STEPFUN_API_KEY}`，与现有七个任务一致，自造无生产者的变量名恒为空串。口径三：CockpitAgent 只覆写 `_write_driver_config`（`esa_agent.py:337`）删键与加协议，模型比对下放驱动，在第一轮对话前 GET `/v1/health`，不一致记错误并结束，未经任何模型调用即判评分无效，`ESAAgent.run` 不重写。口径四：manifest 的 tools 按 name 排序、序列化用 `sort_keys=True`，`source_sha256` 用同一份规范化序列化，避免 tools 顺序不稳定误报环境身份不一致。口径五：`seed_sha256 := data_sha256`、`dataset_version := data_version` 写死，data_sha256 必须是裸 64 位小写十六进制。
