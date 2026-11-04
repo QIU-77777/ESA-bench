@@ -129,8 +129,10 @@ flowchart TB
 cockpit/
   recorder.py                # MCP 记录代理：ESA 环境协议加 MCP 转发
   recorder_test.py           # recorder 单元与集成测试
+  fake_mcp.py                # 确定性假 MCP server，默认 MCP 镜像来源
   fake_agent.py              # 确定性假座舱 agent，默认 agent 镜像来源
   Dockerfile                 # recorder 镜像
+  Dockerfile.mcp             # 默认 MCP 镜像（fake_mcp.py）
   Dockerfile.agent           # 默认座舱 agent 镜像（fake_agent.py）
   README.md                  # 组件契约说明
 esa/
@@ -227,12 +229,18 @@ server 不提供状态读取能力时：`expected_state` 与 `forbidden_changes`
 3. 逐轮循环（固定 user_messages 或 user_script 分支，逻辑与现分支相同）：
    a. POST agent /v1/turn，body 带 session_id、message、history
    b. GET recorder /events?after=上一轮序号，取本轮调用
-   c. 组装一条 iteration：message 为回复，toolCalls 为本轮调用，status 为 completed
+   c. 组装一条 iteration，字段显式映射，不省略：
+      iteration = {turnIndex: <轮次序号>, receivedAt: <ISO 时间>, message: <reply>,
+                   toolCalls: <本轮调用逐条映射>, usage: <turn.usage>, status: "completed"}
+      每条 toolCall 映射：{callId 与 call_id, name, arguments, output, status,
+                           turnIndex 与 turn_index: <驱动按轮次补齐>}
    d. dialogue 追加 user 与 assistant 两条；user_script 分支匹配逻辑原样复用
 4. GET snapshot 得终态，GET events 得全量事件
 5. 组装 driver-result.json，字段与 Go runtime 的 RunResult 同构：
    iterations、toolCalls、turns、reply、status、dialogue、user_script_complete
 ```
+
+三个字段的后果是确定的，不能省。`turnIndex` 与每条调用的 `turn_index`：`_build_trajectory` 按 `iteration.get("turnIndex", 0)` 插入用户 step（`esa/esa_agent.py:436-441`），缺失时多轮轨迹全部挤在轮次 0；更严重的是评分侧，带 `turn_index` 的工具规则在调用的 `turn_index` 为空时直接抛错（`esa/score.py:152-155`），`before_turn` 同理（`esa/score.py:181-184`），`evaluate` 把该错误兜成 `valid=false`、reward=0（`esa/score.py:396`）。示例任务 `esa-cockpit-climate` 使用 `tool_forbidden` 加 `before_turn`，字段缺失时这类任务每次判无效，不判对错。MCP 事件里没有轮次归属，`turn_index` 只能由驱动按轮次补齐。`usage`：`_step_metrics` 与 `_final_metrics` 从 `iteration["usage"]` 读（`esa/esa_agent.py:525-528`、`esa/esa_agent.py:545-556`），不把 `/v1/turn` 返回的 usage 搬进来，token 指标恒空。`receivedAt`：ATIF step 的时间戳取自该字段（`esa/esa_agent.py:496`），缺失时整条轨迹没有时间轴。
 
 `esa/cockpit_agent.py` 定义 `CockpitAgent(ESAAgent)`。`ESAAgent.run` 内联构造驱动配置且没有钩子（`esa/esa_agent.py:176-198`），因此不改写 `run`，只覆写 `_write_driver_config`（`esa/esa_agent.py:337`）：删掉 `agentPayloadPath` 键、增加 `agentProtocol: "turn"` 与 `expectedModelId`（取 job 的模型标识）。删键是必须的：`driver.mjs:56` 无条件读取该路径，键在而文件不在会直接抛 ENOENT，首次运行即失败。
 
@@ -317,7 +325,7 @@ retries = 12
 
 1. 参考程序 `solve(ctx)` 不变：`ctx.call` 打到 recorder 的 `/eval/mcp/{sid}`，由 recorder 转发到用户 MCP server。参考预检 `validate_task` 的传输地址 `ESA_MOCK_URL` 指向 recorder，流程与检查项不变，包括三个 64 位指纹的变体一致性检查。
 2. 新增 `configs/jobs/esa-cockpit-oracle-acceptance.yaml`，agent 为 Harbor 原生 oracle，模型地址与密钥用不可用值占位。Oracle 不调用 agent 与模型，只执行参考程序。
-3. 默认座舱 agent 镜像由 `cockpit/fake_agent.py` 构建（4.11），Oracle 验收与无凭据全链路验收因此不依赖用户 agent 镜像；用户 agent 就绪后以 `COCKPIT_AGENT_IMAGE` 覆盖。
+3. 两个默认镜像由本仓库构建：默认座舱 agent 镜像来自 `cockpit/fake_agent.py`，默认 MCP 镜像来自 `cockpit/fake_mcp.py`。假 MCP server 按 4.4 的六项能力实现，提供示例任务使用的一组座舱工具与会话状态，健康检查上报 version、commit、data_version 与 data_sha256。Oracle 验收、参考预检与无凭据全链路验收因此不依赖用户镜像；用户 agent 与用户 MCP server 就绪后，分别以 `COCKPIT_AGENT_IMAGE` 与 `COCKPIT_MCP_IMAGE` 覆盖。
 4. 新增 `configs/bench/esa-cockpit.yaml` 收录座舱任务；座舱 bench 与 esa bench 分开，结果与分数不做直接比较，理由与仓库现有约定一致：环境身份不同。
 
 ### 4.9 网络、并发与确定性
@@ -337,7 +345,9 @@ retries = 12
 
 ### 4.11 构建脚本
 
-`scripts/build-esa-local.sh` 增加两个镜像构建：recorder 与默认座舱 agent。recorder 由本仓库 `cockpit/Dockerfile` 构建；默认 agent 镜像 `esa-cockpit-agent:1.0.0` 由 `cockpit/Dockerfile.agent` 构建，内容为 `cockpit/fake_agent.py`。用户 agent 就绪后，以 `COCKPIT_AGENT_IMAGE` 指向用户构建的镜像即可覆盖，不需要改任务配置。cockpit-mcp 镜像由用户侧构建并打 tag，脚本以 `COCKPIT_MCP_IMAGE` 接收镜像名。`scripts/diagnose.sh` 的期望服务列表需要扩展：esa 任务为 main、agent-api、mock-system、redis；座舱任务为 main、mock-system、cockpit-agent、cockpit-mcp、redis。`scripts/cleanup.sh` 按 `hb__` 前缀清理容器与任务镜像，与 harness 无关，无需改动。
+`scripts/build-esa-local.sh` 增加三个镜像构建：recorder、默认座舱 agent、默认 MCP。recorder 由本仓库 `cockpit/Dockerfile` 构建；默认 agent 镜像 `esa-cockpit-agent:1.0.0` 由 `cockpit/Dockerfile.agent` 构建，内容为 `cockpit/fake_agent.py`；默认 MCP 镜像 `esa-cockpit-mcp:1.0.0` 由 `cockpit/Dockerfile.mcp` 构建，内容为 `cockpit/fake_mcp.py`。用户资产就绪后，以 `COCKPIT_AGENT_IMAGE` 与 `COCKPIT_MCP_IMAGE` 指向用户构建的镜像即可覆盖，不需要改任务配置。`scripts/diagnose.sh` 的期望服务列表需要扩展：esa 任务为 main、agent-api、mock-system、redis；座舱任务为 main、mock-system、cockpit-agent、cockpit-mcp、redis。`scripts/cleanup.sh` 按 `hb__` 前缀清理容器与任务镜像，与 harness 无关，无需改动。
+
+`scripts/validate_task.py` 的任务选择增加 `--bench <slug>` 参数，读取 `configs/bench/<slug>.yaml` 的 tasks 列表。这一步是必须的：现在的 `--all` 对 `tasks/` 全量 glob（`validate_task.py:54`），座舱任务落到 `tasks/` 下就会被选中，而 `--local-http` 起的是写死 ESA 十域环境的服务（`validate_task.py:17-31`），既没有 recorder 转发，也没有用户 MCP server 的工具集合与状态结构，座舱任务在会话创建阶段就会因 tool_profile 不在启用集合里被判错，报错指向参考解而非环境。`--all` 因此收敛为读取 esa bench 配置（七题全集，语义不变），座舱任务用 `--bench esa-cockpit` 选择。
 
 ## 5. 示例任务
 
@@ -362,20 +372,25 @@ ESA_TEST_REDIS_URL=redis://127.0.0.1:6379/0 .venv/bin/python -m unittest cockpit
 
 检查项：路由与 environment 服务一致、事件字段完整、幂等、三类故障、工具权限两种方向（profile 内放行、profile 外拒绝）、逐事件差异、两种状态读取形态、快照指纹、round 与 reset。Redis 集成测试覆盖事务与隔离。
 
-阶段二，驱动与全链路（无模型凭据，默认 agent 镜像即 fake agent）：
+阶段二，驱动与全链路（无模型凭据，默认镜像即两个假件）：
 
 ```bash
-bash scripts/build-esa-local.sh                      # 构建 recorder 与默认 agent 镜像
-.venv/bin/python -m cockpit.fake_agent --port 18090 & # 先跑通假 agent 本身
+bash scripts/build-esa-local.sh                       # 构建 recorder、默认 agent 与默认 MCP 镜像
+# 座舱链路服务：recorder 指向假 MCP server，单进程内存存储，无需 Redis
+.venv/bin/python -m cockpit.fake_mcp --port 18091 &
+.venv/bin/python -m cockpit.recorder --port 18093 --mcp-url http://127.0.0.1:18091 --store memory-test &
+.venv/bin/python -m cockpit.fake_agent --port 18090 &  # 先跑通假 agent 本身
+# ESA 七题走本地临时 HTTP 服务，座舱任务走 recorder 加假 MCP server
+.venv/bin/python scripts/validate_task.py --bench esa --local-http --json
+.venv/bin/python scripts/validate_task.py --bench esa-cockpit --mock-url http://127.0.0.1:18093 --json
 .venv/bin/python scripts/sync-task-scorers.py
 .venv/bin/python scripts/sync-task-scorers.py --check
-.venv/bin/python scripts/validate_task.py --all --local-http --json
 .venv/bin/python scripts/test-reference-docker.py
 PYTHONPATH="$PWD" .venv/bin/harbor run -c configs/jobs/esa-cockpit-oracle-acceptance.yaml --job-name UNIQUE -y
 .venv/bin/python scripts/test-oracle-failure.py
 ```
 
-检查项：假 agent 经 recorder 调用 MCP 成功；参考、替代解、错误答案在 recorder 加用户 MCP server 上全部符合现有判定；Oracle 实际 Docker 验收通过；异常后达标被拒绝。
+检查项：假 agent 与假 MCP server 各自先跑通；ESA 七题预检保持通过；座舱任务的参考、替代解、错误答案在 recorder 加假 MCP server 上全部符合现有判定；Oracle 实际 Docker 验收通过；异常后达标被拒绝。座舱任务不进入 ESA 侧的 `--bench esa` 选择范围，ESA 环境服务也不接待座舱任务。
 
 阶段三，座舱 agent 接入（用户镜像就绪后）：
 
@@ -400,7 +415,7 @@ scripts/run.sh --bench esa-cockpit --harness esa-cockpit --model <provider/model
 ## 7. 实施顺序
 
 1. 契约与记录代理。写 `docs/esa-cockpit-integration.md`，实现 `cockpit/recorder.py` 与测试。产出：recorder 可独立替代 environment 服务，MCP server 接入契约冻结。
-2. 驱动、Harbor agent 与假 agent。实现 driver.mjs 座舱分支、`esa/cockpit_agent.py`、`cockpit/fake_agent.py` 与默认 agent 镜像，跑通阶段二命令。产出：无凭据全链路验收通过。
+2. 驱动、Harbor agent 与两个假件。实现 driver.mjs 座舱分支、`esa/cockpit_agent.py`、`cockpit/fake_agent.py`、`cockpit/fake_mcp.py` 与三个默认镜像，跑通阶段二命令。产出：无凭据全链路验收通过。
 3. 任务与配置。实现任务模板与两个示例任务，加入 bench 与 Oracle 验收配置，完成原生 Oracle 验收与失败回归。产出：座舱 bench 可复现。
 4. 用户资产接入。构建用户 agent 与 MCP server 镜像，接入模型标识链，跑通阶段三与阶段四。产出：正式模型可评分运行。
 5. 交互增强。实现 CLI 与 Console 座舱分支（4.10）。产出：座舱对话台可用。
@@ -413,7 +428,7 @@ scripts/run.sh --bench esa-cockpit --harness esa-cockpit --model <provider/model
 2. 逐事件差异有确定成本。每次工具调用前后各读一次状态，调用密集的任务状态读取量约为调用数的两倍；这是修改后恢复可被判出的前提，不做初终态粗比。
 3. 模型标识依赖 agent 如实上报。`/v1/health` 的 model_id 由 agent 自报，驱动只比对不验证；需要更强约束时在 agent 镜像构建期固定模型并随镜像指纹记录。
 4. 会话隔离依赖用户 MCP server。批量路径每个 trial 独立容器，天然隔离；开发服务组合与 Console 多会话共享实例时，server 没有会话概念则只能单会话串行。
-5. 模型用量指标依赖 agent 透传。agent 不回传 usage 时，ATIF 轨迹省略用量字段，成本对比维度在座舱 bench 中不可用，其余维度不受影响。
+5. 模型用量指标依赖 agent 透传。驱动把 `/v1/turn` 返回的 usage 搬进 iteration（4.6 第 3 步）；agent 不回传 usage 时，ATIF 轨迹省略用量字段，成本对比维度在座舱 bench 中不可用，其余维度不受影响。
 6. 工具定义的静态校验不适用于座舱模式。`environment/catalog.json` 与 `configs/tools.json` 的一致性检查只服务 esa harness；座舱工具集合以运行时 tools/list 为准，manifest 的 source_sha256 记录该次 schema 指纹。
 7. 故障注入覆盖 recorder 层。reject、missing_field、response_lost 三类故障在 recorder 执行，不要求用户 MCP server 改造；超出三类的故障需要扩展 recorder 与任务 faults 定义。
 8. 座舱 bench 与 esa bench 的分数不做直接比较，原因与仓库现有约定一致：环境身份、工具集合与状态结构不同。
@@ -423,3 +438,5 @@ scripts/run.sh --bench esa-cockpit --harness esa-cockpit --model <provider/model
 2026-11-04 第二版：按外部评审意见修订。P0 三条全部落入文档：CockpitAgent 删除 `agentPayloadPath` 配置键（否则 `driver.mjs:56` ENOENT）；工具权限改由 recorder 执行（过滤 tools/list、profile 外判 permission_denied），接入契约删除对 server 的要求；模型标识经 run.sh 导出 `COCKPIT_AGENT_MODEL_ID` 注入 compose，agent 在 `/v1/health` 上报 model_id，CockpitAgent 比对后开跑。P1 两条落入：manifest 增加 server_version 与 server_commit 指纹、dataset_version 改必填；逐事件差异明确为每次调用前后各读一次状态。P2 三条落入：并发表述改为批量路径按 trial 天然隔离、共享实例才需串行；recorder 实现边界改为复用 store 与 diff、其余平行实现；healthcheck 写成单条链式命令；CLI 与 Console 后置为第 5 阶段。实施顺序调整：先跑通假 agent，再做 Oracle 验收。
 
 2026-11-04 第三版：按 PR 评审意见修订。阻塞一：`scripts/run.sh` 第 135 行快通道条件改为同时接受 `esa-cockpit`，否则落到第 296 行编码 agent 白名单直接 fail；`COCKPIT_AGENT_MODEL_ID` 的导出放进该分支 `harbor run` 之前。阻塞二：compose 的模型地址与密钥改读 provider 前缀变量 `${STEPFUN_OPENAI_BASE_URL}` 与 `${STEPFUN_API_KEY}`，与现有七个任务一致，自造无生产者的变量名恒为空串。口径三：CockpitAgent 只覆写 `_write_driver_config`（`esa_agent.py:337`）删键与加协议，模型比对下放驱动，在第一轮对话前 GET `/v1/health`，不一致记错误并结束，未经任何模型调用即判评分无效，`ESAAgent.run` 不重写。口径四：manifest 的 tools 按 name 排序、序列化用 `sort_keys=True`，`source_sha256` 用同一份规范化序列化，避免 tools 顺序不稳定误报环境身份不一致。口径五：`seed_sha256 := data_sha256`、`dataset_version := data_version` 写死，data_sha256 必须是裸 64 位小写十六进制。
+
+2026-11-04 第四版：按 PR 第二轮评审修订。问题一：`validate_task.py --all` 对 `tasks/` 全量 glob，座舱任务会被扫进 ESA 环境服务并必挂；任务选择增加 `--bench <slug>` 参数读取任务集合配置，`--all` 收敛为 esa bench，阶段二拆成 ESA 与座舱两条命令；阶段二命令清单补上 recorder 与假 MCP server 的启动步骤，并新增 `cockpit/fake_mcp.py` 作为默认 MCP 镜像（按 4.4 六项能力实现，供无用户 server 时的验收）。问题二：4.6 第 3 步的 iteration 改为显式字段映射，补齐 `turnIndex`、`receivedAt`、`usage` 与每条调用的 `turn_index`；turn_index 缺失会使带轮次规则与 before_turn 的评分直接判无效，usage 不搬则 token 指标恒空，receivedAt 缺失则轨迹无时间轴。
