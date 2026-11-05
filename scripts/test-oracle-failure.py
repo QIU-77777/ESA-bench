@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Assert native Oracle cannot pass when solve reaches the goal and then fails."""
 from pathlib import Path
+import argparse
 import json
 import os
 import shutil
@@ -13,13 +14,27 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def state_at(state, path):
+    value = state
+    for part in path.split("."):
+        if not isinstance(value, dict) or part not in value:
+            raise AssertionError("目标状态路径不存在：" + path)
+        value = value[part]
+    return value
+
+
 def main():
+    parser = argparse.ArgumentParser(description="检查达标后异常仍被拒绝")
+    parser.add_argument("--task", type=Path, default=Path("tasks/esa-navi-execute"))
+    parser.add_argument("--goal-path", default="navigation.active")
+    args = parser.parse_args()
+    task_path = (ROOT / args.task).resolve() if not args.task.is_absolute() else args.task
     name = 'esa-native-oracle-failure-' + uuid.uuid4().hex[:12]
     output = ROOT / 'jobs' / name
     with tempfile.TemporaryDirectory(prefix='esa-oracle-failure-') as tmp:
         root = Path(tmp)
         task = root / 'task'
-        shutil.copytree(ROOT / 'tasks/esa-navi-execute', task)
+        shutil.copytree(task_path, task)
         reference = task / 'solution/reference.py'
         reference.write_text(reference.read_text() + '\noriginal_solve = solve\ndef solve(ctx):\n    original_solve(ctx)\n    raise RuntimeError("reference execution failed after reaching the goal")\n')
         config = {'job_name': name, 'jobs_dir': str(ROOT / 'jobs'), 'n_attempts': 1,
@@ -42,8 +57,9 @@ def main():
         assert json.loads(rewards[0].read_text())['reward'] == 0
         assert json.loads(calls[0].read_text())['program_failure']
         assert json.loads(details[0].read_text())['valid'] is False
-        assert json.loads(snapshots[0].read_text())['state']['navigation']['active'] is True
-        summary = {'passed': True, 'agent': 'oracle', 'goal_reached': True, 'program_failure_rejected': True,
+        assert state_at(json.loads(snapshots[0].read_text())['state'], args.goal_path) is True
+        summary = {'passed': True, 'agent': 'oracle', 'task': str(task_path.relative_to(ROOT)),
+                   'goal_path': args.goal_path, 'goal_reached': True, 'program_failure_rejected': True,
                    'reward': 0, 'evidence_directory': str(output.relative_to(ROOT))}
         (output / 'failure-regression.json').write_text(json.dumps(summary, ensure_ascii=False, indent=2) + '\n')
         print(json.dumps(summary, ensure_ascii=False, indent=2))

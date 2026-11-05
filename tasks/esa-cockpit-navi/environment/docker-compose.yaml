@@ -1,0 +1,33 @@
+services:
+  mock-system:
+    image: ${MOCK_SYSTEM_IMAGE:-esa-cockpit-recorder:1.0.0}
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      COCKPIT_MCP_URL: http://cockpit-mcp:8091
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8003/health')"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+  cockpit-agent:
+    image: ${COCKPIT_AGENT_IMAGE:-esa-cockpit-agent:1.0.0}
+    environment:
+      ESA_MOCK_URL: http://mock-system:8003
+      COCKPIT_AGENT_MODEL_ID: ${COCKPIT_AGENT_MODEL_ID:-}
+      AGENT_MODEL_BASE_URL: ${STEPFUN_OPENAI_BASE_URL}
+      AGENT_MODEL_API_KEY: ${STEPFUN_API_KEY}
+    depends_on:
+      mock-system:
+        condition: service_healthy
+  cockpit-mcp:
+    image: ${COCKPIT_MCP_IMAGE:-esa-cockpit-mcp:1.0.0}
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 20

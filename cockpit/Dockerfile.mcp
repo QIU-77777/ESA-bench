@@ -1,0 +1,7 @@
+ARG PYTHON_IMAGE=python:3.12.9-slim
+FROM ${PYTHON_IMAGE}
+WORKDIR /app
+COPY cockpit/fake_mcp.py /app/cockpit/fake_mcp.py
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+EXPOSE 8091
+CMD ["python", "-m", "cockpit.fake_mcp"]

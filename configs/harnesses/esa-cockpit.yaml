@@ -1,0 +1,7 @@
+id: esa-cockpit
+name: ESA Cockpit
+protocol: openai
+import_path: esa.cockpit_agent:CockpitAgent
+kwargs: {}
+param_docs:
+  agent_protocol: 座舱 agent 驱动协议，固定为 turn

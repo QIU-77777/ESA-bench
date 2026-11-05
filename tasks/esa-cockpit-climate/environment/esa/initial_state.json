@@ -1,0 +1,29 @@
+{
+  "case_id": "esa-cockpit-climate",
+  "dataset_version": "esa-cockpit-v1",
+  "seed": 0,
+  "user_messages": [
+    "帮我调整空调温度。温度还没有确定，请先问我。"
+  ],
+  "initial_state": {
+    "vehicle": {
+      "ac_on": true,
+      "ac_temperature": 24
+    }
+  },
+  "tool_profile": [
+    "get_vehicle_state",
+    "set_ac_temperature"
+  ],
+  "user_script": [
+    {
+      "reply_pattern": "温度|多少度|几度|度数",
+      "user_reply": "调到22度。"
+    }
+  ],
+  "metadata": {
+    "domain": "climate",
+    "acceptance": true,
+    "title": "询问温度后控制空调"
+  }
+}

@@ -1,0 +1,53 @@
+{
+  "case_id": "esa-cockpit-navi",
+  "weights": {
+    "state": 0.6,
+    "tool_use": 0.2,
+    "reply": 0.2
+  },
+  "expected_state": {
+    "navigation.active": true,
+    "navigation.destination.id": "200001"
+  },
+  "forbidden_changes": [
+    "vehicle"
+  ],
+  "tool_checks": [
+    {
+      "id": "query_company",
+      "required": true,
+      "any_tool": [
+        "get_favorite_poi"
+      ]
+    },
+    {
+      "id": "start_company",
+      "required": true,
+      "tool": "start_navi",
+      "arguments_contain": [
+        "200001"
+      ]
+    }
+  ],
+  "process_constraints": [
+    {
+      "type": "max_calls",
+      "tool": "start_navi",
+      "count": 1
+    }
+  ],
+  "reply_checks": [
+    {
+      "id": "navigation_started",
+      "pattern": "已.{0,8}(?:开始|启动).*导航|已开始导航"
+    },
+    {
+      "id": "distance",
+      "pattern": "\\d+(?:\\.\\d+)?\\s*(?:公里|千米|km)"
+    },
+    {
+      "id": "duration",
+      "pattern": "\\d+(?:分钟|小时)"
+    }
+  ]
+}

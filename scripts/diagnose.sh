@@ -14,6 +14,7 @@ PROJECT=""
 TAIL_LINES=30
 SHOW_LOGS=1
 EXPECTED_SERVICES="main agent-api mock-system redis"
+EXPECTED_COCKPIT_SERVICES="main mock-system cockpit-agent cockpit-mcp redis"
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -67,7 +68,12 @@ else
       printf '    %-14s %-34s restarts=%s\n' "$service" "$status" "$restarts"
     done
     if printf '%s\n' "$present" | grep -qx main; then
-      for service in $EXPECTED_SERVICES; do
+      if printf '%s\n' "$present" | grep -qx cockpit-agent; then
+        expected="$EXPECTED_COCKPIT_SERVICES"
+      else
+        expected="$EXPECTED_SERVICES"
+      fi
+      for service in $expected; do
         printf '%s\n' "$present" | grep -qx "$service" || note "缺少服务 $service"
       done
     else

@@ -1,0 +1,16 @@
+job_name: esa-cockpit-oracle-acceptance
+jobs_dir: jobs
+n_attempts: 1
+orchestrator:
+  type: local
+  n_concurrent_trials: 2
+environment:
+  type: docker
+  force_build: true
+  delete: true
+agents:
+  - name: oracle
+    kwargs: {}
+tasks:
+  - path: tasks/esa-cockpit-navi
+  - path: tasks/esa-cockpit-climate

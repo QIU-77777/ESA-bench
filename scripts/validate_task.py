@@ -11,6 +11,7 @@ import threading
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+from esa.bench_selection import select_tasks
 from esa.reference import HttpTransport, ReferenceFailure, validate_task
 
 @contextmanager
@@ -41,7 +42,8 @@ def main():
     parser = argparse.ArgumentParser(description="执行参考程序、合法替代解和错误答案测试")
     tasks = parser.add_mutually_exclusive_group(required=True)
     tasks.add_argument("--task", type=Path)
-    tasks.add_argument("--all", action="store_true")
+    tasks.add_argument("--bench", help="按 configs/bench/<slug>.yaml 选择任务集合")
+    tasks.add_argument("--all", action="store_true", help="全量发现任务，带登记与单集合两道守卫")
     target = parser.add_mutually_exclusive_group(required=True)
     target.add_argument("--mock-url", help="实际部署的环境服务地址")
     target.add_argument("--local-http", action="store_true", help="启动临时真实HTTP/MCP服务；仅集成测试")
@@ -51,7 +53,10 @@ def main():
     args = parser.parse_args()
     if args.seed_file and not args.local_http:
         parser.error("--seed-file仅支持--local-http；部署数据由服务决定")
-    paths = sorted(p.parents[1] for p in (ROOT / "tasks").glob("*/solution/reference.py")) if args.all else [args.task.resolve()]
+    try:
+        paths = [args.task.resolve()] if args.task else select_tasks(args.bench, args.all)
+    except ValueError as error:
+        parser.error(str(error))
     if not paths:
         parser.error("没有可验证的参考任务")
 

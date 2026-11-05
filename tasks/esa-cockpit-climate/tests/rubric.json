@@ -1,0 +1,45 @@
+{
+  "case_id": "esa-cockpit-climate",
+  "weights": {
+    "state": 0.6,
+    "tool_use": 0.2,
+    "reply": 0.2
+  },
+  "expected_state": {
+    "vehicle.ac_temperature": 22,
+    "vehicle.ac_on": true
+  },
+  "forbidden_changes": [
+    "vehicle.gear",
+    "navigation"
+  ],
+  "tool_checks": [
+    {
+      "id": "control_temperature",
+      "required": true,
+      "tool": "set_ac_temperature",
+      "arguments_contain": [
+        "22"
+      ]
+    }
+  ],
+  "tool_forbidden": [
+    {
+      "id": "no_control_before_reply",
+      "tool": "set_ac_temperature",
+      "before_turn": 1
+    }
+  ],
+  "reply_checks": [
+    {
+      "id": "ask_temperature",
+      "pattern": "温度|多少度|几度|度数",
+      "turn_index": 0
+    },
+    {
+      "id": "confirmed_temperature",
+      "pattern": "22\\s*(?:度|℃)",
+      "turn_index": 1
+    }
+  ]
+}
